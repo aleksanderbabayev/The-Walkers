@@ -19,7 +19,10 @@
       <div class="status">
         <span id="statusDot" aria-hidden="true"></span>
         <div><b id="statusTitle">Готовы к прогулке?</b><small id="statusText">Нажмите «Старт», чтобы записать маршрут</small></div>
-        <span class="gps" id="gps">GPS</span>
+        <div class="stopwatch" aria-label="Время прогулки">
+          <b id="elapsed">00:00:00</b>
+          <small class="gps" id="gps">GPS</small>
+        </div>
       </div>
       <div class="actions"><button id="start" class="primary" type="button">Старт</button><button id="finish" class="secondary" type="button" disabled>Финиш</button></div>
       <div id="message" role="status" aria-live="polite"></div>

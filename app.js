@@ -10,7 +10,7 @@
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
 
-  let db, watchId = null, points = [], currentLine = null, savedLayers = [], saveTimer = null, startedAt = null;
+  let db, watchId = null, points = [], currentLine = null, savedLayers = [], saveTimer = null, stopwatchTimer = null, startedAt = null;
   const openDb = () => new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
@@ -43,6 +43,26 @@
     return 2 * radius * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
   };
   const say = (message) => { $("message").textContent = message; };
+  const formatElapsed = (milliseconds) => {
+    const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+    const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+    const minutes = String(Math.floor(totalSeconds / 60) % 60).padStart(2, "0");
+    const seconds = String(totalSeconds % 60).padStart(2, "0");
+    return `${hours}:${minutes}:${seconds}`;
+  };
+  const updateStopwatch = (at = Date.now()) => {
+    if (startedAt !== null) $("elapsed").textContent = formatElapsed(at - startedAt);
+  };
+  const startStopwatch = () => {
+    clearInterval(stopwatchTimer);
+    updateStopwatch();
+    stopwatchTimer = setInterval(updateStopwatch, 1000);
+  };
+  const stopStopwatch = (at = Date.now()) => {
+    updateStopwatch(at);
+    clearInterval(stopwatchTimer);
+    stopwatchTimer = null;
+  };
   const setRecording = (active) => {
     document.querySelector(".status").classList.toggle("recording", active);
     $("statusTitle").textContent = active ? "Идёт прогулка" : "Готовы к прогулке?";
@@ -97,14 +117,16 @@
   };
   const startWalk = async () => {
     if (!navigator.geolocation) { say("Этот браузер не поддерживает геолокацию."); return; }
-    points = []; startedAt = Date.now(); say("Ожидаем GPS-сигнал…"); setRecording(true);
+    points = []; startedAt = Date.now(); startStopwatch(); say("Ожидаем GPS-сигнал…"); setRecording(true);
     try {
       await saveDraft();
       watchId = navigator.geolocation.watchPosition(receivePosition, onLocationError, { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 });
       saveTimer = setInterval(() => saveDraft().catch(() => say("Не удалось сохранить черновик прогулки.")), AUTOSAVE_MS);
-    } catch { say("Не удалось открыть локальное хранилище."); setRecording(false); }
+    } catch { stopStopwatch(); say("Не удалось открыть локальное хранилище."); setRecording(false); }
   };
   const finishWalk = async () => {
+    const finishedAt = Date.now();
+    stopStopwatch(finishedAt);
     if (watchId !== null) navigator.geolocation.clearWatch(watchId);
     clearInterval(saveTimer); watchId = null; saveTimer = null;
     try {
@@ -112,7 +134,7 @@
       if (points.length < 2) { say("Пока недостаточно GPS-точек. Черновик сохранён."); setRecording(false); return; }
       const gap = distanceMeters(points[0], points.at(-1));
       const closed = points.length >= MIN_POINTS && gap <= CLOSE_METERS;
-      const walk = { id: crypto.randomUUID(), points, startedAt, finishedAt: Date.now(), closed };
+      const walk = { id: crypto.randomUUID(), points, startedAt, finishedAt, durationMs: finishedAt - startedAt, closed };
       await saveWalkAndDeleteDraft(walk);
       points = [];
       if (currentLine) { map.removeLayer(currentLine); currentLine = null; }
@@ -140,6 +162,7 @@
           }
           points = draft.points; startedAt = draft.startedAt; drawCurrent();
           map.setView([points.at(-1).lat, points.at(-1).lng], 16); setRecording(true);
+          startStopwatch();
           watchId = navigator.geolocation.watchPosition(receivePosition, onLocationError, { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 });
           saveTimer = setInterval(() => saveDraft().catch(() => say("Не удалось сохранить черновик прогулки.")), AUTOSAVE_MS);
         } else await dbRequest("drafts", "readwrite", (store) => store.delete("active"));
