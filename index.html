@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f7f7f2">
+  <title>The Walkers</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="mark" aria-hidden="true">↗</span><div><strong>The Walkers</strong><small>Исследуй город пешком</small></div></div>
+    <button id="locate" class="icon" type="button" title="Моё местоположение" aria-label="Моё местоположение">◎</button>
+  </header>
+  <main>
+    <section id="map" aria-label="Карта"></section>
+    <section class="panel">
+      <div class="status">
+        <span id="statusDot" aria-hidden="true"></span>
+        <div><b id="statusTitle">Готовы к прогулке?</b><small id="statusText">Нажмите «Старт», чтобы записать маршрут</small></div>
+        <span class="gps" id="gps">GPS</span>
+      </div>
+      <div class="actions"><button id="start" class="primary" type="button">Старт</button><button id="finish" class="secondary" type="button" disabled>Финиш</button></div>
+      <div id="message" role="status" aria-live="polite"></div>
+      <section class="saved"><div class="savedHead"><b>Мои прогулки</b><span id="count">0</span></div><div id="routes"><p class="empty">Здесь появятся ваши маршруты и территории</p></div></section>
+    </section>
+  </main>
+  <footer>Карта © OpenStreetMap · Маршруты хранятся на этом устройстве</footer>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
