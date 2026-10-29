@@ -98,8 +98,6 @@ main {
 #start[hidden],
 #finish[hidden],
 #abandonWalk[hidden] { display: none; }
-.actions #abandonWalk { order: 1; }
-.actions #finish { order: 2; }
 .actions #start {
   --action-shadow: #174b9b;
   background: linear-gradient(180deg, #4389ed 0%, #2868c3 100%);
