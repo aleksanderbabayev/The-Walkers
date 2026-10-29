@@ -3,6 +3,8 @@
   const DB_NAME = "the-walkers", DB_VERSION = 1;
   const AUTOSAVE_MS = 5000, CLOSE_METERS = 50, MIN_POINTS = 4;
   const $ = (id) => document.getElementById(id);
+  const appVersion = document.querySelector('meta[name="app-version"]').content;
+  $("appVersion").textContent = `Версия ${appVersion}`;
   const map = L.map("map", { zoomControl: false }).setView([48.998, 21.239], 14);
   L.control.zoom({ position: "bottomright" }).addTo(map);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
