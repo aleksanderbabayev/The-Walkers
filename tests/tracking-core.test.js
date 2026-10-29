@@ -4,7 +4,7 @@ const Tracking = require("../tracking-core.js");
 
 const now = 1_800_000_000_000;
 const position = (lat, lng, timestamp = now, accuracy = 5) => ({ timestamp, coords: { latitude: lat, longitude: lng, accuracy } });
-const point = (lat, lng, timestamp, segmentStart = false) => ({ lat, lng, accuracy: 5, timestamp, segmentStart });
+const point = (lat, lng, timestamp, segmentStart = false, accuracy = 5) => ({ lat, lng, accuracy, timestamp, segmentStart });
 
 test("accepts fresh accurate walking positions and measures their distance", () => {
   const previous = point(0, 0, now - 5000, true);
@@ -65,6 +65,18 @@ test("does not accept an isolated jump after an interruption", () => {
   assert.equal(stableRoutePosition.point.segmentStart, true);
 });
 
+test("reset discards an unconfirmed post-gap GPS candidate", () => {
+  const filter = Tracking.createPositionFilter();
+  const previous = point(0, 0, now - 60000, true);
+  const jump = filter.evaluate(position(0, 0.01, now - 5000), previous, now - 5000);
+  assert.equal(jump.reason, "confirm");
+
+  filter.reset();
+  const next = filter.evaluate(position(0, 0.01, now), previous, now);
+  assert.equal(next.accepted, false);
+  assert.equal(next.reason, "confirm");
+});
+
 test("accumulates realistic short walking movements without stationary GPS drift", () => {
   const metersInLongitude = (meters) => meters / 111320;
   let previous = point(0, 0, now - 8000, true);
@@ -88,6 +100,58 @@ test("accumulates realistic short walking movements without stationary GPS drift
     assert.equal(result.accepted, false);
     assert.equal(result.reason, "drift");
   }
+});
+
+test("filters realistic short movement and stationary drift at 15 to 30 meter accuracy", () => {
+  const metersInLongitude = (meters) => meters / 111320;
+  for (const accuracy of [15, 30]) {
+    let shortWalkPrevious = point(0, 0, now - 12000, true, accuracy);
+    let shortWalkDistance = 0;
+    for (const [step, meters] of [[1, 3], [2, 6], [3, 9], [4, 12]]) {
+      const timestamp = now - 12000 + step * 2000;
+      const result = Tracking.evaluatePosition(position(0, metersInLongitude(meters), timestamp, accuracy), shortWalkPrevious, timestamp);
+      if (result.accepted) {
+        shortWalkDistance += result.distanceMeters;
+        shortWalkPrevious = result.point;
+      } else assert.equal(result.reason, "drift");
+    }
+    assert.ok(shortWalkDistance > 8.5 && shortWalkDistance < 9.5, `short walk at ±${accuracy} m accuracy`);
+
+    let previous = point(0, 0, now - 20000, true, accuracy);
+    let totalDistance = 0;
+    for (const [step, meters] of [[1, 3], [2, 6], [3, 9], [4, 12], [5, 15], [6, 18]]) {
+      const timestamp = now - 20000 + step * 2000;
+      const result = Tracking.evaluatePosition(position(0, metersInLongitude(meters), timestamp, accuracy), previous, timestamp);
+      if (result.accepted) {
+        totalDistance += result.distanceMeters;
+        previous = result.point;
+      } else assert.equal(result.reason, "drift");
+    }
+    assert.ok(totalDistance > 17.5 && totalDistance < 18.5, `walking distance at ±${accuracy} m accuracy`);
+
+    previous = point(0, 0, now - 10000, true, accuracy);
+    for (const [step, meters] of [[1, 3], [2, -4], [3, 6], [4, -7], [5, 2]]) {
+      const timestamp = now - 10000 + step * 1000;
+      const result = Tracking.evaluatePosition(position(0, metersInLongitude(meters), timestamp, accuracy), previous, timestamp);
+      assert.equal(result.accepted, false, `stationary drift at ±${accuracy} m accuracy`);
+      assert.equal(result.reason, "drift");
+    }
+  }
+});
+
+test("confirms recovery after a gap at 30 meter accuracy without counting the gap", () => {
+  const metersInLongitude = (meters) => meters / 111320;
+  const previous = point(0, 0, now - 60000, true, 30);
+  const filter = Tracking.createPositionFilter();
+  const candidate = filter.evaluate(position(0, metersInLongitude(100), now - 5000, 30), previous, now - 5000);
+  assert.equal(candidate.reason, "confirm");
+
+  const confirmed = filter.evaluate(position(0, metersInLongitude(109), now, 30), previous, now);
+  assert.equal(confirmed.accepted, true);
+  assert.equal(confirmed.points[0].segmentStart, true);
+  assert.equal(Tracking.splitSegments([previous, ...confirmed.points]).length, 2);
+  assert.ok(Tracking.distanceForPoints([previous, ...confirmed.points]) > 8);
+  assert.ok(Tracking.distanceForPoints([previous, ...confirmed.points]) < 10);
 });
 
 test("rejected positions do not replace the last accepted point", () => {

@@ -99,7 +99,8 @@
 
   let db, storageReady = false, draftResolved = false, starting = false, finishing = false;
   let recordingActive = false, points = [], distanceMetersTotal = 0, currentLines = [], savedLayers = [], stopwatchTimer = null, startedAt = null;
-  let trackingQueue = Promise.resolve(), pendingLocateRequestId = null, pendingGapPoint = null;
+  let trackingQueue = Promise.resolve(), pendingLocateRequestId = null;
+  const positionFilter = Tracking.createPositionFilter();
   let currentLocationMarker = null;
   const mapDiagnosticsEnabled = new URLSearchParams(window.location.search).get("mapDebug") === "1";
   const updateLocationMarker = (point) => {
@@ -237,9 +238,8 @@
   };
   const processPosition = async (position) => {
     if (!recordingActive || finishing) return;
-    const result = Tracking.evaluatePosition(position, points.at(-1), Date.now(), undefined, pendingGapPoint);
+    const result = positionFilter.evaluate(position, points.at(-1), Date.now());
     if (!result.accepted) {
-      if (result.candidate) pendingGapPoint = result.candidate;
       if (Number.isFinite(position.coords?.accuracy)) $("gps").textContent = `±${Math.round(position.coords.accuracy)} м`;
       if (result.reason === "accuracy") say(`GPS неточный (±${Math.round(position.coords.accuracy)} м). Ждём более точную позицию.`);
       else if (result.reason === "speed") say("GPS скачок отброшен. Ждём стабильную позицию.");
@@ -251,7 +251,6 @@
     try { await saveDraftSnapshot(nextPoints, startedAt); }
     catch { say("Точка не записана: не удалось сохранить черновик на устройстве."); return; }
 
-    pendingGapPoint = null;
     points = nextPoints;
     distanceMetersTotal += result.distanceMeters;
     drawCurrent(); updateDistance(); updateLocationMarker(result.point);
@@ -280,6 +279,7 @@
   const startTrackingServices = () => gpsServices.start();
   const stopTrackingServices = () => gpsServices.stop();
   const resumeAfterFinishFailure = (message) => {
+    positionFilter.reset();
     finishing = false;
     try {
       startTrackingServices();
@@ -292,6 +292,7 @@
     }
   };
   const startWalk = async () => {
+    positionFilter.reset();
     if (!navigator.geolocation) { say("Этот браузер не поддерживает геолокацию."); return; }
     if (!storageReady || !draftResolved || starting || recordingActive || finishing) return;
     starting = true; setRecording(false);
@@ -309,6 +310,7 @@
       startTrackingServices();
       starting = false; setRecording(true); startStopwatch(); say("Ожидаем GPS-сигнал…");
     } catch {
+      positionFilter.reset();
       stopTrackingServices();
       try { await WalkStorage.deleteDraft(db); draftResolved = true; }
       catch { draftResolved = false; }
@@ -318,6 +320,7 @@
   };
   const finishWalk = async () => {
     if (!recordingActive || finishing) return;
+    positionFilter.reset();
     finishing = true; setRecording(true); stopTrackingServices();
     try {
       await trackingQueue;
@@ -374,6 +377,7 @@
       await redrawSaved();
       storageReady = true;
       if (draft) {
+        positionFilter.reset();
         draftResolved = false;
         const resume = confirm("Найдена незавершённая прогулка. Продолжить запись?");
         if (resume) {
@@ -394,6 +398,7 @@
             setRecording(true); startStopwatch();
             say("Прогулка восстановлена. Ожидаем свежую GPS-точку…");
           } catch {
+            positionFilter.reset();
             stopTrackingServices(); draftResolved = false; setRecording(false);
             say("Черновик сохранён, но GPS не удалось запустить. Перезагрузите страницу, чтобы попробовать снова.");
           }
@@ -407,6 +412,7 @@
       } else draftResolved = true;
       setRecording(recordingActive);
     } catch {
+      positionFilter.reset();
       storageReady = false; draftResolved = false; setRecording(false);
       say("IndexedDB недоступна. Попробуйте открыть приложение в современном браузере по HTTPS.");
     }

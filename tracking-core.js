@@ -12,7 +12,7 @@
     maxSpeedMetersPerSecond: 3,
     maxGapMs: 30000,
     minMovementMeters: 4,
-    maxDriftMeters: 15,
+    maxDriftMeters: 8,
     closeMeters: 50,
     minPolygonPoints: 4
   });
@@ -68,6 +68,19 @@
     return { accepted: true, point, distanceMeters: distance, newSegment: false };
   };
 
+  const createPositionFilter = () => {
+    let pendingGapPoint = null;
+    return {
+      evaluate(position, previousPoint, now = Date.now(), options = DEFAULTS) {
+        const result = evaluatePosition(position, previousPoint, now, options, pendingGapPoint);
+        if (result.accepted) pendingGapPoint = null;
+        else if (result.candidate) pendingGapPoint = result.candidate;
+        return result;
+      },
+      reset() { pendingGapPoint = null; }
+    };
+  };
+
   const splitSegments = (points = []) => {
     const segments = [];
     for (const point of points) {
@@ -113,5 +126,5 @@
     return { start, stop };
   };
 
-  return { DEFAULTS, distanceMeters, evaluatePosition, splitSegments, distanceForPoints, canCloseTrack, createGpsServices };
+  return { DEFAULTS, distanceMeters, evaluatePosition, createPositionFilter, splitSegments, distanceForPoints, canCloseTrack, createGpsServices };
 });
