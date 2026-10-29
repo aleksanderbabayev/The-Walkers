@@ -36,6 +36,9 @@
   startBackgroundMusic().catch(() => {});
   document.addEventListener("pointerdown", unlockBackgroundMusic, true);
   document.addEventListener("keydown", unlockBackgroundMusic, true);
+  ["gesturestart", "gesturechange", "gestureend"].forEach((eventName) => {
+    document.addEventListener(eventName, (event) => event.preventDefault(), { passive: false });
+  });
   $("musicToggle").addEventListener("click", async () => {
     if (!musicMuted && backgroundMusic.paused) {
       await startBackgroundMusic().catch(() => {});
