@@ -74,3 +74,26 @@ test("successful completion atomically adds the walk and removes its draft", asy
   assert.equal(db.records.walks.has("walk-1"), true);
   assert.equal(db.records.drafts.has("active"), false);
 });
+
+test("cancelling GPS warm-up deletes only the empty active draft", async () => {
+  const db = new MemoryDatabase();
+  const completedWalk = { id: "walk-1", points: [{ lat: 1, lng: 2 }] };
+  db.records.walks.set(completedWalk.id, completedWalk);
+  db.records.drafts.set("active", { id: "active", points: [], startedAt: 123 });
+
+  await Storage.deleteDraft(db);
+  assert.equal(db.records.drafts.has("active"), false);
+  assert.equal(db.records.walks.get(completedWalk.id), completedWalk);
+});
+
+test("failed warm-up cancellation keeps the draft and prevents a new draft from overwriting it", async () => {
+  const db = new MemoryDatabase();
+  const draft = { id: "active", points: [], startedAt: 123 };
+  db.records.drafts.set("active", draft);
+  db.failNext = true;
+
+  await assert.rejects(Storage.deleteDraft(db));
+  assert.equal(db.records.drafts.get("active"), draft);
+  await assert.rejects(Storage.createDraft(db, { id: "active", points: [], startedAt: 456 }));
+  assert.equal(db.records.drafts.get("active"), draft);
+});
