@@ -138,7 +138,7 @@
     requestAnimationFrame(() => {
       if (requestId !== locateRequestId) return;
       map.invalidateSize({ pan: false });
-      map.setView([point.lat, point.lng], 16, { animate: false });
+      map.setView([point.lat, point.lng], map.getZoom(), { animate: false });
       updateLocationMarker(point);
       reportMapDiagnostics("locate", point);
     });
@@ -292,9 +292,9 @@
     }
   };
   const startWalk = async () => {
-    positionFilter.reset();
     if (!navigator.geolocation) { say("Этот браузер не поддерживает геолокацию."); return; }
     if (!storageReady || !draftResolved || starting || recordingActive || finishing) return;
+    positionFilter.reset();
     starting = true; setRecording(false);
     locateRequestId += 1;
     const newStartedAt = Date.now();
