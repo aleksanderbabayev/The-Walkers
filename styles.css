@@ -105,6 +105,9 @@ main {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+#start[hidden],
+#finish[hidden],
+#abandonWalk[hidden] { display: none; }
 .actions #start {
   --action-shadow: #174b9b;
   background: linear-gradient(180deg, #4389ed 0%, #2868c3 100%);
