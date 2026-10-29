@@ -3,3 +3,22 @@
 
 .actions.single-action{grid-template-columns:minmax(0,1fr)}
 .actions.single-action button{grid-column:1/-1;width:100%}
+
+@media(max-width:760px){
+  main{height:calc(100vh - 64px);min-height:0;padding:8px 12px;gap:8px}
+  #map{height:32vh;min-height:190px;flex:0 0 32vh}
+  .panel{flex:1;min-height:0;padding:14px}
+  .status{padding-bottom:12px}
+  .actions{padding:12px 0 8px}
+  .actions button{height:52px}
+  #message{min-height:0}
+  .saved{flex:1;min-height:0;max-height:none}
+  footer{display:none}
+}
+
+@supports(height:100dvh){
+  @media(max-width:760px){
+    main{height:calc(100dvh - 64px)}
+    #map{height:clamp(190px,32dvh,320px);flex-basis:clamp(190px,32dvh,320px)}
+  }
+}
