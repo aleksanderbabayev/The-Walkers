@@ -6,6 +6,7 @@ Follow the project requirements and constraints in [`CODEX_INSTRUCTIONS.md`](COD
 
 - Prioritize clean, readable, maintainable code. Follow KISS and YAGNI.
 - Keep changes focused on the requested task.
+- For every application change, automatically update the `app-version` value in `index.html`; use semantic versioning and increment the patch number for small fixes and changes.
 - Run relevant checks before committing.
 - After successful checks, automatically create a Git commit with a concise, descriptive message.
 - Automatically push commits to `origin main`.
