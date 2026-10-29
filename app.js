@@ -96,7 +96,7 @@
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
 
-  let db, watchId = null, points = [], currentLine = null, savedLayers = [], saveTimer = null, stopwatchTimer = null, startedAt = null;
+  let db, watchId = null, points = [], distanceMetersTotal = 0, currentLine = null, savedLayers = [], saveTimer = null, stopwatchTimer = null, startedAt = null;
   const openDb = () => new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
@@ -128,6 +128,9 @@
     const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
     return 2 * radius * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
   };
+  const distanceForPoints = (walkPoints) => walkPoints.slice(1).reduce((total, point, index) => total + distanceMeters(walkPoints[index], point), 0);
+  const formatKilometers = (meters) => `${(Math.max(0, meters) / 1000).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} км`;
+  const durationOfWalk = (walk) => Number.isFinite(walk.durationMs) ? Math.max(0, walk.durationMs) : Math.max(0, (walk.finishedAt || 0) - (walk.startedAt || 0));
   const say = (message) => { $("message").textContent = message; };
   const formatElapsed = (milliseconds) => {
     const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
@@ -139,6 +142,7 @@
   const updateStopwatch = (at = Date.now()) => {
     if (startedAt !== null) $("elapsed").textContent = formatElapsed(at - startedAt);
   };
+  const updateDistance = () => { $("distance").textContent = formatKilometers(distanceMetersTotal); };
   const startStopwatch = () => {
     clearInterval(stopwatchTimer);
     updateStopwatch();
@@ -168,6 +172,10 @@
     savedLayers = [];
     const walks = await dbRequest("walks", "readonly", (store) => store.getAll());
     walks.sort((a, b) => b.finishedAt - a.finishedAt);
+    const totalDistance = walks.reduce((total, walk) => total + (Number.isFinite(walk.distanceMeters) ? Math.max(0, walk.distanceMeters) : distanceForPoints(walk.points || [])), 0);
+    const totalDuration = walks.reduce((total, walk) => total + durationOfWalk(walk), 0);
+    $("totalDistance").textContent = formatKilometers(totalDistance);
+    $("totalDuration").textContent = formatElapsed(totalDuration);
     $("count").textContent = walks.length;
     $("walkCountToggle").textContent = walks.length;
     const list = $("routes");
@@ -185,7 +193,8 @@
       const icon = document.createElement("span"); icon.className = "routeIcon"; icon.textContent = walk.closed ? "⬟" : "↗";
       const details = document.createElement("div");
       const title = document.createElement("strong"); title.textContent = `${walk.closed ? "Захваченная территория" : "Маршрут"} ${walks.length - index}`;
-      const meta = document.createElement("small"); meta.textContent = `${new Date(walk.finishedAt).toLocaleString("ru-RU", { dateStyle: "medium", timeStyle: "short" })} · ${walk.points.length} точек`;
+      const distance = Number.isFinite(walk.distanceMeters) ? Math.max(0, walk.distanceMeters) : distanceForPoints(walk.points || []);
+      const meta = document.createElement("small"); meta.textContent = `${new Date(walk.finishedAt).toLocaleString("ru-RU", { dateStyle: "medium", timeStyle: "short" })} · ${formatElapsed(durationOfWalk(walk))} · ${formatKilometers(distance)} · ${walk.points.length} точек`;
       details.append(title, meta); row.append(icon, details); list.append(row);
     });
     if (!points.length) {
@@ -196,7 +205,8 @@
   const receivePosition = async (position) => {
     const point = { lat: position.coords.latitude, lng: position.coords.longitude, accuracy: position.coords.accuracy, timestamp: position.timestamp };
     if (points.length && distanceMeters(points.at(-1), point) < 4) return;
-    points.push(point); drawCurrent();
+    if (points.length) distanceMetersTotal += distanceMeters(points.at(-1), point);
+    points.push(point); drawCurrent(); updateDistance();
     $("gps").textContent = `±${Math.round(point.accuracy)} м`;
     try { await saveDraft(); } catch { say("Не удалось сохранить точку локально."); }
   };
@@ -206,7 +216,7 @@
   };
   const startWalk = async () => {
     if (!navigator.geolocation) { say("Этот браузер не поддерживает геолокацию."); return; }
-    points = []; startedAt = Date.now(); startStopwatch(); say("Ожидаем GPS-сигнал…"); setRecording(true);
+    points = []; distanceMetersTotal = 0; updateDistance(); startedAt = Date.now(); startStopwatch(); say("Ожидаем GPS-сигнал…"); setRecording(true);
     try {
       await saveDraft();
       watchId = navigator.geolocation.watchPosition(receivePosition, onLocationError, { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 });
@@ -223,9 +233,9 @@
       if (points.length < 2) { say("Пока недостаточно GPS-точек. Черновик сохранён."); setRecording(false); return; }
       const gap = distanceMeters(points[0], points.at(-1));
       const closed = points.length >= MIN_POINTS && gap <= CLOSE_METERS;
-      const walk = { id: crypto.randomUUID(), points, startedAt, finishedAt, durationMs: finishedAt - startedAt, closed };
+      const walk = { id: crypto.randomUUID(), points, startedAt, finishedAt, durationMs: finishedAt - startedAt, distanceMeters: distanceMetersTotal, closed };
       await saveWalkAndDeleteDraft(walk);
-      points = [];
+      points = []; distanceMetersTotal = 0; updateDistance();
       if (currentLine) { map.removeLayer(currentLine); currentLine = null; }
       say(closed ? `Маршрут замкнут, территория закрашена (разрыв ${Math.round(gap)} м).` : `Маршрут сохранён как линия (разрыв ${Math.round(gap)} м).`);
       setRecording(false); await redrawSaved();
@@ -249,7 +259,7 @@
             say("Геолокация недоступна в этом браузере. Черновик сохранён для восстановления в другом браузере.");
             return;
           }
-          points = draft.points; startedAt = draft.startedAt; drawCurrent();
+          points = draft.points; distanceMetersTotal = distanceForPoints(points); updateDistance(); startedAt = draft.startedAt; drawCurrent();
           map.setView([points.at(-1).lat, points.at(-1).lng], 16); setRecording(true);
           startStopwatch();
           watchId = navigator.geolocation.watchPosition(receivePosition, onLocationError, { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 });

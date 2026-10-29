@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.1.19">
+  <meta name="app-version" content="0.1.20">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=0.1.19">
+  <link rel="stylesheet" href="styles.css?v=0.1.20">
 </head>
 <body>
   <header>
@@ -28,6 +28,7 @@
         <div><b id="statusTitle">Готовы к прогулке?</b><small id="statusText">Нажмите «Начать захват территории», чтобы записать маршрут</small></div>
         <div class="stopwatch" aria-label="Время прогулки">
           <b id="elapsed">00:00:00</b>
+          <small id="distance">0,00 км</small>
           <small class="gps" id="gps">GPS</small>
         </div>
       </div>
@@ -37,6 +38,7 @@
       <section id="walksDrawer" class="saved" aria-hidden="false">
         <div class="drawerHandle" aria-hidden="true"></div>
         <div class="savedHead"><b>Мои прогулки</b><span id="count">0</span><button id="walksClose" class="walksClose" type="button" aria-label="Закрыть список прогулок">×</button></div>
+        <div class="walkSummary"><span>Всего пройдено<b id="totalDistance">0,00 км</b></span><span>Общее время<b id="totalDuration">00:00:00</b></span></div>
         <div id="routes"><p class="empty">Здесь появятся ваши маршруты и территории</p></div>
       </section>
     </section>
@@ -44,6 +46,6 @@
   <button id="walksBackdrop" class="drawerBackdrop" type="button" aria-label="Закрыть список прогулок" hidden></button>
   <footer>Карта © OpenStreetMap · Маршруты хранятся на этом устройстве</footer>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=0.1.19"></script>
+  <script src="app.js?v=0.1.20"></script>
 </body>
 </html>

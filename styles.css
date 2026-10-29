@@ -6,6 +6,10 @@
 .actions .capture-button{background:#b83d32;color:#fff;box-shadow:0 4px 0 #812a23,0 7px 16px #812a2333;font-weight:750;letter-spacing:.1px}
 .actions .capture-button:active{transform:translateY(2px);box-shadow:0 2px 0 #812a23,0 4px 10px #812a2333}
 .actions .capture-button:disabled{opacity:.48;box-shadow:none}
+.walkSummary{display:flex;justify-content:space-between;gap:12px;margin:0 0 10px;padding:10px 12px;border-radius:14px;background:#f3f6f0;color:#738073;font-size:11px}
+.walkSummary span{display:flex;flex-direction:column;gap:3px}
+.walkSummary span:last-child{text-align:right}
+.walkSummary b{color:#26372a;font-size:13px;font-variant-numeric:tabular-nums}
 
 @media(max-width:760px){
   main{height:calc(100vh - 64px);min-height:0;padding:8px 12px;gap:8px}
