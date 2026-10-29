@@ -54,11 +54,12 @@
       document.documentElement.style.removeProperty("--visible-viewport-height");
       return;
     }
-    const visibleHeight = window.visualViewport?.height || window.innerHeight;
+    const visibleHeight = Math.round(window.visualViewport?.height || window.innerHeight);
     document.documentElement.style.setProperty("--visible-viewport-height", `${visibleHeight}px`);
   };
   syncMobileViewportHeight();
   window.visualViewport?.addEventListener("resize", syncMobileViewportHeight);
+  window.visualViewport?.addEventListener("scroll", syncMobileViewportHeight);
   window.addEventListener("resize", syncMobileViewportHeight);
   let previousMobileViewport = isMobileViewport();
   const setWalksDrawerOpen = (open, returnFocus = false) => {
