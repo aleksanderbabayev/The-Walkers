@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.1.10">
+  <meta name="app-version" content="0.1.11">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=0.1.10">
+  <link rel="stylesheet" href="styles.css?v=0.1.11">
 </head>
 <body>
   <header>
@@ -31,11 +31,17 @@
       </div>
       <div class="actions single-action"><button id="start" class="primary" type="button">Начать захват территории</button><button id="finish" class="secondary" type="button" hidden disabled>Захватить территорию</button></div>
       <div id="message" role="status" aria-live="polite"></div>
-      <section class="saved"><div class="savedHead"><b>Мои прогулки</b><span id="count">0</span></div><div id="routes"><p class="empty">Здесь появятся ваши маршруты и территории</p></div></section>
+      <button id="walksToggle" class="walksToggle" type="button" aria-expanded="false" aria-controls="walksDrawer"><span>Мои прогулки</span><span id="walkCountToggle" class="walkCount">0</span><span class="walksChevron" aria-hidden="true">⌃</span></button>
+      <section id="walksDrawer" class="saved" aria-hidden="false">
+        <div class="drawerHandle" aria-hidden="true"></div>
+        <div class="savedHead"><b>Мои прогулки</b><span id="count">0</span><button id="walksClose" class="walksClose" type="button" aria-label="Закрыть список прогулок">×</button></div>
+        <div id="routes"><p class="empty">Здесь появятся ваши маршруты и территории</p></div>
+      </section>
     </section>
   </main>
+  <button id="walksBackdrop" class="drawerBackdrop" type="button" aria-label="Закрыть список прогулок" hidden></button>
   <footer>Карта © OpenStreetMap · Маршруты хранятся на этом устройстве</footer>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=0.1.10"></script>
+  <script src="app.js?v=0.1.11"></script>
 </body>
 </html>

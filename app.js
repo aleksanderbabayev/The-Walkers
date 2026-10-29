@@ -48,6 +48,31 @@
     else await startBackgroundMusic().catch(() => {});
     updateMusicButton();
   });
+  const isMobileViewport = () => window.matchMedia("(max-width: 760px)").matches;
+  let previousMobileViewport = isMobileViewport();
+  const setWalksDrawerOpen = (open, returnFocus = false) => {
+    const drawerOpen = open && isMobileViewport();
+    document.body.classList.toggle("walks-open", drawerOpen);
+    $("walksToggle").setAttribute("aria-expanded", String(drawerOpen));
+    $("walksDrawer").setAttribute("aria-hidden", String(isMobileViewport() && !drawerOpen));
+    $("walksBackdrop").hidden = !drawerOpen;
+    if (drawerOpen) $("walksClose").focus();
+    else if (returnFocus) $("walksToggle").focus();
+  };
+  setWalksDrawerOpen(false);
+  $("walksToggle").addEventListener("click", () => setWalksDrawerOpen(!document.body.classList.contains("walks-open")));
+  $("walksClose").addEventListener("click", () => setWalksDrawerOpen(false, true));
+  $("walksBackdrop").addEventListener("click", () => setWalksDrawerOpen(false, true));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && document.body.classList.contains("walks-open")) setWalksDrawerOpen(false, true);
+  });
+  window.addEventListener("resize", () => {
+    const mobileViewport = isMobileViewport();
+    if (mobileViewport !== previousMobileViewport) {
+      previousMobileViewport = mobileViewport;
+      setWalksDrawerOpen(false);
+    }
+  });
   const map = L.map("map", { zoomControl: false }).setView([48.998, 21.239], 14);
   L.control.zoom({ position: "bottomright" }).addTo(map);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -128,6 +153,7 @@
     const walks = await dbRequest("walks", "readonly", (store) => store.getAll());
     walks.sort((a, b) => b.finishedAt - a.finishedAt);
     $("count").textContent = walks.length;
+    $("walkCountToggle").textContent = walks.length;
     const list = $("routes");
     list.replaceChildren();
     if (!walks.length) {
