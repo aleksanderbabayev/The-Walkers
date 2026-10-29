@@ -77,6 +77,47 @@ test("reset discards an unconfirmed post-gap GPS candidate", () => {
   assert.equal(next.reason, "confirm");
 });
 
+test("GPS warm-up accepts the latest of three fresh consistent positions", () => {
+  const warmup = Tracking.createGpsWarmup();
+  const first = warmup.add(position(48.9, 21.2, now - 2000, 6), now - 2000);
+  const second = warmup.add(position(48.90001, 21.2, now - 1000, 5), now - 1000);
+  const third = warmup.add(position(48.90002, 21.2, now, 5), now);
+
+  assert.equal(first.stable, false);
+  assert.equal(second.stable, false);
+  assert.equal(third.stable, true);
+  assert.equal(third.count, 3);
+  assert.equal(third.point.lat, 48.90002);
+  assert.equal(third.point.lng, 21.2);
+});
+
+test("GPS warm-up restarts its consecutive count for inaccurate and inconsistent fixes", () => {
+  const metersInLongitude = (meters) => meters / 111320;
+  const warmup = Tracking.createGpsWarmup();
+  assert.equal(warmup.add(position(0, 0, now - 3000, 5), now - 3000).count, 1);
+  assert.equal(warmup.add(position(0, 0.00001, now - 2000, 36), now - 2000).reason, "accuracy");
+  assert.equal(warmup.add(position(0, metersInLongitude(40), now - 1000, 5), now - 1000).count, 1);
+  const afterJump = warmup.add(position(0, metersInLongitude(42), now, 5), now);
+  assert.equal(afterJump.stable, false);
+  assert.equal(afterJump.count, 2);
+  const stable = warmup.add(position(0, metersInLongitude(44), now + 1000, 5), now + 1000);
+  assert.equal(stable.stable, true);
+  assert.equal(stable.point.lng, metersInLongitude(44));
+});
+
+test("GPS warm-up restarts after an interrupted sequence", () => {
+  const warmup = Tracking.createGpsWarmup();
+  const start = now - 60000;
+  assert.equal(warmup.add(position(0, 0, start, 5), start).count, 1);
+  const resumed = warmup.add(position(0, 0.00001, start + 31000, 5), start + 31000);
+  assert.equal(resumed.stable, false);
+  assert.equal(resumed.count, 1);
+  assert.equal(warmup.add(position(0, 0.00002, start + 32000, 5), start + 32000).count, 2);
+  const stable = warmup.add(position(0, 0.00003, start + 33000, 5), start + 33000);
+  assert.equal(stable.stable, true);
+  assert.equal(stable.point.lng, 0.00003);
+});
+
 test("accumulates realistic short walking movements without stationary GPS drift", () => {
   const metersInLongitude = (meters) => meters / 111320;
   let previous = point(0, 0, now - 8000, true);

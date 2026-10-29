@@ -81,6 +81,34 @@
     };
   };
 
+  const createGpsWarmup = (requiredPositions = 3, options = DEFAULTS) => {
+    const config = { ...DEFAULTS, ...options };
+    let positions = [];
+    const add = (position, now = Date.now()) => {
+      const validation = evaluatePosition(position, null, now, config);
+      if (!validation.accepted) {
+        positions = [];
+        return { stable: false, count: 0, reason: validation.reason };
+      }
+
+      const point = validation.point;
+      const previous = positions.at(-1);
+      if (previous) {
+        const elapsedMs = point.timestamp - previous.timestamp;
+        const movedFromStart = distanceMeters(positions[0], point);
+        const stepDistance = distanceMeters(previous, point);
+        const interrupted = elapsedMs <= 0 || elapsedMs > config.maxGapMs;
+        const inconsistent = movedFromStart > config.maxDriftMeters || stepDistance / (elapsedMs / 1000) > config.maxSpeedMetersPerSecond;
+        if (interrupted || inconsistent) positions = [];
+      }
+
+      positions.push(point);
+      const stable = positions.length >= requiredPositions;
+      return { stable, count: positions.length, point: stable ? point : null, reason: stable ? "stable" : "warming" };
+    };
+    return { add, reset: () => { positions = []; } };
+  };
+
   const splitSegments = (points = []) => {
     const segments = [];
     for (const point of points) {
@@ -126,5 +154,5 @@
     return { start, stop };
   };
 
-  return { DEFAULTS, distanceMeters, evaluatePosition, createPositionFilter, splitSegments, distanceForPoints, canCloseTrack, createGpsServices };
+  return { DEFAULTS, distanceMeters, evaluatePosition, createPositionFilter, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, createGpsServices };
 });

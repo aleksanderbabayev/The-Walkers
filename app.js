@@ -98,9 +98,10 @@
   }).addTo(map);
 
   let db, storageReady = false, draftResolved = false, starting = false, finishing = false;
-  let recordingActive = false, points = [], distanceMetersTotal = 0, currentLines = [], savedLayers = [], stopwatchTimer = null, startedAt = null;
+  let recordingActive = false, warmingUp = false, points = [], distanceMetersTotal = 0, currentLines = [], savedLayers = [], stopwatchTimer = null, startedAt = null;
   let trackingQueue = Promise.resolve(), pendingLocateRequestId = null;
   const positionFilter = Tracking.createPositionFilter();
+  const gpsWarmup = Tracking.createGpsWarmup();
   let currentLocationMarker = null;
   const mapDiagnosticsEnabled = new URLSearchParams(window.location.search).get("mapDebug") === "1";
   const updateLocationMarker = (point) => {
@@ -180,11 +181,12 @@
   };
   const setRecording = (active) => {
     recordingActive = active;
+    const inProgress = active || warmingUp;
     document.querySelector(".status").classList.toggle("recording", active);
-    $("statusTitle").textContent = active ? "Идёт захват территории" : "Готовы к прогулке?";
-    $("statusText").textContent = active ? "Точки сохраняются на устройстве" : "Нажмите «Начать захват территории», чтобы записать маршрут";
-    $("start").disabled = active || !storageReady || !draftResolved || starting || finishing;
-    $("start").hidden = active;
+    $("statusTitle").textContent = active ? "Идёт захват территории" : warmingUp ? "Стабилизация GPS" : "Готовы к прогулке?";
+    $("statusText").textContent = active ? "Точки сохраняются на устройстве" : warmingUp ? "Стабилизация GPS. Подождите перед началом движения…" : "Нажмите «Начать захват территории», чтобы записать маршрут";
+    $("start").disabled = inProgress || !storageReady || !draftResolved || starting || finishing;
+    $("start").hidden = inProgress;
     $("finish").disabled = !active || finishing;
     $("finish").hidden = !active;
   };
@@ -237,7 +239,28 @@
     }
   };
   const processPosition = async (position) => {
-    if (!recordingActive || finishing) return;
+    if (finishing) return;
+    if (warmingUp) {
+      const warmup = gpsWarmup.add(position, Date.now());
+      if (!warmup.stable) {
+        if (warmup.reason === "accuracy") say(`GPS неточный (±${Math.round(position.coords.accuracy)} м). Стабилизируем сигнал…`);
+        else if (warmup.reason === "stale") say("GPS прислал устаревшую точку. Ждём свежий сигнал…");
+        return;
+      }
+
+      const initialPoint = { ...warmup.point, segmentStart: true };
+      gpsWarmup.reset();
+      const recordingStartedAt = Date.now();
+      try { await saveDraftSnapshot([initialPoint], recordingStartedAt); }
+      catch { gpsWarmup.reset(); say("Не удалось сохранить начало прогулки. Продолжаем стабилизацию GPS…"); return; }
+
+      points = [initialPoint]; startedAt = recordingStartedAt; distanceMetersTotal = 0;
+      warmingUp = false; updateDistance(); updateLocationMarker(initialPoint);
+      $("gps").textContent = `±${Math.round(initialPoint.accuracy)} м`;
+      setRecording(true); startStopwatch(); say("GPS готов. Можно идти!");
+      return;
+    }
+    if (!recordingActive) return;
     const result = positionFilter.evaluate(position, points.at(-1), Date.now());
     if (!result.accepted) {
       if (Number.isFinite(position.coords?.accuracy)) $("gps").textContent = `±${Math.round(position.coords.accuracy)} м`;
@@ -264,6 +287,13 @@
   };
   const receivePosition = (position) => enqueueTrackingTask(() => processPosition(position));
   const onLocationError = (error) => {
+    if (warmingUp) {
+      gpsWarmup.reset();
+      say(error.code === 1
+        ? "Разрешите доступ к геолокации. Незавершённая прогулка сохранена."
+        : "GPS-сигнал прервался. Стабилизация начнётся заново…");
+      return;
+    }
     const message = error.code === 1 ? "Разрешите доступ к геолокации в настройках браузера." : "Нет GPS-сигнала. Проверьте геолокацию и попробуйте выйти на открытое место.";
     say(message);
   };
@@ -272,7 +302,7 @@
     onPosition: receivePosition,
     onError: onLocationError,
     onAutosave: () => {
-      if (recordingActive && !finishing) enqueueTrackingTask(() => saveDraftSnapshot()).catch(() => say("Не удалось сохранить черновик прогулки."));
+      if ((recordingActive || warmingUp) && !finishing) enqueueTrackingTask(() => saveDraftSnapshot()).catch(() => say("Не удалось сохранить черновик прогулки."));
     },
     intervalMs: AUTOSAVE_MS
   });
@@ -280,6 +310,8 @@
   const stopTrackingServices = () => gpsServices.stop();
   const resumeAfterFinishFailure = (message) => {
     positionFilter.reset();
+    gpsWarmup.reset();
+    warmingUp = false;
     finishing = false;
     try {
       startTrackingServices();
@@ -294,23 +326,26 @@
   const startWalk = async () => {
     if (!navigator.geolocation) { say("Этот браузер не поддерживает геолокацию."); return; }
     if (!storageReady || !draftResolved || starting || recordingActive || finishing) return;
-    positionFilter.reset();
+    positionFilter.reset(); gpsWarmup.reset();
     starting = true; setRecording(false);
     locateRequestId += 1;
     const newStartedAt = Date.now();
     try {
       await WalkStorage.createDraft(db, draftSnapshot([], newStartedAt));
     } catch {
+      gpsWarmup.reset();
       starting = false; draftResolved = false; setRecording(false);
       say("Найдена незавершённая прогулка или хранилище недоступно. Перезагрузите страницу, чтобы восстановить черновик.");
       return;
     }
     points = []; distanceMetersTotal = 0; updateDistance(); startedAt = newStartedAt;
+    warmingUp = true;
     try {
       startTrackingServices();
-      starting = false; setRecording(true); startStopwatch(); say("Ожидаем GPS-сигнал…");
+      starting = false; setRecording(false); say("");
     } catch {
       positionFilter.reset();
+      gpsWarmup.reset(); warmingUp = false;
       stopTrackingServices();
       try { await WalkStorage.deleteDraft(db); draftResolved = true; }
       catch { draftResolved = false; }
@@ -320,7 +355,7 @@
   };
   const finishWalk = async () => {
     if (!recordingActive || finishing) return;
-    positionFilter.reset();
+    positionFilter.reset(); gpsWarmup.reset();
     finishing = true; setRecording(true); stopTrackingServices();
     try {
       await trackingQueue;
@@ -377,9 +412,13 @@
       await redrawSaved();
       storageReady = true;
       if (draft) {
-        positionFilter.reset();
+        positionFilter.reset(); gpsWarmup.reset();
         draftResolved = false;
-        const resume = confirm("Найдена незавершённая прогулка. Продолжить запись?");
+        const draftPoints = Array.isArray(draft.points) ? draft.points : [];
+        const wasWarmingUp = draftPoints.length === 0;
+        const resume = confirm(wasWarmingUp
+          ? "Найдена незавершённая стабилизация GPS. Продолжить?"
+          : "Найдена незавершённая прогулка. Продолжить запись?");
         if (resume) {
           if (!navigator.geolocation) {
             say("Геолокация недоступна в этом браузере. Черновик сохранён для восстановления в другом браузере.");
@@ -387,18 +426,20 @@
             return;
           }
           locateRequestId += 1;
-          points = Array.isArray(draft.points) ? draft.points : [];
+          points = draftPoints;
           distanceMetersTotal = distanceForPoints(points);
           startedAt = Number.isFinite(draft.startedAt) ? draft.startedAt : Date.now();
+          warmingUp = wasWarmingUp;
           updateDistance(); drawCurrent();
           if (points.length) updateLocationMarker(points.at(-1));
           draftResolved = true;
           try {
             startTrackingServices();
-            setRecording(true); startStopwatch();
-            say("Прогулка восстановлена. Ожидаем свежую GPS-точку…");
+            setRecording(!warmingUp);
+            if (warmingUp) say("");
+            else { startStopwatch(); say("Прогулка восстановлена. Ожидаем свежую GPS-точку…"); }
           } catch {
-            positionFilter.reset();
+            positionFilter.reset(); gpsWarmup.reset(); warmingUp = false;
             stopTrackingServices(); draftResolved = false; setRecording(false);
             say("Черновик сохранён, но GPS не удалось запустить. Перезагрузите страницу, чтобы попробовать снова.");
           }
@@ -412,7 +453,7 @@
       } else draftResolved = true;
       setRecording(recordingActive);
     } catch {
-      positionFilter.reset();
+      positionFilter.reset(); gpsWarmup.reset(); warmingUp = false;
       storageReady = false; draftResolved = false; setRecording(false);
       say("IndexedDB недоступна. Попробуйте открыть приложение в современном браузере по HTTPS.");
     }
