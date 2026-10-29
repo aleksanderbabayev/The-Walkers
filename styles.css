@@ -22,3 +22,6 @@
     #map{height:clamp(190px,32dvh,320px);flex-basis:clamp(190px,32dvh,320px)}
   }
 }
+
+.headerActions{display:flex;align-items:center;gap:12px}
+.soundToggle{width:40px;height:40px;font-size:22px}

@@ -5,6 +5,65 @@
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   $("appVersion").textContent = `Версия ${appVersion}`;
+  const MUSIC_PREFERENCE_KEY = "the-walkers-music-muted";
+  let musicMuted = false, audioContext = null, musicGain = null;
+  try { musicMuted = localStorage.getItem(MUSIC_PREFERENCE_KEY) === "true"; } catch {}
+  const updateMusicButton = () => {
+    const button = $("musicToggle");
+    button.textContent = musicMuted ? "🔇" : "🔊";
+    button.setAttribute("aria-pressed", String(!musicMuted));
+    button.setAttribute("aria-label", musicMuted ? "Включить фоновую музыку" : "Выключить фоновую музыку");
+    button.title = musicMuted ? "Включить фоновую музыку" : "Выключить фоновую музыку";
+  };
+  const startBackgroundMusic = async () => {
+    if (musicMuted) return;
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    if (!audioContext) {
+      audioContext = new AudioContextClass();
+      musicGain = audioContext.createGain();
+      musicGain.gain.value = 0.025;
+      musicGain.connect(audioContext.destination);
+      [130.81, 164.81, 196, 261.63].forEach((frequency, index) => {
+        const tone = audioContext.createOscillator();
+        const volume = audioContext.createGain();
+        tone.type = "sine";
+        tone.frequency.value = frequency;
+        volume.gain.value = 0.16;
+        tone.connect(volume);
+        volume.connect(musicGain);
+        tone.start();
+        const swell = audioContext.createOscillator();
+        const swellDepth = audioContext.createGain();
+        swell.frequency.value = 0.06 + index * 0.015;
+        swellDepth.gain.value = 0.035;
+        swell.connect(swellDepth);
+        swellDepth.connect(volume.gain);
+        swell.start();
+      });
+    }
+    if (audioContext.state === "suspended") await audioContext.resume();
+  };
+  const unlockBackgroundMusic = () => {
+    if (!musicMuted) startBackgroundMusic().catch(() => {});
+    document.removeEventListener("pointerdown", unlockBackgroundMusic, true);
+    document.removeEventListener("keydown", unlockBackgroundMusic, true);
+  };
+  updateMusicButton();
+  startBackgroundMusic().catch(() => {});
+  document.addEventListener("pointerdown", unlockBackgroundMusic, true);
+  document.addEventListener("keydown", unlockBackgroundMusic, true);
+  $("musicToggle").addEventListener("click", async () => {
+    musicMuted = !musicMuted;
+    try { localStorage.setItem(MUSIC_PREFERENCE_KEY, String(musicMuted)); } catch {}
+    updateMusicButton();
+    if (musicGain && audioContext) {
+      const now = audioContext.currentTime;
+      musicGain.gain.cancelScheduledValues(now);
+      musicGain.gain.setTargetAtTime(musicMuted ? 0 : 0.025, now, 0.15);
+    }
+    if (!musicMuted) await startBackgroundMusic().catch(() => {});
+  });
   const map = L.map("map", { zoomControl: false }).setView([48.998, 21.239], 14);
   L.control.zoom({ position: "bottomright" }).addTo(map);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
