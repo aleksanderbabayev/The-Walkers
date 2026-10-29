@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.1.9">
+  <meta name="app-version" content="0.1.10">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=0.1.9">
+  <link rel="stylesheet" href="styles.css?v=0.1.10">
 </head>
 <body>
   <header>
@@ -17,6 +17,7 @@
       <button id="locate" class="icon" type="button" title="Моё местоположение" aria-label="Моё местоположение">◎</button>
     </div>
   </header>
+  <audio id="backgroundMusic" src="assets/audio/chest_of_adventure.mp3" preload="none" loop aria-hidden="true"></audio>
   <main>
     <section id="map" aria-label="Карта"></section>
     <section class="panel">
@@ -35,6 +36,6 @@
   </main>
   <footer>Карта © OpenStreetMap · Маршруты хранятся на этом устройстве</footer>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=0.1.9"></script>
+  <script src="app.js?v=0.1.10"></script>
 </body>
 </html>

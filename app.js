@@ -6,11 +6,13 @@
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   $("appVersion").textContent = `Версия ${appVersion}`;
   const MUSIC_PREFERENCE_KEY = "the-walkers-music-muted";
-  let musicMuted = false, audioContext = null, musicGain = null;
+  const backgroundMusic = $("backgroundMusic");
+  let musicMuted = false;
   try { musicMuted = localStorage.getItem(MUSIC_PREFERENCE_KEY) === "true"; } catch {}
+  backgroundMusic.volume = 0.18;
   const updateMusicButton = () => {
     const button = $("musicToggle");
-    const isPlaying = !musicMuted && audioContext?.state === "running";
+    const isPlaying = !musicMuted && !backgroundMusic.paused;
     const label = musicMuted ? "Включить фоновую музыку" : isPlaying ? "Выключить фоновую музыку" : "Запустить фоновую музыку";
     button.textContent = musicMuted ? "🔇" : isPlaying ? "🔊" : "▶️";
     button.setAttribute("aria-pressed", String(isPlaying));
@@ -19,33 +21,7 @@
   };
   const startBackgroundMusic = async () => {
     if (musicMuted) return;
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
-    if (!audioContext) {
-      audioContext = new AudioContextClass();
-      musicGain = audioContext.createGain();
-      musicGain.gain.value = 0.06;
-      musicGain.connect(audioContext.destination);
-      [261.63, 329.63, 392, 523.25].forEach((frequency, index) => {
-        const tone = audioContext.createOscillator();
-        const volume = audioContext.createGain();
-        tone.type = "sine";
-        tone.frequency.value = frequency;
-        volume.gain.value = 0.2;
-        tone.connect(volume);
-        volume.connect(musicGain);
-        tone.start();
-        const swell = audioContext.createOscillator();
-        const swellDepth = audioContext.createGain();
-        swell.frequency.value = 0.06 + index * 0.015;
-        swellDepth.gain.value = 0.03;
-        swell.connect(swellDepth);
-        swellDepth.connect(volume.gain);
-        swell.start();
-      });
-      audioContext.addEventListener("statechange", updateMusicButton);
-    }
-    if (audioContext.state === "suspended") await audioContext.resume();
+    try { await backgroundMusic.play(); } catch {}
     updateMusicButton();
   };
   const unlockBackgroundMusic = (event) => {
@@ -55,24 +31,22 @@
     document.removeEventListener("keydown", unlockBackgroundMusic, true);
   };
   updateMusicButton();
+  backgroundMusic.addEventListener("play", updateMusicButton);
+  backgroundMusic.addEventListener("pause", updateMusicButton);
   startBackgroundMusic().catch(() => {});
   document.addEventListener("pointerdown", unlockBackgroundMusic, true);
   document.addEventListener("keydown", unlockBackgroundMusic, true);
   $("musicToggle").addEventListener("click", async () => {
-    if (!musicMuted && audioContext?.state !== "running") {
+    if (!musicMuted && backgroundMusic.paused) {
       await startBackgroundMusic().catch(() => {});
       updateMusicButton();
       return;
     }
     musicMuted = !musicMuted;
     try { localStorage.setItem(MUSIC_PREFERENCE_KEY, String(musicMuted)); } catch {}
+    if (musicMuted) backgroundMusic.pause();
+    else await startBackgroundMusic().catch(() => {});
     updateMusicButton();
-    if (musicGain && audioContext) {
-      const now = audioContext.currentTime;
-      musicGain.gain.cancelScheduledValues(now);
-      musicGain.gain.setTargetAtTime(musicMuted ? 0 : 0.06, now, 0.15);
-    }
-    if (!musicMuted) await startBackgroundMusic().catch(() => {});
   });
   const map = L.map("map", { zoomControl: false }).setView([48.998, 21.239], 14);
   L.control.zoom({ position: "bottomright" }).addTo(map);
