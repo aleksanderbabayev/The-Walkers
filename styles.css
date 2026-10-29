@@ -3,6 +3,9 @@
 
 .actions.single-action{grid-template-columns:minmax(0,1fr)}
 .actions.single-action button{grid-column:1/-1;width:100%}
+.actions .capture-button{background:#b83d32;color:#fff;box-shadow:0 4px 0 #812a23,0 7px 16px #812a2333;font-weight:750;letter-spacing:.1px}
+.actions .capture-button:active{transform:translateY(2px);box-shadow:0 2px 0 #812a23,0 4px 10px #812a2333}
+.actions .capture-button:disabled{opacity:.48;box-shadow:none}
 
 @media(max-width:760px){
   main{height:calc(100vh - 64px);min-height:0;padding:8px 12px;gap:8px}
