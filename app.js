@@ -70,9 +70,9 @@
     $("statusTitle").textContent = active ? "Идёт захват территории" : "Готовы к прогулке?";
     $("statusText").textContent = active ? "Точки сохраняются на устройстве" : "Нажмите «Начать захват территории», чтобы записать маршрут";
     $("start").disabled = active;
+    $("start").hidden = active;
     $("finish").disabled = !active;
     $("finish").hidden = !active;
-    $(".actions").classList.toggle("single-action", !active);
   };
   const saveDraft = () => dbRequest("drafts", "readwrite", (store) => store.put({ id: "active", points, startedAt, updatedAt: Date.now() }));
   const drawCurrent = () => {

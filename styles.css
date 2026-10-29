@@ -2,4 +2,4 @@
 .stopwatch{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex:none}.stopwatch b{font-size:14px;font-variant-numeric:tabular-nums;letter-spacing:.4px;white-space:nowrap}.stopwatch .gps{margin-left:0}.brandTitle{display:flex;align-items:center;gap:8px}.brandTitle strong{display:inline}.appVersion{padding:3px 7px;border-radius:10px;background:#edf2e8;color:#50634e;font-size:10px;font-weight:650;white-space:nowrap}
 
 .actions.single-action{grid-template-columns:minmax(0,1fr)}
-.actions.single-action #start{grid-column:1/-1;width:100%}
+.actions.single-action button{grid-column:1/-1;width:100%}
