@@ -32,17 +32,17 @@
 
 @media(max-width:760px){
   html,body{height:100%;overflow:hidden}
-  body{height:100vh;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+  body{height:100vh;min-height:0;display:flex;flex-direction:column;overflow:hidden;overscroll-behavior:none}
   header{height:64px;flex:0 0 64px}
-  main{flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,50vh) minmax(0,1fr);width:100%;height:auto;min-height:0;margin:0;padding:8px 12px;gap:8px}
+  main{flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,1fr);width:100%;height:auto;min-height:0;margin:0;padding:8px 12px;gap:8px}
   #map{height:auto;min-height:0;flex:none;border-radius:20px}
-  .panel{flex:none;min-height:0;padding:12px 14px;overflow:visible}
-  .status{padding-bottom:8px;gap:8px}
+  .panel{min-height:0;padding:10px 14px;overflow:visible}
+  .status{padding-bottom:6px;gap:8px}
   .status small{font-size:11px;line-height:1.25}
-  .actions{padding:8px 0 6px}
-  .actions button{height:auto;min-height:48px;padding:8px 12px;line-height:1.15}
+  .actions{padding:6px 0 4px}
+  .actions button{height:auto;min-height:44px;padding:6px 12px;line-height:1.15}
   #message{min-height:0;max-height:1.4em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .walksToggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;height:44px;flex:none;margin-top:auto;padding:0 14px;border:0;border-radius:14px;background:#edf2e8;color:#26372a;font:inherit;font-weight:650;text-align:left}
+  .walksToggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;height:40px;min-height:40px;flex:none;margin-top:8px;padding:0 14px;border:0;border-radius:14px;background:#edf2e8;color:#26372a;font:inherit;font-weight:650;text-align:left}
   .walksToggle>span:first-child{margin-right:auto}
   .saved{position:fixed;z-index:1301;left:0;right:0;bottom:0;height:min(72vh,640px);max-height:82vh;margin:0;padding:8px 18px calc(12px + env(safe-area-inset-bottom));display:flex;flex-direction:column;overflow:hidden;border:1px solid #e9ece6;border-radius:24px 24px 0 0;background:#fff;box-shadow:0 -12px 36px #25362424;transform:translateY(105%);visibility:hidden;transition:transform .25s ease,visibility .25s ease}
   body.walks-open .saved{transform:translateY(0);visibility:visible}
@@ -58,8 +58,15 @@
 @supports(height:100dvh){
   @media(max-width:760px){
     body{height:100dvh}
-    main{grid-template-rows:minmax(0,50dvh) minmax(0,1fr)}
+    main{grid-template-rows:minmax(190px,1fr) minmax(0,1fr)}
     .saved{height:min(72dvh,640px);max-height:82dvh}
+  }
+}
+
+@supports(height:100svh){
+  @media(max-width:760px){
+    body{height:100svh}
+    main{grid-template-rows:minmax(190px,1fr) minmax(0,1fr)}
   }
 }
 
