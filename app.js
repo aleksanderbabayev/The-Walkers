@@ -97,6 +97,48 @@
   }).addTo(map);
 
   let db, watchId = null, recordingActive = false, points = [], distanceMetersTotal = 0, currentLine = null, savedLayers = [], saveTimer = null, stopwatchTimer = null, startedAt = null;
+  let currentLocationMarker = null;
+  const mapDiagnosticsEnabled = new URLSearchParams(window.location.search).get("mapDebug") === "1";
+  const updateLocationMarker = (point) => {
+    const latlng = [point.lat, point.lng];
+    if (currentLocationMarker) currentLocationMarker.setLatLng(latlng);
+    else currentLocationMarker = L.circleMarker(latlng, { radius: 8, color: "#fff", weight: 3, fillColor: "#2877df", fillOpacity: 1 }).addTo(map);
+  };
+  const reportMapDiagnostics = (reason, point) => {
+    if (!mapDiagnosticsEnabled) return;
+    const center = map.getCenter(), size = map.getSize(), rect = map.getContainer().getBoundingClientRect();
+    console.info("[The Walkers map]", {
+      reason,
+      requestedCenterErrorMeters: point ? Math.round(distanceMeters(point, { lat: center.lat, lng: center.lng })) : null,
+      leafletSize: { width: size.x, height: size.y },
+      containerSize: { width: Math.round(rect.width), height: Math.round(rect.height) },
+      visualViewport: { width: window.visualViewport?.width, height: window.visualViewport?.height }
+    });
+  };
+  const refreshMapLayout = () => {
+    if (document.visibilityState === "hidden") return;
+    syncMobileViewportHeight();
+    requestAnimationFrame(() => {
+      map.invalidateSize({ pan: false });
+      reportMapDiagnostics("layout-refresh", null);
+    });
+  };
+  document.addEventListener("visibilitychange", refreshMapLayout);
+  window.addEventListener("pageshow", refreshMapLayout);
+  window.addEventListener("focus", refreshMapLayout);
+  window.visualViewport?.addEventListener("resize", refreshMapLayout);
+  const mapResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(refreshMapLayout);
+  mapResizeObserver?.observe(map.getContainer());
+  const centerMapOnPosition = (point, requestId) => {
+    syncMobileViewportHeight();
+    requestAnimationFrame(() => {
+      if (requestId !== locateRequestId) return;
+      map.invalidateSize({ pan: false });
+      map.setView([point.lat, point.lng], 16, { animate: false });
+      updateLocationMarker(point);
+      reportMapDiagnostics("locate", point);
+    });
+  };
   const openDb = () => new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
@@ -207,7 +249,7 @@
     const point = { lat: position.coords.latitude, lng: position.coords.longitude, accuracy: position.coords.accuracy, timestamp: position.timestamp };
     if (points.length && distanceMeters(points.at(-1), point) < 4) return;
     if (points.length) distanceMetersTotal += distanceMeters(points.at(-1), point);
-    points.push(point); drawCurrent(); updateDistance();
+    points.push(point); drawCurrent(); updateDistance(); updateLocationMarker(point);
     $("gps").textContent = `±${Math.round(point.accuracy)} м`;
     try { await saveDraft(); } catch { say("Не удалось сохранить точку локально."); }
   };
@@ -252,7 +294,7 @@
       const latestRoutePoint = points.at(-1);
       if (!latestRoutePoint) return say("Ожидаем первую GPS-точку маршрута.");
       if (latestRoutePoint.accuracy > 50) return say(`Последняя GPS-точка неточная (±${Math.round(latestRoutePoint.accuracy)} м).`);
-      map.setView([latestRoutePoint.lat, latestRoutePoint.lng], 16);
+      centerMapOnPosition(latestRoutePoint, requestId);
       return;
     }
     if (!navigator.geolocation) return say("Геолокация недоступна в этом браузере.");
@@ -261,7 +303,7 @@
       if (requestId !== locateRequestId) return;
       const { latitude, longitude, accuracy } = position.coords;
       if (accuracy > 50) return say(`GPS пока неточный (±${Math.round(accuracy)} м). Карта не перемещена.`);
-      map.setView([latitude, longitude], 16);
+      centerMapOnPosition({ lat: latitude, lng: longitude, accuracy }, requestId);
       say("");
     }, (error) => {
       if (requestId === locateRequestId) onLocationError(error);
@@ -280,7 +322,7 @@
             return;
           }
           locateRequestId += 1;
-          points = draft.points; distanceMetersTotal = distanceForPoints(points); updateDistance(); startedAt = draft.startedAt; drawCurrent();
+          points = draft.points; distanceMetersTotal = distanceForPoints(points); updateDistance(); startedAt = draft.startedAt; drawCurrent(); updateLocationMarker(points.at(-1));
           map.setView([points.at(-1).lat, points.at(-1).lng], 16); setRecording(true);
           startStopwatch();
           watchId = navigator.geolocation.watchPosition(receivePosition, onLocationError, { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 });
