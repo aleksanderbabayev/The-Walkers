@@ -96,7 +96,7 @@
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
 
-  let db, watchId = null, points = [], distanceMetersTotal = 0, currentLine = null, savedLayers = [], saveTimer = null, stopwatchTimer = null, startedAt = null;
+  let db, watchId = null, recordingActive = false, points = [], distanceMetersTotal = 0, currentLine = null, savedLayers = [], saveTimer = null, stopwatchTimer = null, startedAt = null;
   const openDb = () => new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
@@ -154,6 +154,7 @@
     stopwatchTimer = null;
   };
   const setRecording = (active) => {
+    recordingActive = active;
     document.querySelector(".status").classList.toggle("recording", active);
     $("statusTitle").textContent = active ? "Идёт захват территории" : "Готовы к прогулке?";
     $("statusText").textContent = active ? "Точки сохраняются на устройстве" : "Нажмите «Начать захват территории», чтобы записать маршрут";
@@ -216,6 +217,7 @@
   };
   const startWalk = async () => {
     if (!navigator.geolocation) { say("Этот браузер не поддерживает геолокацию."); return; }
+    locateRequestId += 1;
     points = []; distanceMetersTotal = 0; updateDistance(); startedAt = Date.now(); startStopwatch(); say("Ожидаем GPS-сигнал…"); setRecording(true);
     try {
       await saveDraft();
@@ -243,9 +245,27 @@
   };
   $("start").addEventListener("click", startWalk);
   $("finish").addEventListener("click", finishWalk);
+  let locateRequestId = 0;
   $("locate").addEventListener("click", () => {
+    const requestId = ++locateRequestId;
+    if (recordingActive) {
+      const latestRoutePoint = points.at(-1);
+      if (!latestRoutePoint) return say("Ожидаем первую GPS-точку маршрута.");
+      if (latestRoutePoint.accuracy > 50) return say(`Последняя GPS-точка неточная (±${Math.round(latestRoutePoint.accuracy)} м).`);
+      map.setView([latestRoutePoint.lat, latestRoutePoint.lng], 16);
+      return;
+    }
     if (!navigator.geolocation) return say("Геолокация недоступна в этом браузере.");
-    navigator.geolocation.getCurrentPosition((position) => map.setView([position.coords.latitude, position.coords.longitude], 16), onLocationError, { enableHighAccuracy: true, timeout: 15000 });
+    say("Определяем точное местоположение…");
+    navigator.geolocation.getCurrentPosition((position) => {
+      if (requestId !== locateRequestId) return;
+      const { latitude, longitude, accuracy } = position.coords;
+      if (accuracy > 50) return say(`GPS пока неточный (±${Math.round(accuracy)} м). Карта не перемещена.`);
+      map.setView([latitude, longitude], 16);
+      say("");
+    }, (error) => {
+      if (requestId === locateRequestId) onLocationError(error);
+    }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
   });
   (async () => {
     try {
@@ -259,6 +279,7 @@
             say("Геолокация недоступна в этом браузере. Черновик сохранён для восстановления в другом браузере.");
             return;
           }
+          locateRequestId += 1;
           points = draft.points; distanceMetersTotal = distanceForPoints(points); updateDistance(); startedAt = draft.startedAt; drawCurrent();
           map.setView([points.at(-1).lat, points.at(-1).lng], 16); setRecording(true);
           startStopwatch();
