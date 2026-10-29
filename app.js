@@ -188,7 +188,7 @@
     $("start").disabled = inProgress || !storageReady || !draftResolved || starting || finishing;
     $("start").hidden = inProgress;
     $("abandonWalk").hidden = !(active || warmingUp);
-    $("abandonWalk").textContent = warmingUp ? "Отмена" : "Отступить";
+    $("abandonLabel").textContent = warmingUp ? "Отмена" : "Отступить";
     $("abandonWalk").disabled = cancelling || finishing;
     $("finish").disabled = !active || finishing;
     $("finish").hidden = !active;
