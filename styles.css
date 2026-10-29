@@ -72,3 +72,13 @@
   .actions button{min-height:44px}
   .walksToggle{height:40px}
 }
+
+.mapFrame{position:relative;min-width:0;min-height:420px}
+#map{width:100%;height:100%;min-height:420px}
+.mapLocate{position:absolute;z-index:1000;top:10px;left:10px;width:40px;height:40px;display:grid;place-items:center;padding:0;border:2px solid #0003;border-radius:4px;background:#fff;color:#25362a;font-family:inherit;font-size:26px;line-height:1;box-shadow:0 1px 5px #0006;cursor:pointer}
+.mapLocate:active{background:#edf2e8}
+
+@media(max-width:760px){
+  .mapFrame{width:100%;max-width:100%;min-width:0;min-height:0;height:100%}
+  #map{width:100%;max-width:100%;min-width:0;height:100%;min-height:0}
+}

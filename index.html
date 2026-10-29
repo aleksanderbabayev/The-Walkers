@@ -4,22 +4,24 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.1.18">
+  <meta name="app-version" content="0.1.19">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=0.1.18">
+  <link rel="stylesheet" href="styles.css?v=0.1.19">
 </head>
 <body>
   <header>
     <div class="brand"><span class="mark" aria-hidden="true">↗</span><div><div class="brandTitle"><strong>The Walkers</strong><span class="appVersion" id="appVersion"></span></div><small>Исследуй город пешком</small></div></div>
     <div class="headerActions">
       <button id="musicToggle" class="icon soundToggle" type="button" aria-label="Выключить фоновую музыку" aria-pressed="true" title="Выключить фоновую музыку">🔊</button>
-      <button id="locate" class="icon" type="button" title="Моё местоположение" aria-label="Моё местоположение">◎</button>
     </div>
   </header>
   <audio id="backgroundMusic" src="assets/audio/chest_of_adventure.mp3" preload="none" loop aria-hidden="true"></audio>
   <main>
-    <section id="map" aria-label="Карта"></section>
+    <div class="mapFrame">
+      <section id="map" aria-label="Карта"></section>
+      <button id="locate" class="mapLocate" type="button" title="Моё местоположение" aria-label="Моё местоположение">◎</button>
+    </div>
     <section class="panel">
       <div class="status">
         <span id="statusDot" aria-hidden="true"></span>
@@ -42,6 +44,6 @@
   <button id="walksBackdrop" class="drawerBackdrop" type="button" aria-label="Закрыть список прогулок" hidden></button>
   <footer>Карта © OpenStreetMap · Маршруты хранятся на этом устройстве</footer>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=0.1.18"></script>
+  <script src="app.js?v=0.1.19"></script>
 </body>
 </html>
