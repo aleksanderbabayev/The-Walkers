@@ -183,12 +183,13 @@
     recordingActive = active;
     const inProgress = active || warmingUp || cancelling;
     document.querySelector(".status").classList.toggle("recording", active);
-    $("statusTitle").textContent = active ? "Идёт захват территории" : warmingUp ? "Стабилизация GPS" : cancelling ? "Отмена прогулки" : "Готовы к прогулке?";
-    $("statusText").textContent = active ? "Точки сохраняются на устройстве" : warmingUp ? "Стабилизация GPS. Подождите перед началом движения…" : cancelling ? "Останавливаем GPS и удаляем пустой черновик…" : "Нажмите «Начать захват территории», чтобы записать маршрут";
+    $("statusTitle").textContent = active ? "Идёт захват территории" : warmingUp ? "Стабилизация GPS" : cancelling ? "Отступление" : "Готовы к прогулке?";
+    $("statusText").textContent = active ? "Точки сохраняются на устройстве" : warmingUp ? "Стабилизация GPS. Подождите перед началом движения…" : cancelling ? "Останавливаем GPS и удаляем черновик…" : "Нажмите «Начать захват территории», чтобы записать маршрут";
     $("start").disabled = inProgress || !storageReady || !draftResolved || starting || finishing;
     $("start").hidden = inProgress;
-    $("cancelWarmup").hidden = !warmingUp;
-    $("cancelWarmup").disabled = cancelling;
+    $("abandonWalk").hidden = !(active || warmingUp);
+    $("abandonWalk").textContent = warmingUp ? "Отмена" : "Отступить";
+    $("abandonWalk").disabled = cancelling || finishing;
     $("finish").disabled = !active || finishing;
     $("finish").hidden = !active;
   };
@@ -259,7 +260,7 @@
     catch { say("Запись удалена, но список не удалось обновить."); }
   });
   const processPosition = async (position) => {
-    if (finishing) return;
+    if (finishing || cancelling) return;
     if (warmingUp) {
       const warmup = gpsWarmup.add(position, Date.now());
       if (!warmup.stable) {
@@ -308,6 +309,7 @@
   };
   const receivePosition = (position) => enqueueTrackingTask(() => processPosition(position));
   const onLocationError = (error) => {
+    if (cancelling) return;
     if (warmingUp) {
       gpsWarmup.reset();
       say(error.code === 1
@@ -374,29 +376,36 @@
       say("Не удалось запустить GPS. Черновик сохранён, если его не удалось удалить.");
     }
   };
-  const cancelWarmup = async () => {
-    if (!warmingUp || cancelling) return;
+  const abandonWalk = async () => {
+    if ((!warmingUp && !recordingActive) || cancelling || finishing) return;
+    if (recordingActive && !confirm("Отступить и удалить текущую прогулку? Она не попадёт в историю.")) return;
     cancelling = true; warmingUp = false;
     positionFilter.reset(); gpsWarmup.reset(); stopTrackingServices();
-    setRecording(false); say("");
+    pendingLocateRequestId = null; locateRequestId += 1;
+    setRecording(false); clearActiveWalkView(); say("");
     try {
       await trackingQueue;
       await WalkStorage.deleteDraft(db);
-      points = []; distanceMetersTotal = 0; startedAt = null;
-      clearInterval(stopwatchTimer); stopwatchTimer = null;
-      $("elapsed").textContent = "00:00:00";
-      $("gps").textContent = "GPS";
-      updateDistance();
+      clearActiveWalkView();
       draftResolved = true; starting = false; cancelling = false;
       setRecording(false); say("");
     } catch {
+      clearActiveWalkView();
       draftResolved = false; starting = false; cancelling = false;
       setRecording(false);
-      say("Не удалось удалить черновик. Он сохранён; перезагрузите страницу, чтобы восстановить или удалить его.");
+      say("Не удалось удалить черновик. Он сохранён; перезагрузите страницу, чтобы восстановить или удалить прогулку.");
     }
   };
+  const clearActiveWalkView = () => {
+    points = []; distanceMetersTotal = 0; startedAt = null;
+    clearInterval(stopwatchTimer); stopwatchTimer = null;
+    $("elapsed").textContent = "00:00:00";
+    $("gps").textContent = "GPS";
+    updateDistance();
+    currentLines.forEach((line) => map.removeLayer(line)); currentLines = [];
+  };
   const finishWalk = async () => {
-    if (!recordingActive || finishing) return;
+    if (!recordingActive || finishing || cancelling) return;
     positionFilter.reset(); gpsWarmup.reset();
     finishing = true; setRecording(true); stopTrackingServices();
     try {
@@ -418,7 +427,7 @@
     } catch { resumeAfterFinishFailure("Не удалось завершить прогулку. Черновик сохранён, запись продолжается."); }
   };
   $("start").addEventListener("click", startWalk);
-  $("cancelWarmup").addEventListener("click", cancelWarmup);
+  $("abandonWalk").addEventListener("click", abandonWalk);
   $("finish").addEventListener("click", finishWalk);
   let locateRequestId = 0;
   $("locate").addEventListener("click", () => {
