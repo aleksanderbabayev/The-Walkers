@@ -239,3 +239,9 @@ test("keeps a continuous route eligible for closure", () => {
   const points = [point(0, 0, now - 20000, true), point(0, 0.00002, now - 15000), point(0.00002, 0.00002, now - 10000), point(0.00002, 0, now - 5000)];
   assert.equal(Tracking.canCloseTrack(points), true);
 });
+
+test("hides unclosed finished walks without changing legacy or captured walk visibility", () => {
+  assert.equal(Tracking.shouldDisplayWalkOnMap({ closed: false, showOnMap: false }), false);
+  assert.equal(Tracking.shouldDisplayWalkOnMap({ closed: false }), true);
+  assert.equal(Tracking.shouldDisplayWalkOnMap({ closed: true, showOnMap: false }), true);
+});

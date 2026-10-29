@@ -223,7 +223,7 @@
     }
     walks.forEach((walk, index) => {
       const segments = Tracking.splitSegments(walk.points || []);
-      const layers = walk.closed
+      const layers = !Tracking.shouldDisplayWalkOnMap(walk) ? [] : walk.closed
         ? [L.polygon((walk.points || []).map((point) => [point.lat, point.lng]), { color: "#477b43", weight: 3, fillColor: "#8fbd70", fillOpacity: 0.35 })]
         : segments.filter((segment) => segment.length > 1).map((segment) => L.polyline(segment.map((point) => [point.lat, point.lng]), { color: "#e0765d", weight: 4 }));
       layers.forEach((layer) => { layer.addTo(map); savedLayers.push(layer); });
@@ -389,12 +389,12 @@
       }
       const finishedAt = Date.now();
       const closed = Tracking.canCloseTrack(points);
-      const walk = { id: crypto.randomUUID(), points, startedAt, finishedAt, durationMs: finishedAt - startedAt, distanceMeters: distanceMetersTotal, closed };
+      const walk = { id: crypto.randomUUID(), points, startedAt, finishedAt, durationMs: finishedAt - startedAt, distanceMeters: distanceMetersTotal, closed, showOnMap: closed };
       await WalkStorage.completeWalk(db, walk);
       stopStopwatch(finishedAt);
       points = []; distanceMetersTotal = 0; startedAt = null; draftResolved = true; finishing = false; updateDistance();
       currentLines.forEach((line) => map.removeLayer(line)); currentLines = [];
-      say(closed ? "Маршрут замкнут, территория закрашена." : "Маршрут сохранён как линия.");
+      say(closed ? "Маршрут замкнут, территория закрашена." : "Контур не замкнулся — захват не состоялся.");
       setRecording(false);
       try { await redrawSaved(); } catch { say("Прогулка сохранена, но список не удалось обновить."); }
     } catch { resumeAfterFinishFailure("Не удалось завершить прогулку. Черновик сохранён, запись продолжается."); }
