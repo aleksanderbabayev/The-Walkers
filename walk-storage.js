@@ -18,6 +18,7 @@
 
   const readDraft = (db) => transact(db, "drafts", "readonly", (tx) => tx.objectStore("drafts").get("active"));
   const readWalks = (db) => transact(db, "walks", "readonly", (tx) => tx.objectStore("walks").getAll());
+  const deleteWalk = (db, id) => transact(db, "walks", "readwrite", (tx) => tx.objectStore("walks").delete(id));
   const createDraft = (db, draft) => transact(db, "drafts", "readwrite", (tx) => tx.objectStore("drafts").add(draft));
   const writeDraft = (db, draft) => transact(db, "drafts", "readwrite", (tx) => tx.objectStore("drafts").put(draft));
   const deleteDraft = (db) => transact(db, "drafts", "readwrite", (tx) => tx.objectStore("drafts").delete("active"));
@@ -26,5 +27,5 @@
     tx.objectStore("drafts").delete("active");
   });
 
-  return { readDraft, readWalks, createDraft, writeDraft, deleteDraft, completeWalk };
+  return { readDraft, readWalks, deleteWalk, createDraft, writeDraft, deleteDraft, completeWalk };
 });

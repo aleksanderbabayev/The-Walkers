@@ -97,3 +97,28 @@ test("failed warm-up cancellation keeps the draft and prevents a new draft from 
   await assert.rejects(Storage.createDraft(db, { id: "active", points: [], startedAt: 456 }));
   assert.equal(db.records.drafts.get("active"), draft);
 });
+
+test("deleting a history item leaves other walks and the active draft intact", async () => {
+  const db = new MemoryDatabase();
+  const selected = { id: "walk-1", closed: true };
+  const otherWalk = { id: "walk-2", closed: false };
+  const draft = { id: "active", points: [{ lat: 1, lng: 2 }] };
+  db.records.walks.set(selected.id, selected);
+  db.records.walks.set(otherWalk.id, otherWalk);
+  db.records.drafts.set(draft.id, draft);
+
+  await Storage.deleteWalk(db, selected.id);
+  assert.equal(db.records.walks.has(selected.id), false);
+  assert.equal(db.records.walks.get(otherWalk.id), otherWalk);
+  assert.equal(db.records.drafts.get(draft.id), draft);
+});
+
+test("failed history deletion preserves the selected walk", async () => {
+  const db = new MemoryDatabase();
+  const walk = { id: "walk-1", closed: true };
+  db.records.walks.set(walk.id, walk);
+  db.failNext = true;
+
+  await assert.rejects(Storage.deleteWalk(db, walk.id));
+  assert.equal(db.records.walks.get(walk.id), walk);
+});

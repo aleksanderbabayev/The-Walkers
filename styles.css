@@ -96,10 +96,13 @@ main {
 .savedHead { margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; font-size: 14px; }
 .savedHead span { padding: 3px 9px; border-radius: 12px; background: #edf2e8; color: #50634e; font-size: 12px; }
 .empty { color: #8b948a; font-size: 12px; line-height: 1.5; }
-.route { padding: 12px 0; display: flex; align-items: flex-start; gap: 10px; border-top: 1px solid #edf0eb; }
+.route { padding: 12px 0; display: flex; align-items: center; gap: 10px; border-top: 1px solid #edf0eb; }
+.route > div { min-width: 0; flex: 1; }
 .routeIcon { color: #456b43; }
 .route strong { display: block; font-size: 12px; }
 .route small { display: block; margin-top: 4px; color: #818a80; font-size: 11px; }
+.routeDelete { flex: none; padding: 7px 9px; border: 1px solid #e5e8e1; border-radius: 10px; background: #fff; color: #8a3932; font: inherit; font-size: 11px; cursor: pointer; }
+.routeDelete:disabled { opacity: .5; cursor: wait; }
 footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: center; }
 .brandTitle { display: flex; align-items: center; gap: 8px; }
 .brandTitle strong { display: inline; }

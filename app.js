@@ -233,13 +233,31 @@
       const title = document.createElement("strong"); title.textContent = `${walk.closed ? "Захваченная территория" : "Маршрут"} ${walks.length - index}`;
       const distance = Number.isFinite(walk.distanceMeters) ? Math.max(0, walk.distanceMeters) : distanceForPoints(walk.points || []);
       const meta = document.createElement("small"); meta.textContent = `${new Date(walk.finishedAt).toLocaleString("ru-RU", { dateStyle: "medium", timeStyle: "short" })} · ${formatElapsed(durationOfWalk(walk))} · ${formatKilometers(distance)} · ${walk.points.length} точек`;
-      details.append(title, meta); row.append(icon, details); list.append(row);
+      details.append(title, meta);
+      const deleteButton = document.createElement("button"); deleteButton.className = "routeDelete"; deleteButton.type = "button";
+      deleteButton.textContent = "Удалить"; deleteButton.dataset.walkId = walk.id;
+      deleteButton.setAttribute("aria-label", `Удалить: ${title.textContent}`);
+      row.append(icon, details, deleteButton); list.append(row);
     });
     if (!points.length) {
       const group = L.featureGroup(savedLayers);
       if (group.getBounds().isValid()) map.fitBounds(group.getBounds().pad(0.15), { maxZoom: 16 });
     }
   };
+  $("routes").addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-walk-id]");
+    if (!button || !confirm("Удалить эту прогулку или территорию? Это действие нельзя отменить.")) return;
+    button.disabled = true;
+    try {
+      await WalkStorage.deleteWalk(db, button.dataset.walkId);
+    } catch {
+      button.disabled = false;
+      say("Не удалось удалить запись. Она сохранена.");
+      return;
+    }
+    try { await redrawSaved(); say("Запись удалена."); }
+    catch { say("Запись удалена, но список не удалось обновить."); }
+  });
   const processPosition = async (position) => {
     if (finishing) return;
     if (warmingUp) {
