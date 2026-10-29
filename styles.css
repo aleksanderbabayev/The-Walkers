@@ -110,6 +110,13 @@ main {
   --action-shadow: #862e2a;
   background: linear-gradient(180deg, #df6257 0%, #b63d36 100%);
 }
+.actionIcon {
+  display: block;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  object-fit: contain;
+}
 .actions #start:active,
 .actions #finish:active,
 .actions #abandonWalk:active:not(:disabled) {
