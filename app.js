@@ -98,8 +98,8 @@
   }).addTo(map);
 
   let db, storageReady = false, draftResolved = false, starting = false, finishing = false;
-  let watchId = null, recordingActive = false, points = [], distanceMetersTotal = 0, currentLines = [], savedLayers = [], saveTimer = null, stopwatchTimer = null, startedAt = null;
-  let trackingQueue = Promise.resolve(), pendingLocateRequestId = null;
+  let recordingActive = false, points = [], distanceMetersTotal = 0, currentLines = [], savedLayers = [], stopwatchTimer = null, startedAt = null;
+  let trackingQueue = Promise.resolve(), pendingLocateRequestId = null, pendingGapPoint = null;
   let currentLocationMarker = null;
   const mapDiagnosticsEnabled = new URLSearchParams(window.location.search).get("mapDebug") === "1";
   const updateLocationMarker = (point) => {
@@ -237,18 +237,21 @@
   };
   const processPosition = async (position) => {
     if (!recordingActive || finishing) return;
-    const result = Tracking.evaluatePosition(position, points.at(-1), Date.now());
+    const result = Tracking.evaluatePosition(position, points.at(-1), Date.now(), undefined, pendingGapPoint);
     if (!result.accepted) {
+      if (result.candidate) pendingGapPoint = result.candidate;
       if (Number.isFinite(position.coords?.accuracy)) $("gps").textContent = `±${Math.round(position.coords.accuracy)} м`;
       if (result.reason === "accuracy") say(`GPS неточный (±${Math.round(position.coords.accuracy)} м). Ждём более точную позицию.`);
       else if (result.reason === "speed") say("GPS скачок отброшен. Ждём стабильную позицию.");
+      else if (result.reason === "confirm") say("После перерыва проверяем новую GPS-позицию…");
       return;
     }
 
-    const nextPoints = [...points, result.point];
+    const nextPoints = [...points, ...(result.points || [result.point])];
     try { await saveDraftSnapshot(nextPoints, startedAt); }
     catch { say("Точка не записана: не удалось сохранить черновик на устройстве."); return; }
 
+    pendingGapPoint = null;
     points = nextPoints;
     distanceMetersTotal += result.distanceMeters;
     drawCurrent(); updateDistance(); updateLocationMarker(result.point);
@@ -265,17 +268,17 @@
     const message = error.code === 1 ? "Разрешите доступ к геолокации в настройках браузера." : "Нет GPS-сигнала. Проверьте геолокацию и попробуйте выйти на открытое место.";
     say(message);
   };
-  const startTrackingServices = () => {
-    watchId = navigator.geolocation.watchPosition(receivePosition, onLocationError, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
-    saveTimer = setInterval(() => {
+  const gpsServices = Tracking.createGpsServices({
+    geolocation: navigator.geolocation,
+    onPosition: receivePosition,
+    onError: onLocationError,
+    onAutosave: () => {
       if (recordingActive && !finishing) enqueueTrackingTask(() => saveDraftSnapshot()).catch(() => say("Не удалось сохранить черновик прогулки."));
-    }, AUTOSAVE_MS);
-  };
-  const stopTrackingServices = () => {
-    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-    watchId = null;
-    clearInterval(saveTimer); saveTimer = null;
-  };
+    },
+    intervalMs: AUTOSAVE_MS
+  });
+  const startTrackingServices = () => gpsServices.start();
+  const stopTrackingServices = () => gpsServices.stop();
   const resumeAfterFinishFailure = (message) => {
     finishing = false;
     try {
@@ -306,6 +309,7 @@
       startTrackingServices();
       starting = false; setRecording(true); startStopwatch(); say("Ожидаем GPS-сигнал…");
     } catch {
+      stopTrackingServices();
       try { await WalkStorage.deleteDraft(db); draftResolved = true; }
       catch { draftResolved = false; }
       points = []; startedAt = null; starting = false; setRecording(false);

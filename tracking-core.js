@@ -24,7 +24,7 @@
     return 2 * radius * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
   };
 
-  const evaluatePosition = (position, previousPoint, now = Date.now(), options = DEFAULTS) => {
+  const evaluatePosition = (position, previousPoint, now = Date.now(), options = DEFAULTS, pendingGapPoint = null) => {
     const config = { ...DEFAULTS, ...options };
     const { latitude, longitude, accuracy } = position?.coords || {};
     const timestamp = position?.timestamp;
@@ -41,8 +41,25 @@
     if (elapsedMs <= 0) return { accepted: false, reason: "stale" };
     const distance = distanceMeters(previousPoint, point);
     if (elapsedMs > config.maxGapMs) {
+      const confirmationElapsed = pendingGapPoint ? timestamp - pendingGapPoint.timestamp : 0;
+      if (!pendingGapPoint || confirmationElapsed <= 0 || confirmationElapsed > config.maxAgeMs) {
+        return { accepted: false, reason: "confirm", candidate: point };
+      }
+
+      const confirmationDistance = distanceMeters(pendingGapPoint, point);
+      if (confirmationDistance / (confirmationElapsed / 1000) > config.maxSpeedMetersPerSecond) {
+        return { accepted: false, reason: "speed", candidate: point };
+      }
+
+      const movementThreshold = Math.max(config.minMovementMeters, Math.min(config.maxDriftMeters, (pendingGapPoint.accuracy + accuracy) / 2));
+      if (confirmationDistance >= movementThreshold) {
+        const segmentStart = { ...pendingGapPoint, segmentStart: true };
+        point.segmentStart = false;
+        return { accepted: true, point, points: [segmentStart, point], distanceMeters: confirmationDistance, newSegment: true, reason: "confirmed-gap" };
+      }
+
       point.segmentStart = true;
-      return { accepted: true, point, distanceMeters: 0, newSegment: true, reason: "gap" };
+      return { accepted: true, point, points: [point], distanceMeters: 0, newSegment: true, reason: "confirmed-gap" };
     }
 
     const movementThreshold = Math.max(config.minMovementMeters, Math.min(config.maxDriftMeters, (previousPoint.accuracy + accuracy) / 2));
@@ -70,5 +87,31 @@
     return distanceMeters(points[0], points.at(-1)) <= options.closeMeters;
   };
 
-  return { DEFAULTS, distanceMeters, evaluatePosition, splitSegments, distanceForPoints, canCloseTrack };
+  const createGpsServices = ({ geolocation, onPosition, onError, onAutosave, schedule = setInterval, cancel = clearInterval, intervalMs = 5000, watchOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 } }) => {
+    let watchId = null, timerId = null;
+    const stop = () => {
+      const activeWatchId = watchId;
+      const activeTimerId = timerId;
+      watchId = null; timerId = null;
+      if (activeWatchId !== null) {
+        try { geolocation.clearWatch(activeWatchId); } catch {}
+      }
+      if (activeTimerId !== null) {
+        try { cancel(activeTimerId); } catch {}
+      }
+    };
+    const start = () => {
+      stop();
+      try {
+        watchId = geolocation.watchPosition(onPosition, onError, watchOptions);
+        timerId = schedule(onAutosave, intervalMs);
+      } catch (error) {
+        stop();
+        throw error;
+      }
+    };
+    return { start, stop };
+  };
+
+  return { DEFAULTS, distanceMeters, evaluatePosition, splitSegments, distanceForPoints, canCloseTrack, createGpsServices };
 });
