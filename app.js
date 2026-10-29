@@ -49,6 +49,17 @@
     updateMusicButton();
   });
   const isMobileViewport = () => window.matchMedia("(max-width: 760px)").matches;
+  const syncMobileViewportHeight = () => {
+    if (!isMobileViewport()) {
+      document.documentElement.style.removeProperty("--visible-viewport-height");
+      return;
+    }
+    const visibleHeight = window.visualViewport?.height || window.innerHeight;
+    document.documentElement.style.setProperty("--visible-viewport-height", `${visibleHeight}px`);
+  };
+  syncMobileViewportHeight();
+  window.visualViewport?.addEventListener("resize", syncMobileViewportHeight);
+  window.addEventListener("resize", syncMobileViewportHeight);
   let previousMobileViewport = isMobileViewport();
   const setWalksDrawerOpen = (open, returnFocus = false) => {
     const drawerOpen = open && isMobileViewport();
@@ -72,6 +83,7 @@
       previousMobileViewport = mobileViewport;
       setWalksDrawerOpen(false);
     }
+    syncMobileViewportHeight();
   });
   const map = L.map("map", { zoomControl: false }).setView([48.998, 21.239], 14);
   L.control.zoom({ position: "bottomright" }).addTo(map);

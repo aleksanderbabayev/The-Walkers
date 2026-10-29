@@ -31,8 +31,8 @@
 .walksChevron{font-size:18px;line-height:1}
 
 @media(max-width:760px){
-  html,body{height:100%;overflow:hidden}
-  body{height:100vh;min-height:0;display:flex;flex-direction:column;overflow:hidden;overscroll-behavior:none}
+  html,body{height:100%;overflow:hidden;overscroll-behavior:none;touch-action:pan-x pan-y}
+  body{height:var(--visible-viewport-height,100vh);min-height:0;display:flex;flex-direction:column;overflow:hidden}
   header{height:64px;flex:0 0 64px}
   main{flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,1fr);width:100%;height:auto;min-height:0;margin:0;padding:8px 12px;gap:8px}
   #map{height:auto;min-height:0;flex:none;border-radius:20px}
@@ -57,7 +57,7 @@
 
 @supports(height:100dvh){
   @media(max-width:760px){
-    body{height:100dvh}
+    body{height:var(--visible-viewport-height,100dvh)}
     main{grid-template-rows:minmax(190px,1fr) minmax(0,1fr)}
     .saved{height:min(72dvh,640px);max-height:82dvh}
   }
@@ -65,7 +65,7 @@
 
 @supports(height:100svh){
   @media(max-width:760px){
-    body{height:100svh}
+    body{height:var(--visible-viewport-height,100svh)}
     main{grid-template-rows:minmax(190px,1fr) minmax(0,1fr)}
   }
 }
