@@ -6,6 +6,7 @@ Follow the project requirements and constraints in [`CODEX_INSTRUCTIONS.md`](COD
 
 - Prioritize clean, readable, maintainable code. Follow KISS and YAGNI.
 - Keep changes focused on the requested task.
+- Start every commit message with the current application version in square brackets, followed by a concise description (for example, `[0.1.6] Hide start action while recording`).
 - For every application change, automatically update the `app-version` value in `index.html`; use semantic versioning and increment the patch number for small fixes and changes.
 - Whenever `styles.css` changes, also update the version in its query string in `index.html` (for example, `styles.css?v=0.1.5`) so browsers fetch the new stylesheet instead of using a cached copy. Keep this CSS version aligned with `app-version`.
 - Whenever `app.js` changes, also update the version in its query string in `index.html` (for example, `app.js?v=0.1.5`) so browsers fetch the new script instead of using a cached copy. Keep this script version aligned with `app-version`.
