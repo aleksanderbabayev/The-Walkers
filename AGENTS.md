@@ -8,6 +8,7 @@ Follow the project requirements and constraints in [`CODEX_INSTRUCTIONS.md`](COD
 - Keep changes focused on the requested task.
 - For every application change, automatically update the `app-version` value in `index.html`; use semantic versioning and increment the patch number for small fixes and changes.
 - Whenever `styles.css` changes, also update the version in its query string in `index.html` (for example, `styles.css?v=0.1.5`) so browsers fetch the new stylesheet instead of using a cached copy. Keep this CSS version aligned with `app-version`.
+- Whenever `app.js` changes, also update the version in its query string in `index.html` (for example, `app.js?v=0.1.5`) so browsers fetch the new script instead of using a cached copy. Keep this script version aligned with `app-version`.
 - Run relevant checks before committing.
 - After successful checks, automatically create a Git commit with a concise, descriptive message.
 - Automatically push commits to `origin main`.
