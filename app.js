@@ -196,7 +196,7 @@
   const receivePosition = async (position) => {
     const point = { lat: position.coords.latitude, lng: position.coords.longitude, accuracy: position.coords.accuracy, timestamp: position.timestamp };
     if (points.length && distanceMeters(points.at(-1), point) < 4) return;
-    points.push(point); drawCurrent(); map.panTo([point.lat, point.lng]);
+    points.push(point); drawCurrent();
     $("gps").textContent = `±${Math.round(point.accuracy)} м`;
     try { await saveDraft(); } catch { say("Не удалось сохранить точку локально."); }
   };
