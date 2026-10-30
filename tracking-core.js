@@ -84,6 +84,51 @@
     };
   };
 
+  const validateInitialRoute = (points = [], options = DEFAULTS) => {
+    const accepted = [], filter = createPositionFilter();
+    for (const candidate of points) {
+      const position = { timestamp: candidate.timestamp, coords: { latitude: candidate.lat, longitude: candidate.lng, accuracy: candidate.accuracy } };
+      if (!accepted.length || candidate.segmentStart) {
+        filter.reset();
+        const result = evaluatePosition(position, null, candidate.timestamp, options);
+        if (result.accepted) accepted.push({ ...result.point, segmentStart: true });
+        continue;
+      }
+      const result = filter.evaluate(position, accepted.at(-1), candidate.timestamp, options);
+      if (result.accepted) accepted.push(...(result.points || [result.point]));
+    }
+    return { points: accepted, distanceMeters: distanceForPoints(accepted), discardedCount: points.length - accepted.length };
+  };
+
+  const createInitialRouteBuffer = (durationMs = 18000, options = DEFAULTS) => {
+    const config = { ...DEFAULTS, ...options };
+    let points = [], filter = createPositionFilter();
+    const snapshot = () => points.map((point) => ({ ...point }));
+    const reset = () => { points = []; filter = createPositionFilter(); };
+    const begin = (point) => {
+      reset();
+      const result = evaluatePosition({ timestamp: point.timestamp, coords: { latitude: point.lat, longitude: point.lng, accuracy: point.accuracy } }, null, point.timestamp, config);
+      if (!result.accepted) return { accepted: false, reason: result.reason, ready: false, bufferedPoints: [] };
+      points = [{ ...result.point, segmentStart: true }];
+      return { accepted: true, ready: false, bufferedPoints: snapshot(), point: points[0] };
+    };
+    const add = (position, now = Date.now()) => {
+      if (!points.length) return { accepted: false, reason: "empty", ready: false, bufferedPoints: [] };
+      const result = filter.evaluate(position, points.at(-1), now, config);
+      if (!result.accepted) return { ...result, ready: false, bufferedPoints: snapshot() };
+      points.push(...(result.points || [result.point]));
+      const validated = validateInitialRoute(points, config);
+      const ready = points.at(-1).timestamp - points[0].timestamp >= durationMs;
+      return { ...result, ready, bufferedPoints: snapshot(), validatedPoints: validated.points, distanceMeters: validated.distanceMeters };
+    };
+    const flush = () => validateInitialRoute(points, config);
+    const restore = (savedPoints = []) => {
+      points = Array.isArray(savedPoints) ? savedPoints.map((point) => ({ ...point })) : [];
+      filter = createPositionFilter();
+    };
+    return { begin, add, flush, reset, restore, snapshot, get pending() { return points.length > 0; } };
+  };
+
   const createGpsWarmup = (requiredPositions = 3, options = DEFAULTS) => {
     const config = { ...DEFAULTS, ...options };
     let positions = [];
@@ -159,5 +204,5 @@
     return { start, stop };
   };
 
-  return { DEFAULTS, LOCATION_DEFAULTS, distanceMeters, evaluatePosition, evaluateLocationPosition, createPositionFilter, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, shouldDisplayWalkOnMap, createGpsServices };
+  return { DEFAULTS, LOCATION_DEFAULTS, distanceMeters, evaluatePosition, evaluateLocationPosition, createPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, shouldDisplayWalkOnMap, createGpsServices };
 });

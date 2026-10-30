@@ -102,6 +102,7 @@
   let trackingQueue = Promise.resolve();
   const positionFilter = Tracking.createPositionFilter();
   const gpsWarmup = Tracking.createGpsWarmup();
+  const initialRouteBuffer = Tracking.createInitialRouteBuffer();
   let currentLocationMarker = null;
   let locationState = "loading", latestLocation = null, locationRequestPending = false;
   let locationWaitStartedAt = Date.now(), locationRequestToken = 0, locationTimeoutTimer = null;
@@ -300,8 +301,11 @@
     $("finish").disabled = !active || finishing;
     $("finish").hidden = !active;
   };
-  const draftSnapshot = (nextPoints = points, nextStartedAt = startedAt) => ({ id: "active", points: nextPoints, startedAt: nextStartedAt, updatedAt: Date.now() });
-  const saveDraftSnapshot = (nextPoints = points, nextStartedAt = startedAt) => WalkStorage.writeDraft(db, draftSnapshot(nextPoints, nextStartedAt));
+  const draftSnapshot = (nextPoints = points, nextStartedAt = startedAt, nextInitialBuffer = initialRouteBuffer.snapshot()) => ({
+    id: "active", points: nextPoints, startedAt: nextStartedAt, updatedAt: Date.now(),
+    ...(nextInitialBuffer.length ? { initialBuffer: nextInitialBuffer } : {})
+  });
+  const saveDraftSnapshot = (nextPoints = points, nextStartedAt = startedAt, nextInitialBuffer = initialRouteBuffer.snapshot()) => WalkStorage.writeDraft(db, draftSnapshot(nextPoints, nextStartedAt, nextInitialBuffer));
   const enqueueTrackingTask = (task) => {
     const pending = trackingQueue.then(task);
     trackingQueue = pending.catch((error) => say(`Не удалось сохранить прогулку: ${error.message || "ошибка IndexedDB"}.`));
@@ -379,11 +383,12 @@
       const initialPoint = { ...warmup.point, segmentStart: true };
       gpsWarmup.reset();
       const recordingStartedAt = Date.now();
-      try { await saveDraftSnapshot([initialPoint], recordingStartedAt); }
-      catch { gpsWarmup.reset(); say("Не удалось сохранить начало прогулки. Продолжаем стабилизацию GPS…"); return; }
+      initialRouteBuffer.begin(initialPoint);
+      try { await saveDraftSnapshot([], recordingStartedAt, initialRouteBuffer.snapshot()); }
+      catch { initialRouteBuffer.reset(); gpsWarmup.reset(); say("Не удалось сохранить начало прогулки. Продолжаем стабилизацию GPS…"); return; }
       if (!warmingUp || cancelling) return;
 
-      points = [initialPoint]; startedAt = recordingStartedAt; distanceMetersTotal = 0;
+      points = []; startedAt = recordingStartedAt; distanceMetersTotal = 0;
       warmingUp = false; updateDistance(); updateLocationMarker(initialPoint);
       $("gps").textContent = `±${Math.round(initialPoint.accuracy)} м`;
       setRecording(true); startStopwatch(); say("GPS готов. Можно идти!");
@@ -396,12 +401,40 @@
       latestLocation = null;
       updateLocateButton("loading");
     }
-    const result = positionFilter.evaluate(position, points.at(-1), Date.now());
+    const bufferingInitial = initialRouteBuffer.pending;
+    const previousInitialBuffer = bufferingInitial ? initialRouteBuffer.snapshot() : [];
+    const result = bufferingInitial
+      ? initialRouteBuffer.add(position, Date.now())
+      : positionFilter.evaluate(position, points.at(-1), Date.now());
     if (!result.accepted) {
       if (Number.isFinite(position.coords?.accuracy)) $("gps").textContent = `±${Math.round(position.coords.accuracy)} м`;
       if (result.reason === "accuracy") say(`GPS неточный (±${Math.round(position.coords.accuracy)} м). Ждём более точную позицию.`);
       else if (result.reason === "speed") say("GPS скачок отброшен. Ждём стабильную позицию.");
       else if (result.reason === "confirm") say("После перерыва проверяем новую GPS-позицию…");
+      return;
+    }
+
+    if (bufferingInitial) {
+      if (!result.ready) {
+        try { await saveDraftSnapshot(points, startedAt, result.bufferedPoints); }
+        catch {
+          initialRouteBuffer.restore(previousInitialBuffer);
+          say("Начальная GPS-точка не сохранена. Продолжаем проверку сигнала…");
+          return;
+        }
+        updateLocationMarker(result.point);
+        return;
+      }
+      const nextPoints = [...points, ...result.validatedPoints];
+      try { await saveDraftSnapshot(nextPoints, startedAt, []); }
+      catch {
+        initialRouteBuffer.restore(previousInitialBuffer);
+        say("Начальный участок не удалось сохранить. Продолжаем проверку сигнала…");
+        return;
+      }
+      initialRouteBuffer.reset(); positionFilter.reset();
+      points = nextPoints; distanceMetersTotal = distanceForPoints(points);
+      drawCurrent(); updateDistance(); updateLocationMarker(result.point);
       return;
     }
 
@@ -460,7 +493,7 @@
   const startWalk = async () => {
     if (!navigator.geolocation) { say("Этот браузер не поддерживает геолокацию."); return; }
     if (!storageReady || !draftResolved || starting || recordingActive || warmingUp || finishing || cancelling) return;
-    positionFilter.reset(); gpsWarmup.reset();
+    positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset();
     starting = true; setRecording(false);
     cancelPendingLocationRequest();
     locateRequestId += 1;
@@ -479,7 +512,7 @@
       startTrackingServices();
       starting = false; setRecording(false); say("");
     } catch {
-      positionFilter.reset();
+      positionFilter.reset(); initialRouteBuffer.reset();
       gpsWarmup.reset(); warmingUp = false;
       stopTrackingServices();
       try { await WalkStorage.deleteDraft(db); draftResolved = true; }
@@ -510,6 +543,7 @@
   };
   const clearActiveWalkView = () => {
     points = []; distanceMetersTotal = 0; startedAt = null;
+    initialRouteBuffer.reset();
     clearInterval(stopwatchTimer); stopwatchTimer = null;
     $("elapsed").textContent = "00:00:00";
     $("gps").textContent = "GPS";
@@ -522,16 +556,20 @@
     finishing = true; setRecording(true); stopTrackingServices();
     try {
       await trackingQueue;
-      if (points.length < 2) {
+      const bufferedPoints = initialRouteBuffer.pending ? initialRouteBuffer.flush().points : [];
+      const finishedPoints = [...points, ...bufferedPoints];
+      const finishedDistance = distanceForPoints(finishedPoints);
+      if (finishedPoints.length < 2) {
         resumeAfterFinishFailure("Нужно ещё GPS-точек для сохранения. Продолжаем запись.");
         return;
       }
       const finishedAt = Date.now();
-      const closed = Tracking.canCloseTrack(points);
-      const walk = { id: crypto.randomUUID(), points, startedAt, finishedAt, durationMs: finishedAt - startedAt, distanceMeters: distanceMetersTotal, closed, showOnMap: closed };
+      const closed = Tracking.canCloseTrack(finishedPoints);
+      const walk = { id: crypto.randomUUID(), points: finishedPoints, startedAt, finishedAt, durationMs: finishedAt - startedAt, distanceMeters: finishedDistance, closed, showOnMap: closed };
       await WalkStorage.completeWalk(db, walk);
       stopStopwatch(finishedAt);
       points = []; distanceMetersTotal = 0; startedAt = null; draftResolved = true; finishing = false; updateDistance();
+      initialRouteBuffer.reset();
       currentLines.forEach((line) => map.removeLayer(line)); currentLines = [];
       say(closed ? "Маршрут замкнут, территория закрашена." : "Контур не замкнулся — захват не состоялся.");
       setRecording(false);
@@ -573,7 +611,8 @@
         positionFilter.reset(); gpsWarmup.reset();
         draftResolved = false;
         const draftPoints = Array.isArray(draft.points) ? draft.points : [];
-        const wasWarmingUp = draftPoints.length === 0;
+        const draftInitialBuffer = Array.isArray(draft.initialBuffer) ? draft.initialBuffer : [];
+        const wasWarmingUp = draftPoints.length === 0 && draftInitialBuffer.length === 0;
         const resume = confirm(wasWarmingUp
           ? "Найдена незавершённая стабилизация GPS. Продолжить?"
           : "Найдена незавершённая прогулка. Продолжить запись?");
@@ -585,11 +624,13 @@
           }
           locateRequestId += 1;
           points = draftPoints;
+          initialRouteBuffer.restore(draftInitialBuffer);
           distanceMetersTotal = distanceForPoints(points);
           startedAt = Number.isFinite(draft.startedAt) ? draft.startedAt : Date.now();
           warmingUp = wasWarmingUp;
           updateDistance(); drawCurrent();
           if (points.length) updateLocationMarker(points.at(-1));
+          else if (draftInitialBuffer.length) updateLocationMarker(draftInitialBuffer.at(-1));
           draftResolved = true;
           try {
             startTrackingServices();
@@ -597,7 +638,7 @@
             if (warmingUp) say("");
             else { startStopwatch(); say("Прогулка восстановлена. Ожидаем свежую GPS-точку…"); }
           } catch {
-            positionFilter.reset(); gpsWarmup.reset(); warmingUp = false;
+            positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset(); warmingUp = false;
             stopTrackingServices(); draftResolved = false; setRecording(false);
             say("Черновик сохранён, но GPS не удалось запустить. Перезагрузите страницу, чтобы попробовать снова.");
           }
@@ -611,7 +652,7 @@
       } else draftResolved = true;
       setRecording(recordingActive);
     } catch {
-      positionFilter.reset(); gpsWarmup.reset(); warmingUp = false;
+      positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset(); warmingUp = false;
       storageReady = false; draftResolved = false; setRecording(false);
       say("IndexedDB недоступна. Попробуйте открыть приложение в современном браузере по HTTPS.");
     }

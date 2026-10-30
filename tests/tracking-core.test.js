@@ -202,6 +202,127 @@ test("confirms recovery after a gap at 30 meter accuracy without counting the ga
   assert.ok(Tracking.distanceForPoints([previous, ...confirmed.points]) < 10);
 });
 
+test("initial route buffering filters an early drift outlier without straightening the walk", () => {
+  const meters = (value) => value / 111320;
+  const buffer = Tracking.createInitialRouteBuffer(18000);
+  buffer.begin(point(0, 0, now - 18000, true, 5));
+  buffer.add(position(0, meters(40), now - 16000, 5), now - 16000);
+  buffer.add(position(0, meters(2), now - 15000, 5), now - 15000);
+  buffer.add(position(0, meters(6), now - 12000, 5), now - 12000);
+  buffer.add(position(0, meters(12), now - 9000, 5), now - 9000);
+  buffer.add(position(0, meters(18), now - 6000, 5), now - 6000);
+  buffer.add(position(0, meters(24), now - 3000, 5), now - 3000);
+  const result = buffer.add(position(0, meters(30), now, 5), now);
+
+  assert.equal(result.ready, true);
+  assert.ok(result.validatedPoints.every((point) => Math.abs(point.lng - meters(40)) > meters(1)));
+  assert.ok(result.distanceMeters > 28 && result.distanceMeters < 31);
+  assert.deepEqual(result.validatedPoints.map((point) => point.timestamp), [now - 18000, now - 12000, now - 9000, now - 6000, now - 3000, now]);
+  assert.equal(result.validatedPoints.some((point) => point.timestamp === now - 16000 || point.timestamp === now - 15000), false);
+});
+
+test("initial route validation preserves a genuine early turn", () => {
+  const meters = (value) => value / 111320;
+  const route = [
+    point(0, 0, now - 12000, true, 2),
+    point(0, meters(5), now - 8000, false, 2),
+    point(meters(5), meters(5), now - 4000, false, 2),
+    point(meters(5), meters(10), now, false, 2)
+  ];
+  const result = Tracking.validateInitialRoute(route);
+
+  assert.equal(result.points.length, route.length);
+  assert.ok(result.distanceMeters > 14 && result.distanceMeters < 16);
+  assert.equal(result.points[2].lat, route[2].lat);
+  assert.equal(result.points[2].lng, route[2].lng);
+});
+
+test("short walks can flush the initial buffer before its validation window ends", () => {
+  const meters = (value) => value / 111320;
+  const buffer = Tracking.createInitialRouteBuffer(18000);
+  buffer.begin(point(0, 0, now - 10000, true, 2));
+  buffer.add(position(0, meters(5), now - 5000, 2), now - 5000);
+  buffer.add(position(0, meters(10), now, 2), now);
+  const result = buffer.flush();
+
+  assert.equal(result.points.length, 3);
+  assert.ok(result.distanceMeters > 9 && result.distanceMeters < 11);
+});
+
+test("initial stationary GPS noise does not add route distance", () => {
+  const meters = (value) => value / 111320;
+  const buffer = Tracking.createInitialRouteBuffer(18000);
+  buffer.begin(point(0, 0, now - 10000, true, 5));
+  buffer.add(position(0, meters(2), now - 9000, 5), now - 9000);
+  buffer.add(position(0, meters(-2), now - 8000, 5), now - 8000);
+  buffer.add(position(0, meters(1), now - 7000, 5), now - 7000);
+  const result = buffer.flush();
+
+  assert.equal(result.points.length, 1);
+  assert.equal(result.distanceMeters, 0);
+});
+
+test("initial buffer preserves route segments across tracking interruptions", () => {
+  const meters = (value) => value / 111320;
+  const buffer = Tracking.createInitialRouteBuffer(18000);
+  const start = now - 60000;
+  buffer.begin(point(0, 0, start, true, 5));
+  assert.equal(buffer.add(position(0, meters(100), start + 40000, 5), start + 40000).reason, "confirm");
+  assert.equal(buffer.add(position(0, meters(109), start + 41000, 5), start + 41000).reason, "speed");
+  const resumed = buffer.add(position(0, meters(118), start + 44000, 5), start + 44000);
+  const result = buffer.flush();
+
+  assert.equal(resumed.ready, true);
+  assert.equal(Tracking.splitSegments(result.points).length, 2);
+  assert.ok(result.distanceMeters > 8 && result.distanceMeters < 10);
+  assert.equal(result.points[1].segmentStart, true);
+});
+
+test("initial validation resumes from a persisted buffer with original timestamps", () => {
+  const meters = (value) => value / 111320;
+  const original = Tracking.createInitialRouteBuffer(10000);
+  original.begin(point(0, 0, now - 10000, true, 2));
+  original.add(position(0, meters(5), now - 5000, 2), now - 5000);
+  const restored = Tracking.createInitialRouteBuffer(10000);
+  restored.restore(original.snapshot());
+  const completed = restored.add(position(0, meters(10), now, 2), now);
+
+  assert.equal(completed.ready, true);
+  assert.deepEqual(completed.validatedPoints.map((point) => point.timestamp), [now - 10000, now - 5000, now]);
+});
+
+test("initial buffer flush and reset support finish and retreat before validation ends", () => {
+  const buffer = Tracking.createInitialRouteBuffer(18000);
+  buffer.begin(point(0, 0, now - 5000, true));
+  buffer.add(position(0, 0.00005, now), now);
+  assert.equal(buffer.flush().points.length, 2);
+  buffer.reset();
+  assert.equal(buffer.pending, false);
+  assert.deepEqual(buffer.flush(), { points: [], distanceMeters: 0, discardedCount: 0 });
+});
+
+test("validated initial route keeps distance and territory geometry consistent", () => {
+  const meters = (value) => value / 111320;
+  const buffer = Tracking.createInitialRouteBuffer(18000);
+  const route = [
+    point(0, 0, now - 20000, true, 2),
+    point(0, meters(10), now - 15000, false, 2),
+    point(meters(10), meters(10), now - 10000, false, 2),
+    point(meters(10), 0, now - 5000, false, 2),
+    point(0, 0, now, false, 2)
+  ];
+  buffer.begin(route[0]);
+  let result;
+  for (const candidate of route.slice(1)) {
+    result = buffer.add(position(candidate.lat, candidate.lng, candidate.timestamp, candidate.accuracy), candidate.timestamp);
+  }
+
+  assert.equal(result.ready, true);
+  assert.equal(Tracking.canCloseTrack(result.validatedPoints), true);
+  assert.equal(result.distanceMeters, Tracking.distanceForPoints(result.validatedPoints));
+  assert.ok(result.distanceMeters > 39 && result.distanceMeters < 41);
+});
+
 test("rejected positions do not replace the last accepted point", () => {
   const previous = point(0, 0, now - 5000, true);
   assert.equal(Tracking.evaluatePosition(position(0, 0.001, now, 60), previous, now).reason, "accuracy");

@@ -15,9 +15,7 @@ class MemoryDatabase {
       error: null,
       objectStore: (name) => ({
         get: (key) => {
-          const request = {};
-          queueMicrotask(() => { request.result = this.records[name].get(key); });
-          return request;
+          return { result: this.records[name].get(key) };
         },
         add: (value) => { operations.push({ type: "add", name, value }); return {}; },
         put: (value) => { operations.push({ type: "put", name, value }); return {}; },
@@ -55,6 +53,15 @@ test("starting a walk cannot replace an unfinished draft", async () => {
   db.records.drafts.set("active", draft);
   await assert.rejects(Storage.createDraft(db, { id: "active", points: [], startedAt: 456 }));
   assert.equal(db.records.drafts.get("active"), draft);
+});
+
+test("initial validation buffer survives draft autosave and reload", async () => {
+  const db = new MemoryDatabase();
+  const initialBuffer = [{ lat: 48.9, lng: 21.2, accuracy: 5, timestamp: 123, segmentStart: true }];
+  await Storage.createDraft(db, { id: "active", points: [], initialBuffer, startedAt: 100 });
+  const restored = await Storage.readDraft(db);
+  assert.deepEqual(restored.initialBuffer, initialBuffer);
+  assert.deepEqual(restored.points, []);
 });
 
 test("failed completion preserves the draft and does not add a completed walk", async () => {
