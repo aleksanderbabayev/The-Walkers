@@ -2,7 +2,7 @@
   "use strict";
   const DB_NAME = "the-walkers", DB_VERSION = 2;
   const AUTOSAVE_MS = 5000;
-  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics;
+  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions;
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   $("appVersion").textContent = `Версия ${appVersion}`;
@@ -868,8 +868,8 @@
     }
   };
   $("start").addEventListener("click", startWalk);
-  $("abandonWalk").addEventListener("click", abandonWalk);
-  $("finish").addEventListener("click", finishWalk);
+  Actions.bindClick($("abandonWalk"), abandonWalk);
+  Actions.bindClick($("finish"), () => finishWalk());
   $("copyActiveDiagnostics").addEventListener("click", copyActiveDiagnostics);
   let locateRequestId = 0;
   $("locate").addEventListener("click", () => {
