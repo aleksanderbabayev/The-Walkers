@@ -451,7 +451,7 @@
     const manualStartAvailable = warmingUp && warmupStartedAt !== null && Date.now() - warmupStartedAt >= Tracking.GPS_WARMUP_DEFAULTS.manualStartAfterMs;
     $("statusText").textContent = active ? "Точки сохраняются на устройстве" : warmingUp ? manualStartAvailable
       ? "GPS всё ещё стабилизируется. Можно начать с предупреждением, если доступна надёжная позиция."
-      : "Стабилизация GPS. Подождите перед началом движения…" : cancelling ? "Останавливаем GPS и удаляем черновик…" : "Нажмите «Начать захват территории», чтобы записать маршрут";
+      : "Стабилизация GPS. Подождите перед началом движения…" : cancelling ? "Останавливаем GPS и удаляем черновик…" : 'Нажмите "Начать прогулку", чтобы начать захват территории.';
     $("start").disabled = inProgress || !storageReady || !draftResolved || starting || finishing;
     $("start").hidden = inProgress;
     $("abandonWalk").hidden = !(active || warmingUp);

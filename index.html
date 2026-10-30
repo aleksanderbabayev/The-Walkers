@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.1.55">
+  <meta name="app-version" content="0.1.56">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="styles.css?v=0.1.52">
@@ -26,7 +26,7 @@
     <section class="panel">
       <div class="status">
         <span id="statusDot" aria-hidden="true"></span>
-        <div><b id="statusTitle">Готовы к прогулке?</b><small id="statusText">Нажмите «Начать захват территории», чтобы записать маршрут</small></div>
+        <div><b id="statusTitle">Готовы к прогулке?</b><small id="statusText">Нажмите "Начать прогулку", чтобы начать захват территории.</small></div>
         <div class="stopwatch" aria-label="Время прогулки">
           <b id="elapsed">00:00:00</b>
           <small id="distance">0,00 км</small>
@@ -75,11 +75,11 @@
         <path d="M135 120H90" fill="none" stroke="#536f83" stroke-width="4" stroke-linecap="round" stroke-dasharray="5 5" />
         <path d="M85 71 90 63 95 71M177 25 185 30 177 35M265 72 270 80 275 72M166 115 158 120 166 125" fill="none" stroke="#9d4c39" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
         <path d="M90 120V88" fill="none" stroke="#243B63" stroke-width="3" stroke-linecap="round" />
-        <rect x="92" y="88" width="30" height="18" fill="#fff" stroke="#243B63" stroke-width="1" />
-        <path d="M92 88h6v6h-6zM104 88h6v6h-6zM116 88h6v6h-6zM98 94h6v6h-6zM110 94h6v6h-6zM92 100h6v6h-6zM104 100h6v6h-6zM116 100h6v6h-6z" fill="#111820" />
+        <rect x="92" y="88" width="24" height="18" fill="#fff" stroke="#243B63" stroke-width="1" />
+        <path d="M92 88h6v6h-6zM104 88h6v6h-6zM98 94h6v6h-6zM110 94h6v6h-6zM92 100h6v6h-6zM104 100h6v6h-6z" fill="#111820" />
         <circle cx="135" cy="120" r="9" fill="#2877df" stroke="#fff" stroke-width="4" />
       </svg>
-      <p>Пройдите пешком по замкнутому маршруту и вернитесь к месту старта. Когда закончите, нажмите „Захватить территорию“.</p>
+      <p>Пройдите пешком по замкнутому маршруту, вернитесь к месту старта и нажмите "Захватить территорию".</p>
       <button id="walkInstructionsClose" type="button">Понятно</button>
     </section>
   </div>
@@ -90,6 +90,6 @@
   <script src="walk-actions.js?v=0.1.45"></script>
   <script src="tracking-core.js?v=0.1.47"></script>
   <script src="walk-storage.js?v=0.1.44"></script>
-  <script src="app.js?v=0.1.50"></script>
+  <script src="app.js?v=0.1.56"></script>
 </body>
 </html>
