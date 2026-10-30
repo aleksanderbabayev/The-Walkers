@@ -91,7 +91,20 @@
     }
     syncMobileViewportHeight();
   });
-  const map = L.map("map", { zoomControl: false }).setView([48.998, 21.239], 14);
+  const map = L.map("map", {
+    zoomControl: false,
+    rotate: true,
+    touchRotate: true,
+    dragRotate: true,
+    shiftKeyRotate: true,
+    rotateControl: { position: "topright", behavior: "reset", closeOnZeroBearing: false },
+    preventPageGestures: true
+  }).setView([48.998, 21.239], 14);
+  const compassButton = map.getContainer().querySelector(".leaflet-control-rotate a");
+  if (compassButton) {
+    compassButton.setAttribute("aria-label", "Повернуть карту на север");
+    compassButton.title = "Повернуть карту на север";
+  }
   L.control.zoom({ position: "bottomright" }).addTo(map);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,

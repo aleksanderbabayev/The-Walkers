@@ -3,6 +3,9 @@
   color: #18211c;
   background: #f7f7f2;
   font-synthesis: none;
+  --lrc-control-bg: #fff;
+  --lrc-control-hover: #f3f6f0;
+  --lrc-control-size: 44px;
 }
 
 * { box-sizing: border-box; }
@@ -225,6 +228,7 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
   .mapLocate { transition: none; }
   .mapLocate.is-locating::after { animation: none; }
 }
+.leaflet-control-rotate a { min-width: 44px; min-height: 44px; }
 button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
 
 @media (max-width: 760px) {
