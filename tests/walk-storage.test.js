@@ -1,11 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const Storage = require("../walk-storage.js");
+const Diagnostics = require("../walk-diagnostics.js");
 
 class MemoryDatabase {
   constructor() {
     this.records = { walks: new Map(), drafts: new Map(), diagnostics: new Map(), diagnosticEvents: new Map() };
     this.failNext = false;
+    this.successCallbacks = 0;
   }
 
   transaction(storeNames) {
@@ -29,6 +31,7 @@ class MemoryDatabase {
             const request = { result: [] };
             queueMicrotask(() => {
               request.result = [...this.records[name].values()].filter((record) => record[indexName === "bySessionId" ? "sessionId" : indexName] === key);
+              this.successCallbacks += 1;
               request.onsuccess?.();
             });
             return request;
@@ -83,12 +86,12 @@ test("initial validation buffer survives draft autosave and reload", async () =>
 
 test("diagnostic events and session metadata survive reload", async () => {
   const db = new MemoryDatabase();
-  await Storage.writeDiagnosticSession(db, { id: "active", formatVersion: 1, appVersion: "0.1.42", events: [] });
+  await Storage.writeDiagnosticSession(db, { id: "active", formatVersion: 1, appVersion: "0.1.43", events: [] });
   await Storage.writeDiagnosticEvent(db, "active", { sequence: 1, type: "start", at: 123 });
   await Storage.writeDiagnosticEvent(db, "active", { sequence: 2, type: "gps-measurement", phase: "warm-up", rawMeasurement: { timestamp: 456 } });
 
   const restored = await Storage.readDiagnostics(db, "active");
-  assert.equal(restored.appVersion, "0.1.42");
+  assert.equal(restored.appVersion, "0.1.43");
   assert.deepEqual(restored.events.map((event) => event.sequence), [1, 2]);
   assert.equal(restored.events[1].rawMeasurement.timestamp, 456);
 });
@@ -125,14 +128,42 @@ test("walk completion succeeds independently from diagnostic finalization", asyn
 test("diagnostics are finalized with a completed walk and can be copied from its id", async () => {
   const db = new MemoryDatabase();
   await Storage.writeDiagnosticSession(db, { id: "active", formatVersion: 1, state: "finalizing", walkId: "walk-1", events: [] });
-  await Storage.writeDiagnosticEvent(db, "active", { sequence: 1, type: "gps-measurement", includedInRoute: true });
+  await Storage.writeDiagnosticEvent(db, "active", { sequence: 1, type: "start", at: 100 });
+  await Storage.writeDiagnosticEvent(db, "active", { sequence: 2, type: "gps-measurement", includedInRoute: true });
   const recoveredFinalization = await Storage.readDiagnostics(db, "active");
-  await Storage.completeDiagnostics(db, "walk-1", { ...recoveredFinalization, events: [{ sequence: 1, type: "gps-measurement", includedInRoute: true }], finalRoute: [], finishedAt: 456 });
+  const route = [{ lat: 48.9, lng: 21.2, accuracy: 8, timestamp: 456, segmentStart: true }];
+  const callbacksBeforeCompletion = db.successCallbacks;
+  const events = [
+    { sequence: 1, type: "start", at: 100 },
+    { sequence: 2, type: "gps-measurement", phase: "recording", decision: "accepted", filteringReason: null, thresholds: { maxAccuracyMeters: 35 }, rawMeasurement: { timestamp: 456, latitude: 48.9, longitude: 21.2, accuracyMeters: 8 }, includedInRoute: true }
+  ];
+  await Storage.completeDiagnostics(db, "walk-1", { ...recoveredFinalization, events, finalRoute: route, finishedAt: 456 });
   assert.equal(db.records.diagnostics.has("active"), false);
+  assert.equal(db.successCallbacks, callbacksBeforeCompletion + 1, "completeDiagnostics asynchronous success callback ran");
   const completed = await Storage.readDiagnostics(db, "walk-1");
-  assert.equal(completed.events[0].includedInRoute, true);
+  assert.equal(completed.events[1].includedInRoute, true);
   assert.equal(completed.state, "completed");
   assert.equal("walkId" in completed, false);
+  const report = Diagnostics.buildReport(completed, completed.finalRoute, completed.events);
+  assert.deepEqual(report.events.map((event) => event.sequence), [1, 2]);
+  assert.equal(report.rawMeasurements[0].includedInRoute, true);
+  assert.equal(report.rawMeasurements[0].decision, "accepted");
+  assert.equal(report.rawMeasurements[0].rawPosition.accuracyMeters, 8);
+  assert.equal(report.rawMeasurements[0].thresholds.maxAccuracyMeters, 35);
+  assert.deepEqual(report.finalAcceptedRoute, [{ latitude: 48.9, longitude: 21.2, accuracyMeters: 8, timestamp: 456, segmentStart: true }]);
+});
+
+test("failed diagnostic finalization leaves the saved walk and active diagnostic events intact", async () => {
+  const db = new MemoryDatabase();
+  const walk = { id: "walk-1", points: [{ lat: 48.9, lng: 21.2, timestamp: 456 }], finishedAt: 789 };
+  db.records.walks.set(walk.id, walk);
+  await Storage.writeDiagnosticSession(db, { id: "active", formatVersion: 1, state: "finalizing", walkId: walk.id, events: [] });
+  await Storage.writeDiagnosticEvent(db, "active", { sequence: 1, type: "start", at: 123 });
+  db.failNext = true;
+
+  await assert.rejects(Storage.completeDiagnostics(db, walk.id, { id: "active", events: [{ sequence: 1, type: "start", at: 123 }] }));
+  assert.equal(db.records.walks.get(walk.id), walk);
+  assert.equal((await Storage.readDiagnostics(db, "active")).events[0].type, "start");
 });
 
 test("cancelling GPS warm-up deletes only the empty active draft", async () => {

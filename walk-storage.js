@@ -63,6 +63,7 @@
   const completeDiagnostics = (db, walkId, diagnosticSession) => transact(db, ["diagnostics", "diagnosticEvents"], "readwrite", (tx) => {
     if (!diagnosticSession) return;
 
+    const events = diagnosticSession.events || [];
     const record = { ...diagnosticSession };
     delete record.events;
     delete record.nextSequence;

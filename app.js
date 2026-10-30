@@ -74,6 +74,7 @@
     $("walksBackdrop").hidden = !drawerOpen;
     if (drawerOpen) $("walksClose").focus();
     else if (returnFocus) $("walksToggle").focus();
+    if (drawerOpen) preloadWalkDiagnostics();
   };
   setWalksDrawerOpen(false);
   $("walksToggle").addEventListener("click", () => setWalksDrawerOpen(!document.body.classList.contains("walks-open")));
@@ -102,6 +103,7 @@
   let walksById = new Map();
   let trackingQueue = Promise.resolve();
   let diagnosticSession = null, diagnosticsQueue = Promise.resolve(), diagnosticsPersistenceFailed = false;
+  let diagnosticsByWalkId = new Map();
   let warmupDiagnosticPrevious = null, pendingDiagnosticPrevious = null, pendingDiagnosticEvents = [];
   const positionFilter = Tracking.createPositionFilter();
   const gpsWarmup = Tracking.createGpsWarmup();
@@ -269,18 +271,35 @@
     if (result.copied) say("Диагностика скопирована в буфер обмена.");
     else { say("Выделите и скопируйте диагностику в открывшемся окне."); showDiagnosticsFallback(text); }
   };
-  const copyCompletedDiagnostics = async (walk) => {
-    try {
-      const stored = await WalkStorage.readDiagnostics(db, walk.id)
-        || await WalkStorage.readDiagnostics(db, "active").then((active) => active?.walkId === walk.id ? active : null);
-      const route = stored?.finalRoute || walk.points || [];
-      const session = stored || Diagnostics.createSession({
-        id: walk.id, appVersion: "not recorded", navigatorLike: {},
-        startedAt: walk.startedAt
-      });
-      if (!stored) session.state = "completed";
-      await copyDiagnosticReport(session, route, stored?.events || []);
-    } catch { say("Не удалось подготовить диагностику для копирования."); }
+  const findDiagnosticsButton = (walkId) => [...document.querySelectorAll("button[data-copy-diagnostics]")]
+    .find((button) => button.dataset.copyDiagnostics === walkId);
+  const preloadWalkDiagnostics = () => {
+    if (!walksById.size) return;
+    const activeDiagnostics = WalkStorage.readDiagnostics(db, "active").catch(() => null);
+    walksById.forEach((walk, walkId) => {
+      if (diagnosticsByWalkId.has(walkId)) return;
+      const button = findDiagnosticsButton(walkId);
+      if (button) { button.disabled = true; button.title = "Загружаем диагностику"; }
+      WalkStorage.readDiagnostics(db, walkId)
+        .then((stored) => stored || activeDiagnostics.then((active) => active?.walkId === walkId ? active : null))
+        .then((stored) => diagnosticsByWalkId.set(walkId, stored))
+        .catch(() => diagnosticsByWalkId.set(walkId, null))
+        .finally(() => {
+          const readyButton = findDiagnosticsButton(walkId);
+          if (readyButton) { readyButton.disabled = false; readyButton.removeAttribute("title"); }
+        });
+    });
+  };
+  const copyCompletedDiagnostics = (walk) => {
+    if (!diagnosticsByWalkId.has(walk.id)) { say("Подготовка диагностики ещё не завершена. Подождите и нажмите снова."); return; }
+    const stored = diagnosticsByWalkId.get(walk.id);
+    const route = stored?.finalRoute || walk.points || [];
+    const session = stored || Diagnostics.createSession({
+      id: walk.id, appVersion: "not recorded", navigatorLike: {},
+      startedAt: walk.startedAt
+    });
+    if (!stored) session.state = "completed";
+    copyDiagnosticReport(session, route, stored?.events || []).catch(() => say("Не удалось подготовить диагностику для копирования."));
   };
   const copyActiveDiagnostics = () => {
     if (!diagnosticSession) { say("Диагностика ещё не готова."); return; }
@@ -447,6 +466,7 @@
     savedLayers = [];
     const walks = await WalkStorage.readWalks(db);
     walksById = new Map(walks.map((walk) => [walk.id, walk]));
+    diagnosticsByWalkId.clear();
     walks.sort((a, b) => b.finishedAt - a.finishedAt);
     const totalDistance = walks.reduce((total, walk) => total + (Number.isFinite(walk.distanceMeters) ? Math.max(0, walk.distanceMeters) : distanceForPoints(walk.points || [])), 0);
     const totalDuration = walks.reduce((total, walk) => total + durationOfWalk(walk), 0);
@@ -485,6 +505,7 @@
       const group = L.featureGroup(savedLayers);
       if (group.getBounds().isValid()) map.fitBounds(group.getBounds().pad(0.15), { maxZoom: 16 });
     }
+    if (!isMobileViewport()) preloadWalkDiagnostics();
   };
   $("routes").addEventListener("click", async (event) => {
     const copyButton = event.target.closest("button[data-copy-diagnostics]");

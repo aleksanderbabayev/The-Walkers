@@ -4,7 +4,7 @@ const Diagnostics = require("../walk-diagnostics.js");
 
 test("diagnostics capture ordered GPS and significant events with minimal client metadata", () => {
   const session = Diagnostics.createSession({
-    appVersion: "0.1.42", startedAt: 100,
+    appVersion: "0.1.43", startedAt: 100,
     navigatorLike: { platform: "iPhone", userAgent: "Mozilla/5.0 (iPhone) Version/18.0 Mobile Safari/604.1" }
   });
   const start = Diagnostics.addEvent(session, { type: "start", at: 100 });
@@ -37,7 +37,7 @@ test("GPS measurement capture includes raw coordinates, processing time and comp
 });
 
 test("diagnostic recovery preserves event ordering and resumes sequence numbers", () => {
-  const restored = Diagnostics.restoreSession({ id: "active", formatVersion: 1, appVersion: "0.1.42", startedAt: 10 }, [
+  const restored = Diagnostics.restoreSession({ id: "active", formatVersion: 1, appVersion: "0.1.43", startedAt: 10 }, [
     { sequence: 2, type: "gps-measurement" }, { sequence: 1, type: "start" }
   ]);
   const next = Diagnostics.addEvent(restored, { type: "draft-restored", at: 20 });
@@ -58,7 +58,7 @@ test("diagnostic event count is bounded per walk", () => {
 });
 
 test("diagnostic report separates raw GPS measurements from accepted route coordinates", () => {
-  const session = Diagnostics.createSession({ appVersion: "0.1.42", startedAt: 10 });
+  const session = Diagnostics.createSession({ appVersion: "0.1.43", startedAt: 10 });
   Diagnostics.addEvent(session, {
     type: "gps-measurement", phase: "initial-buffer", processedAt: 200,
     rawMeasurement: { timestamp: 100, latitude: 48.9, longitude: 21.2, accuracyMeters: 12 },
@@ -102,7 +102,10 @@ test("pending GPS measurements resolve against the final route without changing 
 
 test("copying uses the clipboard API and reports when it is unavailable", async () => {
   let copied = "";
-  const success = await Diagnostics.copyText("{\n  \"ok\": true\n}", { writeText: async (text) => { copied = text; } });
+  let writeStarted = false;
+  const copyPromise = Diagnostics.copyText("{\n  \"ok\": true\n}", { writeText: async (text) => { writeStarted = true; copied = text; } });
+  assert.equal(writeStarted, true, "clipboard writing starts synchronously for the click's user activation");
+  const success = await copyPromise;
   const failure = await Diagnostics.copyText("report", { writeText: async () => { throw new Error("denied"); } });
   const unsupported = await Diagnostics.copyText("report", null);
 
