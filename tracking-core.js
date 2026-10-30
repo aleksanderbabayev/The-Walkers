@@ -21,7 +21,8 @@
     maxAccuracyMeters: 12,
     requiredPositions: 5,
     minDurationMs: 6000,
-    maxGapMs: 8000
+    maxGapMs: 8000,
+    manualStartAfterMs: 15000
   });
 
   const distanceMeters = (a, b) => {
@@ -137,9 +138,11 @@
 
   const createGpsWarmup = (requiredPositions = GPS_WARMUP_DEFAULTS.requiredPositions, options = {}) => {
     const config = { ...DEFAULTS, ...GPS_WARMUP_DEFAULTS, ...options, requiredPositions };
-    let positions = [], startedAt = null;
+    let positions = [], startedAt = null, lastManualStartPoint = null;
     const add = (position, now = Date.now()) => {
       const validation = evaluatePosition(position, null, now, config);
+      const manualValidation = evaluatePosition(position, null, now, { ...config, maxAccuracyMeters: DEFAULTS.maxAccuracyMeters });
+      if (manualValidation.accepted) lastManualStartPoint = manualValidation.point;
       if (!validation.accepted) {
         positions = []; startedAt = null;
         return { stable: false, count: 0, reason: validation.reason, requiredPositions: config.requiredPositions, requiredDurationMs: config.minDurationMs, accuracyThresholdMeters: config.maxAccuracyMeters };
@@ -182,7 +185,15 @@
         accuracyThresholdMeters: config.maxAccuracyMeters
       };
     };
-    return { add, reset: () => { positions = []; startedAt = null; } };
+    const manualStartPoint = (now = Date.now(), elapsedMs = 0) => {
+      if (elapsedMs < config.manualStartAfterMs) return null;
+      if (!lastManualStartPoint) return null;
+      const validation = evaluatePosition({ timestamp: lastManualStartPoint.timestamp, coords: {
+        latitude: lastManualStartPoint.lat, longitude: lastManualStartPoint.lng, accuracy: lastManualStartPoint.accuracy
+      } }, null, now, { ...config, maxAccuracyMeters: DEFAULTS.maxAccuracyMeters });
+      return validation.accepted ? validation.point : null;
+    };
+    return { add, manualStartPoint, reset: () => { positions = []; startedAt = null; lastManualStartPoint = null; } };
   };
 
   const splitSegments = (points = []) => {

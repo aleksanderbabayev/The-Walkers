@@ -126,6 +126,46 @@ test("GPS warm-up waits for five accurate positions across six seconds and uses 
   assert.notEqual(result.point.timestamp, start + 6000, "the start is the most representative fix, not blindly the latest");
 });
 
+test("GPS warm-up auto-starts on stable high-accuracy positions and offers a valid manual fallback after 15 seconds", () => {
+  const warmup = Tracking.createGpsWarmup();
+  const start = now - 16000;
+  const highAccuracy = [0, 1, 2, 3, 4].map((offset, index) =>
+    warmup.add(position(48.9 + offset / 111111, 21.2, start + index * 1500, 6), start + index * 1500));
+  assert.equal(highAccuracy.at(-1).stable, true);
+  assert.ok(highAccuracy.at(-1).point.accuracy <= 12);
+
+  warmup.reset();
+  const weakFix = position(48.9, 21.2, now - 1000, 24);
+  const waiting = warmup.add(weakFix, now - 1000);
+  assert.equal(waiting.stable, false);
+  assert.equal(warmup.manualStartPoint(now, 14999), null);
+  const manualPoint = warmup.manualStartPoint(now, 15000);
+  assert.equal(manualPoint.accuracy, 24);
+  assert.equal(manualPoint.lat, 48.9);
+});
+
+test("GPS warm-up manual start requires a fresh reliable coordinate and rejects inaccurate fixes", () => {
+  const warmup = Tracking.createGpsWarmup();
+  warmup.add(position(48.9, 21.2, now - 1000, 40), now - 1000);
+  assert.equal(warmup.manualStartPoint(now, 15000), null, "over 35 m is not reliable enough for manual start");
+  assert.equal(warmup.manualStartPoint(now + 15001, 20000), null, "stale coordinates cannot start recording");
+  warmup.reset();
+  assert.equal(warmup.manualStartPoint(now, 20000), null, "no coordinates cannot start recording");
+});
+
+test("manual warm-up start does not relax recording point filtering", () => {
+  const warmup = Tracking.createGpsWarmup();
+  const candidate = position(48.9, 21.2, now - 1000, 24);
+  warmup.add(candidate, now - 1000);
+  const manualStart = warmup.manualStartPoint(now, 15000);
+  assert.ok(manualStart, "the user can explicitly start after prolonged waiting");
+  const previous = { ...manualStart, segmentStart: true };
+  const inaccurateRoutePoint = Tracking.evaluatePosition(position(48.9001, 21.2, now + 1000, 36), previous, now + 1000);
+  assert.equal(inaccurateRoutePoint.accepted, false);
+  assert.equal(inaccurateRoutePoint.reason, "accuracy");
+  assert.equal(Tracking.canCloseTrack([previous, { ...previous }, { ...previous }, { ...previous }]), false);
+});
+
 test("GPS warm-up rejects poor accuracy and restarts after inconsistent fixes", () => {
   const metersInLongitude = (meters) => meters / 111320;
   const warmup = Tracking.createGpsWarmup();

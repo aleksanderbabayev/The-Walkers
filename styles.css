@@ -95,6 +95,15 @@ main {
   box-shadow: inset 0 1px 0 #ffffff35, 0 3px 0 var(--action-shadow), 0 6px 14px #18211c20;
   transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
 }
+.actions #manualWarmupStart {
+  min-height: 44px;
+  border: 1px solid #b9822c;
+  border-radius: 12px;
+  background: #fff8e8;
+  color: #684711;
+  font-size: 13px;
+}
+#manualWarmupStart[hidden] { display: none; }
 #start[hidden],
 #finish[hidden],
 #abandonWalk[hidden] { display: none; }
