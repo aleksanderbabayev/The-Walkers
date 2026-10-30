@@ -480,15 +480,16 @@
       const empty = document.createElement("p"); empty.className = "empty"; empty.textContent = "Здесь появятся ваши маршруты и территории"; list.append(empty); return;
     }
     walks.forEach((walk, index) => {
+      const retreated = walk.status === "retreated";
       const segments = Tracking.splitSegments(walk.points || []);
       const layers = !Tracking.shouldDisplayWalkOnMap(walk) ? [] : walk.closed
         ? [L.polygon((walk.points || []).map((point) => [point.lat, point.lng]), { color: "#477b43", weight: 3, fillColor: "#8fbd70", fillOpacity: 0.35 })]
         : segments.filter((segment) => segment.length > 1).map((segment) => L.polyline(segment.map((point) => [point.lat, point.lng]), { color: "#e0765d", weight: 4 }));
       layers.forEach((layer) => { layer.addTo(map); savedLayers.push(layer); });
-      const row = document.createElement("div"); row.className = "route";
-      const icon = document.createElement("span"); icon.className = "routeIcon"; icon.textContent = walk.closed ? "⬟" : "↗";
+      const row = document.createElement("div"); row.className = retreated ? "route retreated" : "route";
+      const icon = document.createElement("span"); icon.className = "routeIcon"; icon.textContent = retreated ? "↩" : walk.closed ? "⬟" : "↗";
       const details = document.createElement("div");
-      const title = document.createElement("strong"); title.textContent = `${walk.closed ? "Захваченная территория" : "Маршрут"} ${walks.length - index}`;
+      const title = document.createElement("strong"); title.textContent = `${retreated ? "Отступление" : walk.closed ? "Захваченная территория" : "Маршрут"} ${walks.length - index}`;
       const distance = Number.isFinite(walk.distanceMeters) ? Math.max(0, walk.distanceMeters) : distanceForPoints(walk.points || []);
       const meta = document.createElement("small"); meta.textContent = `${new Date(walk.finishedAt).toLocaleString("ru-RU", { dateStyle: "medium", timeStyle: "short" })} · ${formatElapsed(durationOfWalk(walk))} · ${formatKilometers(distance)} · ${walk.points.length} точек`;
       details.append(title, meta);
@@ -749,8 +750,11 @@
   };
   const abandonWalk = async () => {
     if ((!warmingUp && !recordingActive) || cancelling || finishing) return;
-    if (recordingActive && !confirm("Отступить и удалить текущую прогулку? Она не попадёт в историю.")) return;
-    recordDiagnosticEvent({ type: "retreat", at: Date.now() });
+    if (recordingActive) {
+      if (!confirm("Отступить и сохранить пройденный маршрут в истории? Территория захвачена не будет.")) return;
+      await finishWalk(true);
+      return;
+    }
     cancelling = true; warmingUp = false;
     positionFilter.reset(); gpsWarmup.reset(); stopTrackingServices();
     locateRequestId += 1;
@@ -782,9 +786,9 @@
     updateDistance();
     currentLines.forEach((line) => map.removeLayer(line)); currentLines = [];
   };
-  const finishWalk = async () => {
+  const finishWalk = async (retreated = false) => {
     if (!recordingActive || finishing || cancelling) return;
-    recordDiagnosticEvent({ type: "finish", at: Date.now() });
+    recordDiagnosticEvent({ type: retreated ? "retreat" : "finish", at: Date.now() });
     positionFilter.reset(); gpsWarmup.reset();
     finishing = true; setRecording(true); stopTrackingServices();
     try {
@@ -792,14 +796,19 @@
       const bufferedPoints = initialRouteBuffer.pending ? initialRouteBuffer.flush().points : [];
       const finishedPoints = [...points, ...bufferedPoints];
       const finishedDistance = distanceForPoints(finishedPoints);
-      if (finishedPoints.length < 2) {
+      if (!retreated && finishedPoints.length < 2) {
         recordDiagnosticEvent({ type: "finish-rejected", at: Date.now(), reason: "insufficient-route-points", pointCount: finishedPoints.length });
         resumeAfterFinishFailure("Нужно ещё GPS-точек для сохранения. Продолжаем запись.");
         return;
       }
       const finishedAt = Date.now();
-      const closed = Tracking.canCloseTrack(finishedPoints);
-      const walk = { id: crypto.randomUUID(), points: finishedPoints, startedAt, finishedAt, durationMs: finishedAt - startedAt, distanceMeters: finishedDistance, closed, showOnMap: closed };
+      const closed = !retreated && Tracking.canCloseTrack(finishedPoints);
+      const walk = {
+        id: crypto.randomUUID(), points: finishedPoints, startedAt, finishedAt,
+        durationMs: finishedAt - startedAt, distanceMeters: finishedDistance,
+        closed, showOnMap: !retreated && closed,
+        ...(retreated ? { status: "retreated" } : {})
+      };
       if (initialRouteBuffer.pending) recordDiagnosticEvent({
         type: "initial-buffer-validation", at: finishedAt, result: "flushed-on-finish",
         bufferedPointCount: initialRouteBuffer.snapshot().length, acceptedPointCount: bufferedPoints.length,
@@ -811,6 +820,7 @@
         diagnosticSession.finalRoute = finishedPoints.map((point) => ({ ...point }));
         diagnosticSession.finishedAt = finishedAt;
         diagnosticSession.territoryCaptured = closed;
+        diagnosticSession.walkStatus = retreated ? "retreated" : "completed";
         diagnosticSession.state = "finalizing";
         diagnosticSession.walkId = walk.id;
       }
@@ -838,13 +848,20 @@
       finishing = false; setRecording(false);
       currentLines.forEach((line) => map.removeLayer(line)); currentLines = [];
       say(diagnosticsSaved
-        ? closed ? "Маршрут замкнут, территория закрашена." : "Контур не замкнулся — захват не состоялся."
+        ? retreated ? "Вы отступили. Маршрут сохранён в истории, территория не захвачена."
+          : closed ? "Маршрут замкнут, территория закрашена." : "Контур не замкнулся — захват не состоялся."
         : "Прогулка сохранена, но диагностику не удалось сохранить.");
       try { await redrawSaved(); } catch { say("Прогулка сохранена, но список не удалось обновить."); }
     } catch {
       if (diagnosticSession?.state === "finalizing") {
         diagnosticSession.state = "active";
         delete diagnosticSession.walkId;
+        delete diagnosticSession.walkStatus;
+        delete diagnosticSession.finalRoute;
+        delete diagnosticSession.finishedAt;
+        delete diagnosticSession.territoryCaptured;
+        persistDiagnosticSession();
+        await diagnosticsQueue;
       }
       recordDiagnosticEvent({ type: "finish-failed", at: Date.now() });
       resumeAfterFinishFailure("Не удалось завершить прогулку. Черновик сохранён, запись продолжается.");
@@ -923,6 +940,10 @@
         if (diagnosticSession.state === "finalizing") {
           diagnosticSession.state = "active";
           delete diagnosticSession.walkId;
+          delete diagnosticSession.walkStatus;
+          delete diagnosticSession.finalRoute;
+          delete diagnosticSession.finishedAt;
+          delete diagnosticSession.territoryCaptured;
         }
         persistDiagnosticSession();
         recordDiagnosticEvent({ type: "draft-restored", at: Date.now(), pointCount: (draft.points || []).length, bufferedPointCount: (draft.initialBuffer || []).length });

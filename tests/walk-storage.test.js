@@ -153,9 +153,60 @@ test("diagnostics are finalized with a completed walk and can be copied from its
   assert.deepEqual(report.finalAcceptedRoute, [{ latitude: 48.9, longitude: 21.2, accuracyMeters: 8, timestamp: 456, segmentStart: true }]);
 });
 
+test("retreat saves short buffered routes and their diagnostics without territory capture", async () => {
+  const db = new MemoryDatabase();
+  const bufferedPoint = { lat: 48.9, lng: 21.2, accuracy: 8, timestamp: 456, segmentStart: true };
+  const draft = { id: "active", points: [], initialBuffer: [bufferedPoint], startedAt: 100 };
+  db.records.drafts.set("active", draft);
+  await Storage.writeDiagnosticSession(db, { id: "active", formatVersion: 1, state: "finalizing", walkId: "walk-retreated", walkStatus: "retreated", events: [] });
+  const events = [
+    { sequence: 1, type: "start", at: 100 },
+    { sequence: 2, type: "gps-measurement", phase: "initial-buffer", decision: "accepted", rawMeasurement: { timestamp: 456, latitude: 48.9, longitude: 21.2, accuracyMeters: 8 }, includedInRoute: true },
+    { sequence: 3, type: "retreat", at: 600 }
+  ];
+  const walk = { id: "walk-retreated", points: [bufferedPoint], startedAt: 100, finishedAt: 600, durationMs: 500, distanceMeters: 0, status: "retreated", closed: false, showOnMap: false };
+
+  await Storage.completeWalk(db, walk);
+  await Storage.completeDiagnostics(db, walk.id, { ...(await Storage.readDiagnostics(db, "active")), events, finalRoute: walk.points, finishedAt: walk.finishedAt, territoryCaptured: false, walkStatus: "retreated" });
+
+  assert.equal(db.records.walks.get(walk.id).status, "retreated");
+  assert.deepEqual(db.records.walks.get(walk.id).points, [bufferedPoint]);
+  assert.equal(db.records.walks.get(walk.id).durationMs, 500);
+  assert.equal(db.records.walks.get(walk.id).distanceMeters, 0);
+  assert.equal(db.records.walks.get(walk.id).closed, false);
+  const report = Diagnostics.buildReport(await Storage.readDiagnostics(db, walk.id), walk.points, (await Storage.readDiagnostics(db, walk.id)).events);
+  assert.equal(report.metadata.walkStatus, "retreated");
+  assert.equal(report.metadata.territoryCaptured, false);
+  assert.deepEqual(report.events.map((event) => event.type), ["start", "gps-measurement", "retreat"]);
+  assert.equal(report.finalAcceptedRoute.length, 1);
+});
+
+test("retreat can save a draft with no accepted route points", async () => {
+  const db = new MemoryDatabase();
+  db.records.drafts.set("active", { id: "active", points: [], startedAt: 100 });
+  const walk = { id: "walk-empty-retreat", points: [], startedAt: 100, finishedAt: 200, durationMs: 100, distanceMeters: 0, status: "retreated", closed: false, showOnMap: false };
+  await Storage.completeWalk(db, walk);
+  assert.equal(db.records.walks.get(walk.id), walk);
+  assert.equal(db.records.drafts.has("active"), false);
+});
+
+test("failed retreat saving preserves both the active draft and its diagnostic events", async () => {
+  const db = new MemoryDatabase();
+  const draft = { id: "active", points: [{ lat: 48.9, lng: 21.2 }], startedAt: 100 };
+  db.records.drafts.set("active", draft);
+  await Storage.writeDiagnosticSession(db, { id: "active", formatVersion: 1, state: "finalizing", walkId: "walk-retreated", walkStatus: "retreated", events: [] });
+  await Storage.writeDiagnosticEvent(db, "active", { sequence: 1, type: "retreat", at: 200 });
+  db.failNext = true;
+
+  await assert.rejects(Storage.completeWalk(db, { id: "walk-retreated", points: [], status: "retreated" }));
+  assert.equal(db.records.drafts.get("active"), draft);
+  assert.equal(db.records.walks.size, 0);
+  assert.equal((await Storage.readDiagnostics(db, "active")).events[0].type, "retreat");
+});
+
 test("failed diagnostic finalization leaves the saved walk and active diagnostic events intact", async () => {
   const db = new MemoryDatabase();
-  const walk = { id: "walk-1", points: [{ lat: 48.9, lng: 21.2, timestamp: 456 }], finishedAt: 789 };
+  const walk = { id: "walk-1", points: [{ lat: 48.9, lng: 21.2, timestamp: 456 }], finishedAt: 789, status: "retreated", closed: false, showOnMap: false };
   db.records.walks.set(walk.id, walk);
   await Storage.writeDiagnosticSession(db, { id: "active", formatVersion: 1, state: "finalizing", walkId: walk.id, events: [] });
   await Storage.writeDiagnosticEvent(db, "active", { sequence: 1, type: "start", at: 123 });
@@ -177,7 +228,7 @@ test("cancelling GPS warm-up deletes only the empty active draft", async () => {
   assert.equal(db.records.walks.get(completedWalk.id), completedWalk);
 });
 
-test("retreat deletes the active route draft without changing completed walks or adding a walk", async () => {
+test("deleting an active draft leaves completed walks unchanged", async () => {
   const db = new MemoryDatabase();
   const completedWalk = { id: "walk-1", closed: true, points: [{ lat: 1, lng: 2 }] };
   db.records.walks.set(completedWalk.id, completedWalk);
@@ -189,7 +240,7 @@ test("retreat deletes the active route draft without changing completed walks or
   assert.equal(db.records.walks.get(completedWalk.id), completedWalk);
 });
 
-test("failed retreat preserves the draft and prevents a new draft from overwriting it", async () => {
+test("failed draft deletion preserves it and prevents a new draft from overwriting it", async () => {
   const db = new MemoryDatabase();
   const draft = { id: "active", points: [{ lat: 1, lng: 2 }, { lat: 1.001, lng: 2 }], startedAt: 123 };
   db.records.drafts.set("active", draft);

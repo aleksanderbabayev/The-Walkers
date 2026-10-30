@@ -393,4 +393,5 @@ test("hides unclosed finished walks without changing legacy or captured walk vis
   assert.equal(Tracking.shouldDisplayWalkOnMap({ closed: false, showOnMap: false }), false);
   assert.equal(Tracking.shouldDisplayWalkOnMap({ closed: false }), true);
   assert.equal(Tracking.shouldDisplayWalkOnMap({ closed: true, showOnMap: false }), true);
+  assert.equal(Tracking.shouldDisplayWalkOnMap({ status: "retreated", closed: true, showOnMap: true }), false);
 });

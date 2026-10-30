@@ -107,6 +107,7 @@
       eventCount: events.length,
       diagnosticsCaptured: events.some((event) => event.type === "gps-measurement"),
       routeStatus: session?.state || "active",
+      walkStatus: session?.walkStatus || null,
       territoryCaptured: session?.territoryCaptured ?? null
     },
     events: events.map(({ id, sessionId, ...event }) => ({ ...event })),

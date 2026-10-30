@@ -176,7 +176,7 @@
     return distanceMeters(points[0], points.at(-1)) <= options.closeMeters;
   };
 
-  const shouldDisplayWalkOnMap = (walk) => walk.closed || walk.showOnMap !== false;
+  const shouldDisplayWalkOnMap = (walk) => walk.status !== "retreated" && (walk.closed || walk.showOnMap !== false);
 
   const createGpsServices = ({ geolocation, onPosition, onError, onAutosave, schedule = setInterval, cancel = clearInterval, intervalMs = 5000, watchOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 } }) => {
     let watchId = null, timerId = null;
