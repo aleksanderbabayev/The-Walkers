@@ -168,8 +168,10 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
   z-index: 1000;
   top: 10px;
   left: 10px;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0;
   display: grid;
   place-items: center;
@@ -182,8 +184,27 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
   line-height: 1;
   box-shadow: 0 1px 5px #0006;
   cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
+.mapLocate.is-locating { color: transparent; }
+.mapLocate.is-locating::after {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #405b4a;
+  border-right-color: transparent;
+  border-radius: 50%;
+  content: "";
+  animation: locate-spin 800ms linear infinite;
+}
+.mapLocate.is-ready { border-color: #d7eddd; background: #e7f4e9; color: #2f7440; box-shadow: 0 1px 5px #0003, inset 0 0 0 1px #2f74401a; }
+.mapLocate.is-error { border-color: #f1d5c7; background: #fff5ee; color: #a54b31; }
 .mapLocate:active { background: #edf2e8; }
+@keyframes locate-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .mapLocate { transition: none; }
+  .mapLocate.is-locating::after { animation: none; }
+}
 button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
 
 @media (max-width: 760px) {

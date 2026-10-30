@@ -99,10 +99,14 @@
 
   let db, storageReady = false, draftResolved = false, starting = false, finishing = false, cancelling = false;
   let recordingActive = false, warmingUp = false, points = [], distanceMetersTotal = 0, currentLines = [], savedLayers = [], stopwatchTimer = null, startedAt = null;
-  let trackingQueue = Promise.resolve(), pendingLocateRequestId = null;
+  let trackingQueue = Promise.resolve();
   const positionFilter = Tracking.createPositionFilter();
   const gpsWarmup = Tracking.createGpsWarmup();
   let currentLocationMarker = null;
+  let locationState = "loading", latestLocation = null, locationRequestPending = false;
+  let locationWaitStartedAt = Date.now(), locationRequestToken = 0, locationTimeoutTimer = null;
+  const LOCATION_WAIT_TIMEOUT_MS = 20000;
+  const LOCATION_REFRESH_INTERVAL_MS = 5000;
   const mapDiagnosticsEnabled = new URLSearchParams(window.location.search).get("mapDebug") === "1";
   const updateLocationMarker = (point) => {
     const latlng = [point.lat, point.lng];
@@ -158,6 +162,109 @@
   const formatKilometers = (meters) => `${(Math.max(0, meters) / 1000).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} км`;
   const durationOfWalk = (walk) => Number.isFinite(walk.durationMs) ? Math.max(0, walk.durationMs) : Math.max(0, (walk.finishedAt || 0) - (walk.startedAt || 0));
   const say = (message) => { $("message").textContent = message; };
+  const updateLocateButton = (state) => {
+    const previousState = locationState;
+    locationState = state;
+    const button = $("locate");
+    button.classList.toggle("is-locating", state === "loading");
+    button.classList.toggle("is-ready", state === "ready");
+    button.classList.toggle("is-error", state === "error");
+    button.textContent = state === "error" ? "↻" : "◎";
+    button.setAttribute("aria-busy", String(state === "loading"));
+    const label = state === "ready" ? "Центрировать карту на вашем местоположении"
+      : state === "error" ? "Повторить определение местоположения" : "Определяем ваше местоположение";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    if (state === "loading" && previousState !== "loading") locationWaitStartedAt = Date.now();
+  };
+  const cancelPendingLocationRequest = () => {
+    locationRequestToken += 1;
+    if (locationTimeoutTimer !== null) clearTimeout(locationTimeoutTimer);
+    locationTimeoutTimer = null; locationRequestPending = false;
+  };
+  const currentLocationErrorMessage = (error) => {
+    if (error?.code === 1) return "Нет доступа к геолокации. Разрешите её в настройках браузера и нажмите кнопку для повтора.";
+    if (error?.code === 3) return "Не удалось определить местоположение вовремя. Нажмите кнопку, чтобы попробовать ещё раз.";
+    return "GPS временно недоступен. Проверьте геолокацию и нажмите кнопку для повтора.";
+  };
+  const requestCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      locationRequestPending = false; latestLocation = null; updateLocateButton("error");
+      say("Геолокация недоступна в этом браузере. Проверьте разрешения или используйте другой браузер.");
+      return;
+    }
+    if (locationRequestPending) return;
+    locationRequestPending = true;
+    updateLocateButton("loading");
+    const token = ++locationRequestToken;
+    const finishRequest = () => {
+      if (locationTimeoutTimer !== null) clearTimeout(locationTimeoutTimer);
+      locationTimeoutTimer = null; locationRequestPending = false;
+    };
+    locationTimeoutTimer = setTimeout(() => {
+      if (token !== locationRequestToken) return;
+      locationRequestToken += 1;
+      finishRequest(); latestLocation = null; updateLocateButton("error");
+      say("Не удалось определить местоположение вовремя. Нажмите кнопку, чтобы попробовать ещё раз.");
+    }, LOCATION_WAIT_TIMEOUT_MS);
+    try { navigator.geolocation.getCurrentPosition((position) => {
+      if (token !== locationRequestToken) return;
+      finishRequest();
+      const result = Tracking.evaluateLocationPosition(position, Date.now());
+      if (!result.accepted) {
+        latestLocation = null;
+        updateLocateButton("error");
+        say(result.reason === "accuracy"
+          ? `Сигнал GPS пока неточный (±${Math.round(position.coords.accuracy)} м). Подождите и нажмите кнопку для повтора.`
+          : "Получены устаревшие координаты. Нажмите кнопку, чтобы определить местоположение ещё раз.");
+        return;
+      }
+      rememberLocation(result.point);
+    }, (error) => {
+      if (token !== locationRequestToken) return;
+      finishRequest(); latestLocation = null; updateLocateButton("error");
+      say(currentLocationErrorMessage(error));
+    }, { enableHighAccuracy: true, maximumAge: 0, timeout: LOCATION_WAIT_TIMEOUT_MS }); }
+    catch {
+      if (token !== locationRequestToken) return;
+      finishRequest(); latestLocation = null; updateLocateButton("error");
+      say("GPS временно недоступен. Проверьте настройки геолокации и попробуйте ещё раз.");
+    }
+  };
+  const locationIsFresh = (point, now = Date.now()) => point && point.accuracy <= Tracking.LOCATION_DEFAULTS.maxAccuracyMeters
+    && now - point.timestamp >= -Tracking.DEFAULTS.futureToleranceMs
+    && now - point.timestamp <= Tracking.LOCATION_DEFAULTS.maxAgeMs;
+  const rememberLocation = (point) => {
+    if (locationRequestPending) {
+      locationRequestToken += 1;
+      if (locationTimeoutTimer !== null) clearTimeout(locationTimeoutTimer);
+      locationTimeoutTimer = null; locationRequestPending = false;
+    }
+    latestLocation = point;
+    updateLocateButton("ready");
+    if ($("message").textContent.startsWith("📡 Определяем ваше местоположение.")) say("");
+  };
+  const refreshLocationReadiness = () => {
+    if (locationState === "ready" && !locationIsFresh(latestLocation)) {
+      latestLocation = null;
+      updateLocateButton("loading");
+      if (!recordingActive && !warmingUp) requestCurrentLocation();
+    }
+    if (locationState === "loading" && !locationRequestPending && Date.now() - locationWaitStartedAt >= LOCATION_WAIT_TIMEOUT_MS) {
+      updateLocateButton("error");
+      say("Не удалось получить свежий GPS-сигнал. Нажмите кнопку, чтобы попробовать ещё раз.");
+    }
+  };
+  const handleLocationResume = () => {
+    if (document.visibilityState === "hidden") return;
+    refreshLocationReadiness();
+    if (locationState === "loading" && !locationRequestPending && !recordingActive && !warmingUp) requestCurrentLocation();
+  };
+  document.addEventListener("visibilitychange", handleLocationResume);
+  window.addEventListener("pageshow", handleLocationResume);
+  updateLocateButton("loading");
+  setInterval(refreshLocationReadiness, LOCATION_REFRESH_INTERVAL_MS);
+  requestCurrentLocation();
   const formatElapsed = (milliseconds) => {
     const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
     const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
@@ -283,6 +390,12 @@
       return;
     }
     if (!recordingActive) return;
+    const locationFix = Tracking.evaluateLocationPosition(position, Date.now());
+    if (locationFix.accepted) rememberLocation(locationFix.point);
+    else {
+      latestLocation = null;
+      updateLocateButton("loading");
+    }
     const result = positionFilter.evaluate(position, points.at(-1), Date.now());
     if (!result.accepted) {
       if (Number.isFinite(position.coords?.accuracy)) $("gps").textContent = `±${Math.round(position.coords.accuracy)} м`;
@@ -298,17 +411,16 @@
 
     points = nextPoints;
     distanceMetersTotal += result.distanceMeters;
+    rememberLocation(result.point);
     drawCurrent(); updateDistance(); updateLocationMarker(result.point);
     $("gps").textContent = `±${Math.round(result.point.accuracy)} м`;
     if (result.newSegment && points.length > 1) say("После перерыва начат новый участок маршрута.");
-    if (pendingLocateRequestId !== null) {
-      const requestId = pendingLocateRequestId;
-      pendingLocateRequestId = null;
-      if (requestId === locateRequestId) centerMapOnPosition(result.point, requestId);
-    }
   };
   const receivePosition = (position) => enqueueTrackingTask(() => processPosition(position));
   const onLocationError = (error) => {
+    cancelPendingLocationRequest();
+    latestLocation = null;
+    updateLocateButton("error");
     if (cancelling) return;
     if (warmingUp) {
       gpsWarmup.reset();
@@ -317,8 +429,7 @@
         : "GPS-сигнал прервался. Стабилизация начнётся заново…");
       return;
     }
-    const message = error.code === 1 ? "Разрешите доступ к геолокации в настройках браузера." : "Нет GPS-сигнала. Проверьте геолокацию и попробуйте выйти на открытое место.";
-    say(message);
+    say(currentLocationErrorMessage(error));
   };
   const gpsServices = Tracking.createGpsServices({
     geolocation: navigator.geolocation,
@@ -351,6 +462,7 @@
     if (!storageReady || !draftResolved || starting || recordingActive || warmingUp || finishing || cancelling) return;
     positionFilter.reset(); gpsWarmup.reset();
     starting = true; setRecording(false);
+    cancelPendingLocationRequest();
     locateRequestId += 1;
     const newStartedAt = Date.now();
     try {
@@ -381,7 +493,7 @@
     if (recordingActive && !confirm("Отступить и удалить текущую прогулку? Она не попадёт в историю.")) return;
     cancelling = true; warmingUp = false;
     positionFilter.reset(); gpsWarmup.reset(); stopTrackingServices();
-    pendingLocateRequestId = null; locateRequestId += 1;
+    locateRequestId += 1;
     setRecording(false); clearActiveWalkView(); say("");
     try {
       await trackingQueue;
@@ -432,30 +544,24 @@
   let locateRequestId = 0;
   $("locate").addEventListener("click", () => {
     const requestId = ++locateRequestId;
-    if (recordingActive) {
-      const latestRoutePoint = points.at(-1);
-      if (!latestRoutePoint) return say("Ожидаем первую GPS-точку маршрута.");
-      if (latestRoutePoint.accuracy > Tracking.DEFAULTS.maxAccuracyMeters) return say(`Последняя GPS-точка неточная (±${Math.round(latestRoutePoint.accuracy)} м).`);
-      if (!Number.isFinite(latestRoutePoint.timestamp) || Date.now() - latestRoutePoint.timestamp > Tracking.DEFAULTS.maxAgeMs) {
-        pendingLocateRequestId = requestId;
-        return say("Ожидаем свежую GPS-точку для центрирования карты…");
-      }
-      centerMapOnPosition(latestRoutePoint, requestId);
+    if (locationState === "loading") {
+      say("📡 Определяем ваше местоположение. Пожалуйста, подождите.");
       return;
     }
-    if (!navigator.geolocation) return say("Геолокация недоступна в этом браузере.");
-    say("Определяем точное местоположение…");
-    navigator.geolocation.getCurrentPosition((position) => {
-      if (requestId !== locateRequestId) return;
-      const result = Tracking.evaluatePosition(position, null, Date.now());
-      if (!result.accepted) return say(result.reason === "accuracy"
-        ? `GPS пока неточный (±${Math.round(position.coords.accuracy)} м). Карта не перемещена.`
-        : "Не удалось получить свежую GPS-точку. Карта не перемещена.");
-      centerMapOnPosition(result.point, requestId);
-      say("");
-    }, (error) => {
-      if (requestId === locateRequestId) onLocationError(error);
-    }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
+    if (locationState === "error") {
+      say("📡 Определяем ваше местоположение. Пожалуйста, подождите.");
+      requestCurrentLocation();
+      return;
+    }
+    if (!locationIsFresh(latestLocation)) {
+      latestLocation = null;
+      updateLocateButton("loading");
+      say("📡 Определяем ваше местоположение. Пожалуйста, подождите.");
+      requestCurrentLocation();
+      return;
+    }
+    centerMapOnPosition(latestLocation, requestId);
+    say("");
   });
   (async () => {
     try {

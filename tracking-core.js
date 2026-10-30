@@ -16,6 +16,7 @@
     closeMeters: 50,
     minPolygonPoints: 4
   });
+  const LOCATION_DEFAULTS = Object.freeze({ maxAccuracyMeters: 50, maxAgeMs: 30000 });
 
   const distanceMeters = (a, b) => {
     const radius = 6371000, rad = (value) => value * Math.PI / 180;
@@ -67,6 +68,8 @@
     if (distance / (elapsedMs / 1000) > config.maxSpeedMetersPerSecond) return { accepted: false, reason: "speed" };
     return { accepted: true, point, distanceMeters: distance, newSegment: false };
   };
+
+  const evaluateLocationPosition = (position, now = Date.now()) => evaluatePosition(position, null, now, { ...DEFAULTS, ...LOCATION_DEFAULTS });
 
   const createPositionFilter = () => {
     let pendingGapPoint = null;
@@ -156,5 +159,5 @@
     return { start, stop };
   };
 
-  return { DEFAULTS, distanceMeters, evaluatePosition, createPositionFilter, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, shouldDisplayWalkOnMap, createGpsServices };
+  return { DEFAULTS, LOCATION_DEFAULTS, distanceMeters, evaluatePosition, evaluateLocationPosition, createPositionFilter, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, shouldDisplayWalkOnMap, createGpsServices };
 });

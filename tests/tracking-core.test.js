@@ -21,6 +21,13 @@ test("rejects poor accuracy, stale timestamps, and future timestamps", () => {
   assert.equal(Tracking.evaluatePosition(position(0, 0, now + 5001), previous, now).reason, "stale");
 });
 
+test("current-location fixes allow up to 50 m accuracy and expire after 30 seconds", () => {
+  assert.equal(Tracking.evaluateLocationPosition(position(48.9, 21.2, now, 50), now).accepted, true);
+  assert.equal(Tracking.evaluateLocationPosition(position(48.9, 21.2, now, 50.1), now).reason, "accuracy");
+  assert.equal(Tracking.evaluateLocationPosition(position(48.9, 21.2, now - 30001, 10), now).reason, "stale");
+  assert.equal(Tracking.evaluateLocationPosition(position(48.9, 21.2, now - 30000, 10), now).accepted, true);
+});
+
 test("rejects implausible walking speed and accuracy-sized stationary drift", () => {
   const previous = point(0, 0, now - 5000, true);
   assert.equal(Tracking.evaluatePosition(position(0.001, 0), previous, now).reason, "speed");
