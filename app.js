@@ -114,6 +114,10 @@
     if (currentLocationMarker) currentLocationMarker.setLatLng(latlng);
     else currentLocationMarker = L.circleMarker(latlng, { radius: 8, color: "#fff", weight: 3, fillColor: "#2877df", fillOpacity: 1 }).addTo(map);
   };
+  const clearLocationMarker = () => {
+    if (currentLocationMarker) map.removeLayer(currentLocationMarker);
+    currentLocationMarker = null;
+  };
   const reportMapDiagnostics = (reason, point) => {
     if (!mapDiagnosticsEnabled) return;
     const center = map.getCenter(), size = map.getSize(), rect = map.getContainer().getBoundingClientRect();
@@ -211,6 +215,7 @@
     try { navigator.geolocation.getCurrentPosition((position) => {
       if (token !== locationRequestToken) return;
       finishRequest();
+      if (recordingActive || warmingUp || starting) return;
       const result = Tracking.evaluateLocationPosition(position, Date.now());
       if (!result.accepted) {
         latestLocation = null;
@@ -389,18 +394,12 @@
       if (!warmingUp || cancelling) return;
 
       points = []; startedAt = recordingStartedAt; distanceMetersTotal = 0;
-      warmingUp = false; updateDistance(); updateLocationMarker(initialPoint);
+      warmingUp = false; updateDistance(); rememberLocation(initialPoint); updateLocationMarker(initialPoint);
       $("gps").textContent = `±${Math.round(initialPoint.accuracy)} м`;
       setRecording(true); startStopwatch(); say("GPS готов. Можно идти!");
       return;
     }
     if (!recordingActive) return;
-    const locationFix = Tracking.evaluateLocationPosition(position, Date.now());
-    if (locationFix.accepted) rememberLocation(locationFix.point);
-    else {
-      latestLocation = null;
-      updateLocateButton("loading");
-    }
     const bufferingInitial = initialRouteBuffer.pending;
     const previousInitialBuffer = bufferingInitial ? initialRouteBuffer.snapshot() : [];
     const result = bufferingInitial
@@ -422,7 +421,11 @@
           say("Начальная GPS-точка не сохранена. Продолжаем проверку сигнала…");
           return;
         }
-        updateLocationMarker(result.point);
+        const lastValidatedPoint = result.validatedPoints.at(-1);
+        if (lastValidatedPoint) {
+          rememberLocation(lastValidatedPoint);
+          updateLocationMarker(lastValidatedPoint);
+        }
         return;
       }
       const nextPoints = [...points, ...result.validatedPoints];
@@ -434,7 +437,12 @@
       }
       initialRouteBuffer.reset(); positionFilter.reset();
       points = nextPoints; distanceMetersTotal = distanceForPoints(points);
-      drawCurrent(); updateDistance(); updateLocationMarker(result.point);
+      const lastValidatedPoint = result.validatedPoints.at(-1);
+      drawCurrent(); updateDistance();
+      if (lastValidatedPoint) {
+        rememberLocation(lastValidatedPoint);
+        updateLocationMarker(lastValidatedPoint);
+      }
       return;
     }
 
@@ -494,6 +502,7 @@
     if (!navigator.geolocation) { say("Этот браузер не поддерживает геолокацию."); return; }
     if (!storageReady || !draftResolved || starting || recordingActive || warmingUp || finishing || cancelling) return;
     positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset();
+    latestLocation = null; updateLocateButton("loading"); clearLocationMarker();
     starting = true; setRecording(false);
     cancelPendingLocationRequest();
     locateRequestId += 1;
@@ -582,6 +591,11 @@
   let locateRequestId = 0;
   $("locate").addEventListener("click", () => {
     const requestId = ++locateRequestId;
+    if (recordingActive || warmingUp || starting) {
+      if (locationIsFresh(latestLocation)) centerMapOnPosition(latestLocation, requestId);
+      else say("📡 Определяем ваше местоположение. Пожалуйста, подождите.");
+      return;
+    }
     if (locationState === "loading") {
       say("📡 Определяем ваше местоположение. Пожалуйста, подождите.");
       return;
@@ -625,12 +639,16 @@
           locateRequestId += 1;
           points = draftPoints;
           initialRouteBuffer.restore(draftInitialBuffer);
+          latestLocation = null; updateLocateButton("loading"); clearLocationMarker();
           distanceMetersTotal = distanceForPoints(points);
           startedAt = Number.isFinite(draft.startedAt) ? draft.startedAt : Date.now();
           warmingUp = wasWarmingUp;
           updateDistance(); drawCurrent();
-          if (points.length) updateLocationMarker(points.at(-1));
-          else if (draftInitialBuffer.length) updateLocationMarker(draftInitialBuffer.at(-1));
+          const restoredValidatedPoints = points.length ? points : initialRouteBuffer.flush().points;
+          if (restoredValidatedPoints.length) {
+            rememberLocation(restoredValidatedPoints.at(-1));
+            updateLocationMarker(restoredValidatedPoints.at(-1));
+          }
           draftResolved = true;
           try {
             startTrackingServices();

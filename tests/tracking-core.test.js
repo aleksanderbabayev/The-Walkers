@@ -221,6 +221,27 @@ test("initial route buffering filters an early drift outlier without straighteni
   assert.equal(result.validatedPoints.some((point) => point.timestamp === now - 16000 || point.timestamp === now - 15000), false);
 });
 
+test("initial validation cannot distinguish gradual GPS correction from plausible walking", () => {
+  const meters = (value) => value / 111320;
+  const buffer = Tracking.createInitialRouteBuffer(18000);
+  // The same 1.43 m/s coordinates can describe either drift correction or a real walk.
+  const route = [point(0, meters(25.8), now - 18000, true, 2)];
+  for (let index = 1; index <= 6; index += 1) {
+    route.push(point(0, meters(25.8 - index * 4.3), now - 18000 + index * 3000, false, 2));
+  }
+
+  buffer.begin(route[0]);
+  let result;
+  for (const candidate of route.slice(1)) {
+    result = buffer.add(position(candidate.lat, candidate.lng, candidate.timestamp, candidate.accuracy), candidate.timestamp);
+  }
+
+  assert.equal(result.ready, true);
+  assert.equal(result.validatedPoints.length, route.length);
+  assert.ok(result.distanceMeters > 25 && result.distanceMeters < 27);
+  assert.deepEqual(result.validatedPoints.map((point) => point.timestamp), route.map((point) => point.timestamp));
+});
+
 test("initial route validation preserves a genuine early turn", () => {
   const meters = (value) => value / 111320;
   const route = [
