@@ -177,6 +177,7 @@ main {
 .walkInstructions[hidden] { display: none; }
 .walkInstructionsCard { width: min(100%, 440px); max-height: 100%; overflow: auto; padding: 22px; border: 1px solid #e9ece6; border-radius: 22px; background: #fff; box-shadow: 0 12px 40px #0003; pointer-events: auto; }
 .walkInstructionsCard h2 { margin: 0 0 12px; color: #26372a; font-size: 19px; line-height: 1.25; }
+.walkInstructionsMap { display: block; width: 100%; height: auto; margin: 0 0 14px; border-radius: 14px; }
 .walkInstructionsCard p { margin: 0 0 18px; color: #59665b; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
 .walkInstructionsCard button { width: 100%; min-height: 48px; border: 0; border-radius: 14px; background: #365f3a; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .walkInstructionsCard button:active { background: #294b2d; }
