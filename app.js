@@ -214,7 +214,7 @@
   const persistDiagnosticUpdates = (events) => events.forEach(persistDiagnosticEvent);
   const diagnosticThresholds = (phase) => ({
     ...Tracking.DEFAULTS,
-    ...(phase === "warm-up" ? { requiredConsecutivePositions: 3 } : {}),
+    ...(phase === "warm-up" ? Tracking.GPS_WARMUP_DEFAULTS : {}),
     ...(phase === "initial-buffer" ? { validationWindowMs: 18000 } : {})
   });
   const recordGpsDiagnostic = (position, processedAt, phase, decision, reason, previous, extra) => addDiagnosticEvent(
@@ -536,12 +536,21 @@
       const warmup = gpsWarmup.add(position, Date.now());
       const warmupDecision = warmup.reason === "accuracy" || warmup.reason === "stale" ? "rejected" : warmup.stable ? "accepted" : "pending_confirmation";
       const warmupEvent = recordGpsDiagnostic(position, processedAt, "warm-up", warmupDecision, warmup.reason, warmupDiagnosticPrevious,
-        { warmupCount: warmup.count, requiredConsecutivePositions: 3 });
+        {
+          warmupCount: warmup.count,
+          requiredConsecutivePositions: warmup.requiredPositions,
+          requiredDurationMs: warmup.requiredDurationMs,
+          warmupElapsedMs: warmup.elapsedMs ?? null,
+          spatialSpreadMeters: warmup.spreadMeters ?? null
+        });
       persistDiagnosticEvent(warmupEvent);
       warmupDiagnosticPrevious = warmup.count > 0 ? { lat: position.coords.latitude, lng: position.coords.longitude, timestamp: position.timestamp } : null;
       if (!warmup.stable) {
-        if (warmup.reason === "accuracy") say(`GPS неточный (±${Math.round(position.coords.accuracy)} м). Стабилизируем сигнал…`);
+        if (warmup.reason === "accuracy") say(`GPS пока недостаточно точный (±${Math.round(position.coords.accuracy)} м; нужно ±${warmup.accuracyThresholdMeters} м или лучше). Оставайтесь на месте…`);
         else if (warmup.reason === "stale") say("GPS прислал устаревшую точку. Ждём свежий сигнал…");
+        else if (warmup.reason === "inconsistent") say("GPS-позиции пока расходятся. Оставайтесь на месте, пока сигнал стабилизируется…");
+        else if (warmup.reason === "interrupted") say("GPS-сигнал прерывался. Проверка устойчивой позиции началась заново…");
+        else say(`Стабилизация GPS… ${warmup.count}/${warmup.requiredPositions}. Подождите перед началом движения.`);
         return;
       }
 

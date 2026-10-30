@@ -84,45 +84,97 @@ test("reset discards an unconfirmed post-gap GPS candidate", () => {
   assert.equal(next.reason, "confirm");
 });
 
-test("GPS warm-up accepts the latest of three fresh consistent positions", () => {
-  const warmup = Tracking.createGpsWarmup();
-  const first = warmup.add(position(48.9, 21.2, now - 2000, 6), now - 2000);
-  const second = warmup.add(position(48.90001, 21.2, now - 1000, 5), now - 1000);
-  const third = warmup.add(position(48.90002, 21.2, now, 5), now);
+test("v0.1.45 diagnostic summary is rejected by the stricter warm-up accuracy gate", () => {
+  const observed = {
+    source: "user-reported diagnostic summary; raw coordinate sequence unavailable",
+    previousAccuracyThresholdMeters: 35,
+    previousRequiredPositions: 3,
+    oldReadyAtMs: 4600,
+    oldStartAccuracyMeters: 23.8,
+    initialAccuracyRangeMeters: [14, 24],
+    laterAccuracyRangeMeters: [4, 9],
+    apparentFalseTurns: true
+  };
 
-  assert.equal(first.stable, false);
-  assert.equal(second.stable, false);
-  assert.equal(third.stable, true);
-  assert.equal(third.count, 3);
-  assert.equal(third.point.lat, 48.90002);
-  assert.equal(third.point.lng, 21.2);
+  assert.equal(observed.oldReadyAtMs, 4600);
+  assert.equal(observed.oldStartAccuracyMeters, 23.8);
+  assert.ok(observed.oldStartAccuracyMeters <= observed.previousAccuracyThresholdMeters);
+  assert.equal(observed.previousRequiredPositions, 3);
+  assert.ok(observed.oldStartAccuracyMeters > Tracking.GPS_WARMUP_DEFAULTS.maxAccuracyMeters);
+  assert.ok(observed.laterAccuracyRangeMeters[1] <= Tracking.GPS_WARMUP_DEFAULTS.maxAccuracyMeters);
+  assert.match(observed.source, /raw coordinate sequence unavailable/);
 });
 
-test("GPS warm-up restarts its consecutive count for inaccurate and inconsistent fixes", () => {
+test("GPS warm-up waits for five accurate positions across six seconds and uses a medoid", () => {
+  const warmup = Tracking.createGpsWarmup();
+  const start = now - 6000;
+  const offsets = [0, 1, 2, 2.5, 3];
+  const accuracies = [8, 6, 5, 7, 10];
+  let result;
+
+  offsets.forEach((meters, index) => {
+    const timestamp = start + index * 1500;
+    result = warmup.add(position(meters / 111111, 21.2, timestamp, accuracies[index]), now);
+    if (index < offsets.length - 1) assert.equal(result.stable, false);
+  });
+
+  assert.equal(result.stable, true);
+  assert.equal(result.count, 5);
+  assert.equal(result.elapsedMs, 6000);
+  assert.equal(result.point.timestamp, start + 3000);
+  assert.equal(result.point.accuracy, 5);
+  assert.notEqual(result.point.timestamp, start + 6000, "the start is the most representative fix, not blindly the latest");
+});
+
+test("GPS warm-up rejects poor accuracy and restarts after inconsistent fixes", () => {
   const metersInLongitude = (meters) => meters / 111320;
   const warmup = Tracking.createGpsWarmup();
-  assert.equal(warmup.add(position(0, 0, now - 3000, 5), now - 3000).count, 1);
-  assert.equal(warmup.add(position(0, 0.00001, now - 2000, 36), now - 2000).reason, "accuracy");
-  assert.equal(warmup.add(position(0, metersInLongitude(40), now - 1000, 5), now - 1000).count, 1);
-  const afterJump = warmup.add(position(0, metersInLongitude(42), now, 5), now);
-  assert.equal(afterJump.stable, false);
-  assert.equal(afterJump.count, 2);
-  const stable = warmup.add(position(0, metersInLongitude(44), now + 1000, 5), now + 1000);
-  assert.equal(stable.stable, true);
-  assert.equal(stable.point.lng, metersInLongitude(44));
+  assert.equal(warmup.add(position(0, 0, now, 12.1), now).reason, "accuracy");
+
+  const first = warmup.add(position(0, 0, now, 5), now);
+  assert.equal(first.count, 1);
+  const inconsistent = warmup.add(position(0, metersInLongitude(10), now + 1000, 5), now + 1000);
+  assert.equal(inconsistent.reason, "inconsistent");
+  assert.equal(inconsistent.count, 1);
+
+  let result;
+  [10.5, 11, 11.5, 12].forEach((meters, index) => {
+    const timestamp = now + 2500 + index * 1500;
+    result = warmup.add(position(0, metersInLongitude(meters), timestamp, 5), timestamp);
+  });
+  assert.equal(result.stable, true);
+  assert.equal(result.elapsedMs, 6000);
 });
 
-test("GPS warm-up restarts after an interrupted sequence", () => {
+test("prolonged poor GPS never auto-accepts a start position", () => {
   const warmup = Tracking.createGpsWarmup();
-  const start = now - 60000;
+  const start = now - 20000;
+  let result;
+  for (let index = 0; index < 21; index += 1) {
+    const timestamp = start + index * 1000;
+    result = warmup.add(position(48.9, 21.2, timestamp, 14), timestamp);
+    assert.equal(result.stable, false);
+    assert.equal(result.reason, "accuracy");
+  }
+  assert.equal(result.point, undefined);
+});
+
+test("GPS warm-up restarts its stable window after an interruption", () => {
+  const warmup = Tracking.createGpsWarmup();
+  const start = now - 9000;
   assert.equal(warmup.add(position(0, 0, start, 5), start).count, 1);
-  const resumed = warmup.add(position(0, 0.00001, start + 31000, 5), start + 31000);
+  const resumed = warmup.add(position(0, 0.00001, start + 9000, 5), start + 9000);
   assert.equal(resumed.stable, false);
+  assert.equal(resumed.reason, "interrupted");
   assert.equal(resumed.count, 1);
-  assert.equal(warmup.add(position(0, 0.00002, start + 32000, 5), start + 32000).count, 2);
-  const stable = warmup.add(position(0, 0.00003, start + 33000, 5), start + 33000);
-  assert.equal(stable.stable, true);
-  assert.equal(stable.point.lng, 0.00003);
+  let result;
+  [
+    [10000, 1], [11500, 2], [13000, 1.5], [15000, 2.5]
+  ].forEach(([offset, meters]) => {
+    result = warmup.add(position(0, meters / 111320, start + offset, 5), start + offset);
+  });
+  assert.equal(result.stable, true);
+  assert.equal(result.elapsedMs, 6000);
 });
 
 test("accumulates realistic short walking movements without stationary GPS drift", () => {

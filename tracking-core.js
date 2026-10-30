@@ -17,6 +17,12 @@
     minPolygonPoints: 4
   });
   const LOCATION_DEFAULTS = Object.freeze({ maxAccuracyMeters: 50, maxAgeMs: 30000 });
+  const GPS_WARMUP_DEFAULTS = Object.freeze({
+    maxAccuracyMeters: 12,
+    requiredPositions: 5,
+    minDurationMs: 6000,
+    maxGapMs: 8000
+  });
 
   const distanceMeters = (a, b) => {
     const radius = 6371000, rad = (value) => value * Math.PI / 180;
@@ -129,32 +135,54 @@
     return { begin, add, flush, reset, restore, snapshot, get pending() { return points.length > 0; } };
   };
 
-  const createGpsWarmup = (requiredPositions = 3, options = DEFAULTS) => {
-    const config = { ...DEFAULTS, ...options };
-    let positions = [];
+  const createGpsWarmup = (requiredPositions = GPS_WARMUP_DEFAULTS.requiredPositions, options = {}) => {
+    const config = { ...DEFAULTS, ...GPS_WARMUP_DEFAULTS, ...options, requiredPositions };
+    let positions = [], startedAt = null;
     const add = (position, now = Date.now()) => {
       const validation = evaluatePosition(position, null, now, config);
       if (!validation.accepted) {
-        positions = [];
-        return { stable: false, count: 0, reason: validation.reason };
+        positions = []; startedAt = null;
+        return { stable: false, count: 0, reason: validation.reason, requiredPositions: config.requiredPositions, requiredDurationMs: config.minDurationMs, accuracyThresholdMeters: config.maxAccuracyMeters };
       }
 
       const point = validation.point;
       const previous = positions.at(-1);
+      let reason = "warming";
       if (previous) {
         const elapsedMs = point.timestamp - previous.timestamp;
         const movedFromStart = distanceMeters(positions[0], point);
         const stepDistance = distanceMeters(previous, point);
         const interrupted = elapsedMs <= 0 || elapsedMs > config.maxGapMs;
         const inconsistent = movedFromStart > config.maxDriftMeters || stepDistance / (elapsedMs / 1000) > config.maxSpeedMetersPerSecond;
-        if (interrupted || inconsistent) positions = [];
+        if (interrupted || inconsistent) {
+          positions = []; startedAt = null;
+          reason = interrupted ? "interrupted" : "inconsistent";
+        }
       }
 
+      if (!positions.length) startedAt = point.timestamp;
       positions.push(point);
-      const stable = positions.length >= requiredPositions;
-      return { stable, count: positions.length, point: stable ? point : null, reason: stable ? "stable" : "warming" };
+      if (positions.length > 12) positions.splice(1, positions.length - 12);
+      const elapsedMs = point.timestamp - startedAt;
+      const stable = positions.length >= config.requiredPositions && elapsedMs >= config.minDurationMs;
+      let estimate = null, bestSpread = Infinity;
+      if (stable) {
+        for (const candidate of positions) {
+          const candidateSpread = positions.reduce((sum, other) => sum + distanceMeters(candidate, other), 0);
+          if (candidateSpread < bestSpread || (candidateSpread === bestSpread && candidate.accuracy < estimate.accuracy)) {
+            estimate = candidate; bestSpread = candidateSpread;
+          }
+        }
+      }
+      return {
+        stable, count: positions.length, point: estimate,
+        reason: stable ? "stable" : reason,
+        elapsedMs, spreadMeters: Math.max(...positions.map((candidate) => distanceMeters(positions[0], candidate))),
+        requiredPositions: config.requiredPositions, requiredDurationMs: config.minDurationMs,
+        accuracyThresholdMeters: config.maxAccuracyMeters
+      };
     };
-    return { add, reset: () => { positions = []; } };
+    return { add, reset: () => { positions = []; startedAt = null; } };
   };
 
   const splitSegments = (points = []) => {
@@ -204,5 +232,5 @@
     return { start, stop };
   };
 
-  return { DEFAULTS, LOCATION_DEFAULTS, distanceMeters, evaluatePosition, evaluateLocationPosition, createPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, shouldDisplayWalkOnMap, createGpsServices };
+  return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, distanceMeters, evaluatePosition, evaluateLocationPosition, createPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, shouldDisplayWalkOnMap, createGpsServices };
 });
