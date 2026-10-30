@@ -122,6 +122,7 @@
   const gpsWarmup = Tracking.createGpsWarmup();
   const initialRouteBuffer = Tracking.createInitialRouteBuffer();
   let currentLocationMarker = null;
+  let routeStartMarker = null;
   let locationState = "loading", latestLocation = null, locationRequestPending = false;
   let locationWaitStartedAt = Date.now(), locationRequestToken = 0, locationTimeoutTimer = null;
   const LOCATION_WAIT_TIMEOUT_MS = 20000;
@@ -135,6 +136,21 @@
   const clearLocationMarker = () => {
     if (currentLocationMarker) map.removeLayer(currentLocationMarker);
     currentLocationMarker = null;
+  };
+  const updateRouteStartMarker = (point) => {
+    if (!point) return;
+    const icon = L.divIcon({
+      className: "route-start-marker",
+      iconSize: [82, 32],
+      iconAnchor: [5, 30],
+      html: '<span class="route-start-content"><svg viewBox="0 0 24 32" aria-hidden="true"><path d="M5 29V3"/><path d="M6 4h16v12H6z" class="route-start-cloth"/><path d="M6 4h5v4H6zM16 4h6v4h-6zM11 8h5v4h-5zM6 12h5v4H6zM16 12h6v4h-6z" class="route-start-checks"/></svg><span>Старт</span></span>'
+    });
+    if (routeStartMarker) routeStartMarker.setLatLng([point.lat, point.lng]).setIcon(icon);
+    else routeStartMarker = L.marker([point.lat, point.lng], { icon, title: "Старт маршрута", keyboard: false, interactive: false, zIndexOffset: 1200 }).addTo(map);
+  };
+  const clearRouteStartMarker = () => {
+    if (routeStartMarker) map.removeLayer(routeStartMarker);
+    routeStartMarker = null;
   };
   const reportMapDiagnostics = (reason, point) => {
     if (!mapDiagnosticsEnabled) return;
@@ -572,8 +588,9 @@
     if (!warmingUp || cancelling) return false;
 
     stopWarmupWaitTimer();
+    const recordedStartPoint = initialRouteBuffer.snapshot()[0];
     points = []; startedAt = recordingStartedAt; distanceMetersTotal = 0;
-    warmingUp = false; warmupStartedAt = null; updateDistance(); rememberLocation(initialPoint); updateLocationMarker(initialPoint);
+    warmingUp = false; warmupStartedAt = null; updateDistance(); updateRouteStartMarker(recordedStartPoint); rememberLocation(initialPoint); updateLocationMarker(initialPoint);
     $("gps").textContent = `±${Math.round(initialPoint.accuracy)} м`;
     setRecording(true); startStopwatch();
     say(manual ? "Прогулка начата с предупреждением: точность GPS ниже обычной. Продолжаем проверять каждую точку." : "GPS готов. Можно идти!");
@@ -787,7 +804,7 @@
     if (!navigator.geolocation) { say("Этот браузер не поддерживает геолокацию."); return; }
     if (!storageReady || !draftResolved || starting || recordingActive || warmingUp || finishing || cancelling) return;
     positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset();
-    latestLocation = null; updateLocateButton("loading"); clearLocationMarker();
+    latestLocation = null; updateLocateButton("loading"); clearLocationMarker(); clearRouteStartMarker();
     starting = true; setRecording(false);
     stopWarmupWaitTimer(); warmupStartedAt = null;
     cancelPendingLocationRequest();
@@ -864,6 +881,7 @@
     $("gps").textContent = "GPS";
     updateDistance();
     currentLines.forEach((line) => map.removeLayer(line)); currentLines = [];
+    clearRouteStartMarker();
   };
   const finishWalk = async (retreated = false) => {
     if (!recordingActive || finishing || cancelling) return;
@@ -907,6 +925,7 @@
       if (diagnosticSession) await persistDiagnosticSession();
       await diagnosticsQueue;
       await WalkStorage.completeWalk(db, walk);
+      clearRouteStartMarker();
       stopStopwatch(finishedAt);
       points = []; distanceMetersTotal = 0; startedAt = null; draftResolved = true; updateDistance();
       initialRouteBuffer.reset();
@@ -1037,6 +1056,7 @@
           updateDistance(); drawCurrent();
           const restoredValidatedPoints = points.length ? points : initialRouteBuffer.flush().points;
           if (restoredValidatedPoints.length) {
+            if (!warmingUp) updateRouteStartMarker(restoredValidatedPoints[0]);
             rememberLocation(restoredValidatedPoints.at(-1));
             updateLocationMarker(restoredValidatedPoints.at(-1));
           }
