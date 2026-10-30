@@ -173,6 +173,13 @@ main {
 .diagnosticsFallbackCard p { margin: 0; color: #344438; font-size: 13px; line-height: 1.4; }
 .diagnosticsFallback textarea { width: 100%; min-height: 180px; flex: 1; padding: 10px; border: 1px solid #d9dfd7; border-radius: 10px; color: #26372a; font: 11px/1.35 monospace; resize: vertical; -webkit-user-select: text; user-select: text; }
 .diagnosticsFallback button { min-height: 44px; border: 0; border-radius: 12px; background: #edf2e8; color: #26372a; font: inherit; font-weight: 650; }
+.walkInstructions { position: fixed; z-index: 3000; inset: 0; padding: calc(18px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom)); display: grid; place-items: center; background: #17201935; pointer-events: none; }
+.walkInstructions[hidden] { display: none; }
+.walkInstructionsCard { width: min(100%, 440px); max-height: 100%; overflow: auto; padding: 22px; border: 1px solid #e9ece6; border-radius: 22px; background: #fff; box-shadow: 0 12px 40px #0003; pointer-events: auto; }
+.walkInstructionsCard h2 { margin: 0 0 12px; color: #26372a; font-size: 19px; line-height: 1.25; }
+.walkInstructionsCard p { margin: 0 0 18px; color: #59665b; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
+.walkInstructionsCard button { width: 100%; min-height: 48px; border: 0; border-radius: 14px; background: #365f3a; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.walkInstructionsCard button:active { background: #294b2d; }
 footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: center; }
 .brandTitle { display: flex; align-items: center; gap: 8px; }
 .brandTitle strong { display: inline; }

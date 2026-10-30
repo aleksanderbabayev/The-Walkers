@@ -771,6 +771,18 @@
       say("Черновик сохранён, но GPS не удалось возобновить. Перезагрузите страницу, чтобы восстановить прогулку.");
     }
   };
+  const showWalkInstructions = () => {
+    $("walkInstructions").hidden = false;
+    $("walkInstructionsClose").focus({ preventScroll: true });
+  };
+  const closeWalkInstructions = () => {
+    $("walkInstructions").hidden = true;
+    if (warmingUp) $("abandonWalk").focus({ preventScroll: true });
+  };
+  $("walkInstructionsClose").addEventListener("click", closeWalkInstructions);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("walkInstructions").hidden) closeWalkInstructions();
+  });
   const startWalk = async () => {
     if (!navigator.geolocation) { say("Этот браузер не поддерживает геолокацию."); return; }
     if (!storageReady || !draftResolved || starting || recordingActive || warmingUp || finishing || cancelling) return;
@@ -801,6 +813,7 @@
       startTrackingServices();
       starting = false; setRecording(false); say("");
       warmupWaitTimer = setInterval(refreshManualWarmupStart, 1000);
+      showWalkInstructions();
     } catch {
       positionFilter.reset(); initialRouteBuffer.reset();
       gpsWarmup.reset(); warmingUp = false;
