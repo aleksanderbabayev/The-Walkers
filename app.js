@@ -1,8 +1,8 @@
 (() => {
   "use strict";
-  const DB_NAME = "the-walkers", DB_VERSION = 1;
+  const DB_NAME = "the-walkers", DB_VERSION = 2;
   const AUTOSAVE_MS = 5000;
-  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage;
+  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics;
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   $("appVersion").textContent = `Версия ${appVersion}`;
@@ -99,7 +99,10 @@
 
   let db, storageReady = false, draftResolved = false, starting = false, finishing = false, cancelling = false;
   let recordingActive = false, warmingUp = false, points = [], distanceMetersTotal = 0, currentLines = [], savedLayers = [], stopwatchTimer = null, startedAt = null;
+  let walksById = new Map();
   let trackingQueue = Promise.resolve();
+  let diagnosticSession = null, diagnosticsQueue = Promise.resolve(), diagnosticsPersistenceFailed = false;
+  let warmupDiagnosticPrevious = null, pendingDiagnosticPrevious = null, pendingDiagnosticEvents = [];
   const positionFilter = Tracking.createPositionFilter();
   const gpsWarmup = Tracking.createGpsWarmup();
   const initialRouteBuffer = Tracking.createInitialRouteBuffer();
@@ -159,6 +162,11 @@
       const database = request.result;
       if (!database.objectStoreNames.contains("walks")) database.createObjectStore("walks", { keyPath: "id" });
       if (!database.objectStoreNames.contains("drafts")) database.createObjectStore("drafts", { keyPath: "id" });
+      if (!database.objectStoreNames.contains("diagnostics")) database.createObjectStore("diagnostics", { keyPath: "id" });
+      if (!database.objectStoreNames.contains("diagnosticEvents")) {
+        const events = database.createObjectStore("diagnosticEvents", { keyPath: "id" });
+        events.createIndex("bySessionId", "sessionId", { unique: false });
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -167,6 +175,117 @@
   const formatKilometers = (meters) => `${(Math.max(0, meters) / 1000).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} км`;
   const durationOfWalk = (walk) => Number.isFinite(walk.durationMs) ? Math.max(0, walk.durationMs) : Math.max(0, (walk.finishedAt || 0) - (walk.startedAt || 0));
   const say = (message) => { $("message").textContent = message; };
+  const queueDiagnosticWrite = (operation) => {
+    diagnosticsQueue = diagnosticsQueue.then(() => diagnosticsPersistenceFailed ? undefined : operation()).catch(() => { diagnosticsPersistenceFailed = true; });
+    return diagnosticsQueue;
+  };
+  const persistDiagnosticSession = () => diagnosticSession && queueDiagnosticWrite(() => WalkStorage.writeDiagnosticSession(db, diagnosticSession));
+  const persistDiagnosticEvent = (event) => {
+    if (!event || !diagnosticSession) return;
+    const sessionId = diagnosticSession.id;
+    const snapshot = { ...event, rawMeasurement: event.rawMeasurement ? { ...event.rawMeasurement } : undefined };
+    queueDiagnosticWrite(() => WalkStorage.writeDiagnosticEvent(db, sessionId, snapshot));
+  };
+  const addDiagnosticEvent = (event) => {
+    if (!diagnosticSession) return null;
+    const entry = Diagnostics.addEvent(diagnosticSession, { at: Date.now(), ...event });
+    if (!entry && (diagnosticSession.droppedEvents === 1 || diagnosticSession.droppedEvents % 100 === 0)) {
+      persistDiagnosticSession();
+    }
+    return entry;
+  };
+  const recordDiagnosticEvent = (event) => {
+    const entry = addDiagnosticEvent(event);
+    persistDiagnosticEvent(entry);
+    return entry;
+  };
+  const recordDiagnosticVisibility = (source) => {
+    if (!diagnosticSession) return;
+    const hidden = source === "pagehide" || document.visibilityState === "hidden";
+    recordDiagnosticEvent({ type: "visibility-change", source, visibilityState: hidden ? "hidden" : "visible", transition: hidden ? "background" : "foreground" });
+  };
+  document.addEventListener("visibilitychange", () => recordDiagnosticVisibility("visibilitychange"));
+  window.addEventListener("pagehide", () => recordDiagnosticVisibility("pagehide"));
+  window.addEventListener("pageshow", () => {
+    if (diagnosticSession && document.visibilityState !== "hidden") recordDiagnosticVisibility("pageshow");
+  });
+  const persistDiagnosticUpdates = (events) => events.forEach(persistDiagnosticEvent);
+  const diagnosticThresholds = (phase) => ({
+    ...Tracking.DEFAULTS,
+    ...(phase === "warm-up" ? { requiredConsecutivePositions: 3 } : {}),
+    ...(phase === "initial-buffer" ? { validationWindowMs: 18000 } : {})
+  });
+  const recordGpsDiagnostic = (position, processedAt, phase, decision, reason, previous, extra) => addDiagnosticEvent(
+    Diagnostics.createGpsMeasurement({
+      position, processedAt, phase, decision, reason, previous,
+      thresholds: diagnosticThresholds(phase), distanceBetween: Tracking.distanceMeters, ...extra
+    })
+  );
+  const resolveDiagnosticEvents = (route, phases = null, pendingOnly = false) => {
+    if (!diagnosticSession) return [];
+    const changed = [];
+    const routeByMeasurement = new Map(route.map((point) => [`${point.timestamp}:${point.lat}:${point.lng}`, point]));
+    const candidates = pendingOnly ? pendingDiagnosticEvents : diagnosticSession.events;
+    for (const event of candidates) {
+      if (event.type !== "gps-measurement") continue;
+      if (phases && !phases.includes(event.phase)) continue;
+      if (pendingOnly && !event.pendingCandidate) continue;
+      const raw = event.rawMeasurement || {};
+      const accepted = routeByMeasurement.get(`${raw.timestamp}:${raw.latitude}:${raw.longitude}`);
+      const included = Boolean(accepted);
+      if (event.includedInRoute !== included || event.routeSegmentStart !== (accepted?.segmentStart || false)) {
+        event.includedInRoute = included;
+        event.routeSegmentStart = accepted?.segmentStart || false;
+        changed.push(event);
+      }
+      if (included || event.decision === "pending" || event.decision === "pending_confirmation" || event.pendingCandidate) {
+        event.decision = included ? "accepted" : "rejected";
+        if (!included && !event.filteringReason) event.filteringReason = "not-in-final-route";
+        event.pendingCandidate = false;
+        if (!changed.includes(event)) changed.push(event);
+      }
+    }
+    if (pendingOnly) pendingDiagnosticEvents = [];
+    return changed;
+  };
+  const createDiagnosticSession = (startedAt, restored = false) => Diagnostics.createSession({
+    id: "active", appVersion,
+    navigatorLike: { platform: navigator.platform, userAgent: navigator.userAgent },
+    startedAt, restored
+  });
+  const showDiagnosticsFallback = (text) => {
+    const overlay = document.createElement("div"); overlay.className = "diagnosticsFallback"; overlay.setAttribute("role", "dialog"); overlay.setAttribute("aria-modal", "true");
+    const card = document.createElement("div"); card.className = "diagnosticsFallbackCard";
+    const instructions = document.createElement("p"); instructions.textContent = "Автокопирование недоступно. Выделите текст и выберите «Копировать».";
+    const textarea = document.createElement("textarea"); textarea.readOnly = true; textarea.value = text; textarea.setAttribute("aria-label", "Диагностика для копирования");
+    const close = document.createElement("button"); close.type = "button"; close.textContent = "Закрыть"; close.addEventListener("click", () => overlay.remove());
+    card.append(instructions, textarea, close); overlay.append(card); document.body.append(overlay);
+    textarea.focus(); textarea.select(); textarea.setSelectionRange(0, textarea.value.length);
+  };
+  const copyDiagnosticReport = async (session, route, events) => {
+    const report = Diagnostics.buildReport({ ...session, diagnosticsPersistenceFailed: diagnosticsPersistenceFailed || session?.diagnosticsPersistenceFailed }, route, events);
+    const text = JSON.stringify(report, null, 2);
+    const result = await Diagnostics.copyText(text, navigator.clipboard);
+    if (result.copied) say("Диагностика скопирована в буфер обмена.");
+    else { say("Выделите и скопируйте диагностику в открывшемся окне."); showDiagnosticsFallback(text); }
+  };
+  const copyCompletedDiagnostics = async (walk) => {
+    try {
+      const stored = await WalkStorage.readDiagnostics(db, walk.id)
+        || await WalkStorage.readDiagnostics(db, "active").then((active) => active?.walkId === walk.id ? active : null);
+      const route = stored?.finalRoute || walk.points || [];
+      const session = stored || Diagnostics.createSession({
+        id: walk.id, appVersion: "not recorded", navigatorLike: {},
+        startedAt: walk.startedAt
+      });
+      if (!stored) session.state = "completed";
+      await copyDiagnosticReport(session, route, stored?.events || []);
+    } catch { say("Не удалось подготовить диагностику для копирования."); }
+  };
+  const copyActiveDiagnostics = () => {
+    if (!diagnosticSession) { say("Диагностика ещё не готова."); return; }
+    copyDiagnosticReport(diagnosticSession, points, diagnosticSession.events).catch(() => say("Не удалось подготовить диагностику для копирования."));
+  };
   const updateLocateButton = (state) => {
     const previousState = locationState;
     locationState = state;
@@ -305,6 +424,7 @@
     $("abandonWalk").disabled = cancelling || finishing;
     $("finish").disabled = !active || finishing;
     $("finish").hidden = !active;
+    $("copyActiveDiagnostics").hidden = !(active || warmingUp || diagnosticSession);
   };
   const draftSnapshot = (nextPoints = points, nextStartedAt = startedAt, nextInitialBuffer = initialRouteBuffer.snapshot()) => ({
     id: "active", points: nextPoints, startedAt: nextStartedAt, updatedAt: Date.now(),
@@ -326,6 +446,7 @@
     savedLayers.forEach((layer) => map.removeLayer(layer));
     savedLayers = [];
     const walks = await WalkStorage.readWalks(db);
+    walksById = new Map(walks.map((walk) => [walk.id, walk]));
     walks.sort((a, b) => b.finishedAt - a.finishedAt);
     const totalDistance = walks.reduce((total, walk) => total + (Number.isFinite(walk.distanceMeters) ? Math.max(0, walk.distanceMeters) : distanceForPoints(walk.points || [])), 0);
     const totalDuration = walks.reduce((total, walk) => total + durationOfWalk(walk), 0);
@@ -354,7 +475,11 @@
       const deleteButton = document.createElement("button"); deleteButton.className = "routeDelete"; deleteButton.type = "button";
       deleteButton.textContent = "Удалить"; deleteButton.dataset.walkId = walk.id;
       deleteButton.setAttribute("aria-label", `Удалить: ${title.textContent}`);
-      row.append(icon, details, deleteButton); list.append(row);
+      const copyButton = document.createElement("button"); copyButton.className = "diagnosticsCopy"; copyButton.type = "button";
+      copyButton.textContent = "Копировать диагностику"; copyButton.dataset.copyDiagnostics = walk.id;
+      copyButton.setAttribute("aria-label", `Копировать диагностику: ${title.textContent}`);
+      const actions = document.createElement("div"); actions.className = "routeActions"; actions.append(copyButton, deleteButton);
+      row.append(icon, details, actions); list.append(row);
     });
     if (!points.length) {
       const group = L.featureGroup(savedLayers);
@@ -362,6 +487,13 @@
     }
   };
   $("routes").addEventListener("click", async (event) => {
+    const copyButton = event.target.closest("button[data-copy-diagnostics]");
+    if (copyButton) {
+      const walk = walksById.get(copyButton.dataset.copyDiagnostics);
+      if (walk) await copyCompletedDiagnostics(walk);
+      else say("Не удалось найти прогулку для копирования диагностики.");
+      return;
+    }
     const button = event.target.closest("button[data-walk-id]");
     if (!button || !confirm("Удалить эту прогулку или территорию? Это действие нельзя отменить.")) return;
     button.disabled = true;
@@ -377,8 +509,14 @@
   });
   const processPosition = async (position) => {
     if (finishing || cancelling) return;
+    const processedAt = Date.now();
     if (warmingUp) {
       const warmup = gpsWarmup.add(position, Date.now());
+      const warmupDecision = warmup.reason === "accuracy" || warmup.reason === "stale" ? "rejected" : warmup.stable ? "accepted" : "pending_confirmation";
+      const warmupEvent = recordGpsDiagnostic(position, processedAt, "warm-up", warmupDecision, warmup.reason, warmupDiagnosticPrevious,
+        { warmupCount: warmup.count, requiredConsecutivePositions: 3 });
+      persistDiagnosticEvent(warmupEvent);
+      warmupDiagnosticPrevious = warmup.count > 0 ? { lat: position.coords.latitude, lng: position.coords.longitude, timestamp: position.timestamp } : null;
       if (!warmup.stable) {
         if (warmup.reason === "accuracy") say(`GPS неточный (±${Math.round(position.coords.accuracy)} м). Стабилизируем сигнал…`);
         else if (warmup.reason === "stale") say("GPS прислал устаревшую точку. Ждём свежий сигнал…");
@@ -397,15 +535,38 @@
       warmingUp = false; updateDistance(); rememberLocation(initialPoint); updateLocationMarker(initialPoint);
       $("gps").textContent = `±${Math.round(initialPoint.accuracy)} м`;
       setRecording(true); startStopwatch(); say("GPS готов. Можно идти!");
+      warmupDiagnosticPrevious = null;
+      recordDiagnosticEvent({ type: "gps-ready", at: Date.now(), timestamp: initialPoint.timestamp, accuracyMeters: initialPoint.accuracy });
+      recordDiagnosticEvent({ type: "recording-started", at: recordingStartedAt, timestamp: initialPoint.timestamp });
       return;
     }
     if (!recordingActive) return;
     const bufferingInitial = initialRouteBuffer.pending;
     const previousInitialBuffer = bufferingInitial ? initialRouteBuffer.snapshot() : [];
+    const phase = bufferingInitial ? "initial-buffer" : "recording";
+    const previous = pendingDiagnosticPrevious || (bufferingInitial ? previousInitialBuffer.at(-1) : points.at(-1));
     const result = bufferingInitial
       ? initialRouteBuffer.add(position, Date.now())
       : positionFilter.evaluate(position, points.at(-1), Date.now());
+    const decision = result.candidate ? "pending_confirmation"
+      : bufferingInitial && result.accepted ? "pending_confirmation"
+        : result.accepted ? "accepted" : "rejected";
+    const gpsEvent = recordGpsDiagnostic(position, processedAt, phase, decision, result.reason, previous, {
+      pendingCandidate: Boolean(result.candidate),
+      segmentStart: Boolean((result.points || [result.point]).some((point) => point?.segmentStart)),
+      distanceMeters: result.distanceMeters ?? null
+    });
+    if (result.candidate) pendingDiagnosticPrevious = result.candidate;
+    else if (result.accepted) pendingDiagnosticPrevious = null;
+    if (result.candidate && phase === "recording") {
+      pendingDiagnosticEvents.forEach((event) => { event.includedInRoute = false; event.pendingCandidate = false; });
+      persistDiagnosticUpdates(pendingDiagnosticEvents);
+      pendingDiagnosticEvents = gpsEvent ? [gpsEvent] : [];
+      if (gpsEvent) gpsEvent.includedInRoute = null;
+    }
     if (!result.accepted) {
+      if (decision === "rejected" && gpsEvent) gpsEvent.includedInRoute = false;
+      persistDiagnosticEvent(gpsEvent);
       if (Number.isFinite(position.coords?.accuracy)) $("gps").textContent = `±${Math.round(position.coords.accuracy)} м`;
       if (result.reason === "accuracy") say(`GPS неточный (±${Math.round(position.coords.accuracy)} м). Ждём более точную позицию.`);
       else if (result.reason === "speed") say("GPS скачок отброшен. Ждём стабильную позицию.");
@@ -418,9 +579,13 @@
         try { await saveDraftSnapshot(points, startedAt, result.bufferedPoints); }
         catch {
           initialRouteBuffer.restore(previousInitialBuffer);
+          pendingDiagnosticPrevious = null;
+          if (gpsEvent) gpsEvent.includedInRoute = false;
+          persistDiagnosticEvent(gpsEvent);
           say("Начальная GPS-точка не сохранена. Продолжаем проверку сигнала…");
           return;
         }
+        persistDiagnosticEvent(gpsEvent);
         const lastValidatedPoint = result.validatedPoints.at(-1);
         if (lastValidatedPoint) {
           rememberLocation(lastValidatedPoint);
@@ -432,10 +597,23 @@
       try { await saveDraftSnapshot(nextPoints, startedAt, []); }
       catch {
         initialRouteBuffer.restore(previousInitialBuffer);
+        pendingDiagnosticPrevious = null;
+        if (gpsEvent) gpsEvent.includedInRoute = false;
+        persistDiagnosticEvent(gpsEvent);
         say("Начальный участок не удалось сохранить. Продолжаем проверку сигнала…");
         return;
       }
+      const resolvedEvents = resolveDiagnosticEvents(nextPoints, ["warm-up", "initial-buffer"]);
+      if (gpsEvent && !resolvedEvents.includes(gpsEvent)) persistDiagnosticEvent(gpsEvent);
+      persistDiagnosticUpdates(resolvedEvents);
+      recordDiagnosticEvent({
+        type: "initial-buffer-validation", at: processedAt, result: "completed",
+        bufferedPointCount: result.bufferedPoints.length, acceptedPointCount: result.validatedPoints.length,
+        discardedPointCount: result.bufferedPoints.length - result.validatedPoints.length,
+        distanceMeters: result.distanceMeters, acceptedTimestamps: result.validatedPoints.map((point) => point.timestamp)
+      });
       initialRouteBuffer.reset(); positionFilter.reset();
+      pendingDiagnosticPrevious = null;
       points = nextPoints; distanceMetersTotal = distanceForPoints(points);
       const lastValidatedPoint = result.validatedPoints.at(-1);
       drawCurrent(); updateDistance();
@@ -448,10 +626,20 @@
 
     const nextPoints = [...points, ...(result.points || [result.point])];
     try { await saveDraftSnapshot(nextPoints, startedAt); }
-    catch { say("Точка не записана: не удалось сохранить черновик на устройстве."); return; }
+    catch {
+      if (gpsEvent) gpsEvent.includedInRoute = false;
+      persistDiagnosticEvent(gpsEvent);
+      pendingDiagnosticEvents.forEach((event) => { event.includedInRoute = false; event.pendingCandidate = false; });
+      persistDiagnosticUpdates(pendingDiagnosticEvents);
+      pendingDiagnosticEvents = [];
+      say("Точка не записана: не удалось сохранить черновик на устройстве."); return;
+    }
 
     points = nextPoints;
     distanceMetersTotal += result.distanceMeters;
+    if (gpsEvent) gpsEvent.includedInRoute = true;
+    persistDiagnosticEvent(gpsEvent);
+    persistDiagnosticUpdates(resolveDiagnosticEvents(result.points || [result.point], ["recording"], true));
     rememberLocation(result.point);
     drawCurrent(); updateDistance(); updateLocationMarker(result.point);
     $("gps").textContent = `±${Math.round(result.point.accuracy)} м`;
@@ -459,6 +647,7 @@
   };
   const receivePosition = (position) => enqueueTrackingTask(() => processPosition(position));
   const onLocationError = (error) => {
+    recordDiagnosticEvent({ type: "gps-error", at: Date.now(), phase: warmingUp ? "warm-up" : recordingActive ? (initialRouteBuffer.pending ? "initial-buffer" : "recording") : "location", code: Number.isFinite(error?.code) ? error.code : null });
     cancelPendingLocationRequest();
     latestLocation = null;
     updateLocateButton("error");
@@ -507,6 +696,7 @@
     cancelPendingLocationRequest();
     locateRequestId += 1;
     const newStartedAt = Date.now();
+    const startPressedAt = newStartedAt;
     try {
       await WalkStorage.createDraft(db, draftSnapshot([], newStartedAt));
     } catch {
@@ -515,6 +705,11 @@
       say("Найдена незавершённая прогулка или хранилище недоступно. Перезагрузите страницу, чтобы восстановить черновик.");
       return;
     }
+    diagnosticSession = createDiagnosticSession(newStartedAt);
+    diagnosticsPersistenceFailed = false;
+    warmupDiagnosticPrevious = null; pendingDiagnosticPrevious = null;
+    persistDiagnosticSession();
+    recordDiagnosticEvent({ type: "start", at: startPressedAt });
     points = []; distanceMetersTotal = 0; updateDistance(); startedAt = newStartedAt;
     warmingUp = true;
     try {
@@ -524,7 +719,8 @@
       positionFilter.reset(); initialRouteBuffer.reset();
       gpsWarmup.reset(); warmingUp = false;
       stopTrackingServices();
-      try { await WalkStorage.deleteDraft(db); draftResolved = true; }
+      recordDiagnosticEvent({ type: "gps-error", at: Date.now(), phase: "warm-up", source: "tracking-start" });
+      try { await diagnosticsQueue; await WalkStorage.deleteDraft(db); diagnosticSession = null; draftResolved = true; }
       catch { draftResolved = false; }
       points = []; startedAt = null; starting = false; setRecording(false);
       say("Не удалось запустить GPS. Черновик сохранён, если его не удалось удалить.");
@@ -533,17 +729,23 @@
   const abandonWalk = async () => {
     if ((!warmingUp && !recordingActive) || cancelling || finishing) return;
     if (recordingActive && !confirm("Отступить и удалить текущую прогулку? Она не попадёт в историю.")) return;
+    recordDiagnosticEvent({ type: "retreat", at: Date.now() });
     cancelling = true; warmingUp = false;
     positionFilter.reset(); gpsWarmup.reset(); stopTrackingServices();
     locateRequestId += 1;
     setRecording(false); clearActiveWalkView(); say("");
     try {
       await trackingQueue;
+      await diagnosticsQueue;
       await WalkStorage.deleteDraft(db);
       clearActiveWalkView();
+      diagnosticSession = null; diagnosticsPersistenceFailed = false;
+      warmupDiagnosticPrevious = null; pendingDiagnosticPrevious = null; pendingDiagnosticEvents = [];
       draftResolved = true; starting = false; cancelling = false;
       setRecording(false); say("");
     } catch {
+      recordDiagnosticEvent({ type: "retreat-delete-failed", at: Date.now() });
+      await diagnosticsQueue;
       clearActiveWalkView();
       draftResolved = false; starting = false; cancelling = false;
       setRecording(false);
@@ -561,6 +763,7 @@
   };
   const finishWalk = async () => {
     if (!recordingActive || finishing || cancelling) return;
+    recordDiagnosticEvent({ type: "finish", at: Date.now() });
     positionFilter.reset(); gpsWarmup.reset();
     finishing = true; setRecording(true); stopTrackingServices();
     try {
@@ -569,25 +772,67 @@
       const finishedPoints = [...points, ...bufferedPoints];
       const finishedDistance = distanceForPoints(finishedPoints);
       if (finishedPoints.length < 2) {
+        recordDiagnosticEvent({ type: "finish-rejected", at: Date.now(), reason: "insufficient-route-points", pointCount: finishedPoints.length });
         resumeAfterFinishFailure("Нужно ещё GPS-точек для сохранения. Продолжаем запись.");
         return;
       }
       const finishedAt = Date.now();
       const closed = Tracking.canCloseTrack(finishedPoints);
       const walk = { id: crypto.randomUUID(), points: finishedPoints, startedAt, finishedAt, durationMs: finishedAt - startedAt, distanceMeters: finishedDistance, closed, showOnMap: closed };
+      if (initialRouteBuffer.pending) recordDiagnosticEvent({
+        type: "initial-buffer-validation", at: finishedAt, result: "flushed-on-finish",
+        bufferedPointCount: initialRouteBuffer.snapshot().length, acceptedPointCount: bufferedPoints.length,
+        discardedPointCount: initialRouteBuffer.snapshot().length - bufferedPoints.length,
+        distanceMeters: distanceForPoints(bufferedPoints), acceptedTimestamps: bufferedPoints.map((point) => point.timestamp)
+      });
+      persistDiagnosticUpdates(resolveDiagnosticEvents(finishedPoints));
+      if (diagnosticSession) {
+        diagnosticSession.finalRoute = finishedPoints.map((point) => ({ ...point }));
+        diagnosticSession.finishedAt = finishedAt;
+        diagnosticSession.territoryCaptured = closed;
+        diagnosticSession.state = "finalizing";
+        diagnosticSession.walkId = walk.id;
+      }
+      await diagnosticsQueue;
+      if (diagnosticSession) await persistDiagnosticSession();
+      await diagnosticsQueue;
       await WalkStorage.completeWalk(db, walk);
       stopStopwatch(finishedAt);
-      points = []; distanceMetersTotal = 0; startedAt = null; draftResolved = true; finishing = false; updateDistance();
+      points = []; distanceMetersTotal = 0; startedAt = null; draftResolved = true; updateDistance();
       initialRouteBuffer.reset();
-      currentLines.forEach((line) => map.removeLayer(line)); currentLines = [];
-      say(closed ? "Маршрут замкнут, территория закрашена." : "Контур не замкнулся — захват не состоялся.");
       setRecording(false);
+      let diagnosticsSaved = true;
+      try {
+        await diagnosticsQueue;
+        if (diagnosticSession) {
+          diagnosticSession.diagnosticsPersistenceFailed = diagnosticsPersistenceFailed;
+          await WalkStorage.completeDiagnostics(db, walk.id, diagnosticSession);
+        }
+      } catch {
+        diagnosticsSaved = false;
+        diagnosticsPersistenceFailed = true;
+      }
+      diagnosticSession = null; diagnosticsPersistenceFailed = false;
+      warmupDiagnosticPrevious = null; pendingDiagnosticPrevious = null; pendingDiagnosticEvents = [];
+      finishing = false; setRecording(false);
+      currentLines.forEach((line) => map.removeLayer(line)); currentLines = [];
+      say(diagnosticsSaved
+        ? closed ? "Маршрут замкнут, территория закрашена." : "Контур не замкнулся — захват не состоялся."
+        : "Прогулка сохранена, но диагностику не удалось сохранить.");
       try { await redrawSaved(); } catch { say("Прогулка сохранена, но список не удалось обновить."); }
-    } catch { resumeAfterFinishFailure("Не удалось завершить прогулку. Черновик сохранён, запись продолжается."); }
+    } catch {
+      if (diagnosticSession?.state === "finalizing") {
+        diagnosticSession.state = "active";
+        delete diagnosticSession.walkId;
+      }
+      recordDiagnosticEvent({ type: "finish-failed", at: Date.now() });
+      resumeAfterFinishFailure("Не удалось завершить прогулку. Черновик сохранён, запись продолжается.");
+    }
   };
   $("start").addEventListener("click", startWalk);
   $("abandonWalk").addEventListener("click", abandonWalk);
   $("finish").addEventListener("click", finishWalk);
+  $("copyActiveDiagnostics").addEventListener("click", copyActiveDiagnostics);
   let locateRequestId = 0;
   $("locate").addEventListener("click", () => {
     const requestId = ++locateRequestId;
@@ -636,6 +881,30 @@
             setRecording(false);
             return;
           }
+        let restoredDiagnostics = null;
+        let diagnosticsReadFailed = false;
+        try { restoredDiagnostics = await WalkStorage.readDiagnostics(db, "active"); }
+        catch { diagnosticsReadFailed = true; }
+        diagnosticSession = restoredDiagnostics
+          ? Diagnostics.restoreSession(restoredDiagnostics, restoredDiagnostics.events)
+          : createDiagnosticSession(draft.startedAt || Date.now(), true);
+        diagnosticSession.restored = true;
+        diagnosticsPersistenceFailed = diagnosticsReadFailed;
+        warmupDiagnosticPrevious = null; pendingDiagnosticPrevious = null; pendingDiagnosticEvents = [];
+        diagnosticSession.events.forEach((event) => {
+          if (event.pendingCandidate) {
+            event.pendingCandidate = false;
+            event.decision = "rejected";
+            event.includedInRoute = false;
+            event.filteringReason = event.filteringReason || "tracking-interrupted-by-reload";
+          }
+        });
+        if (diagnosticSession.state === "finalizing") {
+          diagnosticSession.state = "active";
+          delete diagnosticSession.walkId;
+        }
+        persistDiagnosticSession();
+        recordDiagnosticEvent({ type: "draft-restored", at: Date.now(), pointCount: (draft.points || []).length, bufferedPointCount: (draft.initialBuffer || []).length });
           locateRequestId += 1;
           points = draftPoints;
           initialRouteBuffer.restore(draftInitialBuffer);
@@ -657,6 +926,7 @@
             else { startStopwatch(); say("Прогулка восстановлена. Ожидаем свежую GPS-точку…"); }
           } catch {
             positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset(); warmingUp = false;
+            recordDiagnosticEvent({ type: "gps-error", at: Date.now(), phase: "draft-restoration", source: "tracking-start" });
             stopTrackingServices(); draftResolved = false; setRecording(false);
             say("Черновик сохранён, но GPS не удалось запустить. Перезагрузите страницу, чтобы попробовать снова.");
           }
@@ -667,7 +937,18 @@
             say("Черновик не удалось удалить. Он сохранён, чтобы не потерять прогулку.");
           }
         }
-      } else draftResolved = true;
+      } else {
+        draftResolved = true;
+        try {
+          const unfinishedDiagnostics = await WalkStorage.readDiagnostics(db, "active");
+          if (unfinishedDiagnostics?.state === "finalizing" && unfinishedDiagnostics.walkId) {
+            const walks = await WalkStorage.readWalks(db);
+            if (walks.some((walk) => walk.id === unfinishedDiagnostics.walkId)) {
+              await WalkStorage.completeDiagnostics(db, unfinishedDiagnostics.walkId, Diagnostics.restoreSession(unfinishedDiagnostics, unfinishedDiagnostics.events));
+            } else await WalkStorage.deleteDiagnostics(db, "active");
+          } else await WalkStorage.deleteDiagnostics(db, "active");
+        } catch {}
+      }
       setRecording(recordingActive);
     } catch {
       positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset(); warmingUp = false;
