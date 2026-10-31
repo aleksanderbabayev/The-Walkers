@@ -2,7 +2,7 @@
   "use strict";
   const DB_NAME = "the-walkers", DB_VERSION = 2;
   const AUTOSAVE_MS = 5000;
-  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, MusicControl = window.WalkMusicControl;
+  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl;
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   $("appVersion").textContent = `Версия ${appVersion}`;
@@ -116,6 +116,9 @@
   let routeStartMarker = null;
   let locationState = "loading", latestLocation = null, locationRequestPending = false;
   let locationPermissionMonitored = false;
+  let locationPermissionState = typeof navigator.permissions?.query === "function" ? "unknown" : "unsupported";
+  let locationPermissionStatus = null;
+  let lastLocationRequest = { result: "none", checkedAt: null };
   let locationWaitStartedAt = Date.now(), locationRequestToken = 0, locationTimeoutTimer = null;
   const LOCATION_WAIT_TIMEOUT_MS = 20000;
   const LOCATION_REFRESH_INTERVAL_MS = 5000;
@@ -374,13 +377,83 @@
     updateLocationNotice(details);
     if (details.state === "denied") setLocationPermissionScreen(true);
   };
+  const locationDiagnosticsView = (report) => {
+    const permissionLabels = {
+      granted: "Разрешено (granted)", prompt: "Неизвестно: ожидается решение (prompt)",
+      denied: "Запрещено (denied)", unknown: "Неизвестно", unsupported: "Не поддерживается"
+    };
+    const requestLabels = {
+      none: "Запросов не было", pending: "Запрос выполняется", success: "Успех",
+      PERMISSION_DENIED: "PERMISSION_DENIED", POSITION_UNAVAILABLE: "POSITION_UNAVAILABLE", TIMEOUT: "TIMEOUT"
+    };
+    const dateLabel = (value) => value ? new Date(value).toLocaleString() : "—";
+    const platformLabel = ({ name, version }) => version ? `${name} ${version}` : name;
+    return [
+      ["Операционная система", platformLabel(report.operatingSystem)],
+      ["Браузер", platformLabel(report.browser)],
+      ["Geolocation API", report.geolocationApi === "available" ? "Доступен" : "Не поддерживается"],
+      ["Permissions API", report.permissionsApi === "available" ? "Доступен" : "Не поддерживается"],
+      ["Разрешение geolocation", permissionLabels[report.geolocationPermission]],
+      ["Разрешение ОС", report.operatingSystemLocationPermission],
+      ["Разрешение сайта", report.siteLocationPermission],
+      ["Последний запрос", requestLabels[report.lastRequest.result] || report.lastRequest.result],
+      ["Время последней проверки", dateLabel(report.checkedAt)],
+      ["Время запроса", dateLabel(report.lastRequest.checkedAt)],
+      ["navigator.userAgent", report.userAgent]
+    ];
+  };
+  const createLocationDiagnosticsReport = () => LocationDiagnostics.createReport({
+    navigatorLike: navigator, appVersion, permissionState: locationPermissionState,
+    lastRequest: lastLocationRequest, checkedAt: Date.now()
+  });
+  const renderLocationDiagnostics = () => {
+    const report = createLocationDiagnosticsReport();
+    const fields = $("locationDiagnosticsFields");
+    const rows = [];
+    locationDiagnosticsView(report).forEach(([label, value]) => {
+      const term = document.createElement("dt"); term.textContent = label;
+      const detail = document.createElement("dd"); detail.textContent = value;
+      rows.push(term, detail);
+    });
+    fields.replaceChildren(...rows);
+    return report;
+  };
+  const noteLocationRequest = (result) => {
+    lastLocationRequest = { result, checkedAt: Date.now() };
+    if ($("locationDiagnostics").open) renderLocationDiagnostics();
+  };
+  const showLocationDiagnosticsFallback = (text) => {
+    const textarea = $("locationDiagnosticsFallback");
+    textarea.value = text;
+    textarea.hidden = false;
+    $("locationDiagnosticsStatus").textContent = "Буфер обмена недоступен. Выделите текст и скопируйте его вручную.";
+    textarea.focus(); textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+  };
+  const copyLocationDiagnostics = () => {
+    const text = JSON.stringify(createLocationDiagnosticsReport());
+    $("locationDiagnosticsFallback").hidden = true;
+    $("locationDiagnosticsStatus").textContent = "";
+    try {
+      if (typeof navigator.clipboard?.writeText !== "function") throw new Error("Clipboard API unavailable");
+      Promise.resolve(navigator.clipboard.writeText(text)).then(() => {
+        $("locationDiagnosticsStatus").textContent = "Диагностика скопирована.";
+      }).catch(() => showLocationDiagnosticsFallback(text));
+    } catch {
+      showLocationDiagnosticsFallback(text);
+    }
+  };
+  $("locationDiagnostics").addEventListener("toggle", () => {
+    if ($("locationDiagnostics").open) renderLocationDiagnostics();
+  });
+  $("copyLocationDiagnostics").addEventListener("click", copyLocationDiagnostics);
   const cancelPendingLocationRequest = () => {
     locationRequestToken += 1;
     if (locationTimeoutTimer !== null) clearTimeout(locationTimeoutTimer);
     locationTimeoutTimer = null; locationRequestPending = false;
   };
   const requestCurrentLocation = ({ accessRetry = false } = {}) => {
-    if (!navigator.geolocation) {
+    if (typeof navigator.geolocation?.getCurrentPosition !== "function") {
       locationRequestPending = false; latestLocation = null; updateLocateButton("error");
       if (accessRetry) updateLocationAccessRetry("error");
       showLocationState({ reason: "unsupported" });
@@ -388,6 +461,7 @@
     }
     if (locationRequestPending) return;
     locationRequestPending = true;
+    noteLocationRequest("pending");
     updateLocateButton("loading");
     showLocationState({});
     if (accessRetry) updateLocationAccessRetry("checking");
@@ -401,12 +475,14 @@
       if (token !== locationRequestToken) return;
       locationRequestToken += 1;
       finishRequest(); latestLocation = null; updateLocateButton("error");
+      noteLocationRequest("TIMEOUT");
       if (accessRetry) updateLocationAccessRetry("timeout");
       showLocationState({ error: { code: 3 } });
     }, LOCATION_WAIT_TIMEOUT_MS);
     try { navigator.geolocation.getCurrentPosition((position) => {
       if (token !== locationRequestToken) return;
       finishRequest();
+      noteLocationRequest("success");
       if (accessRetry) updateLocationAccessRetry("idle");
       musicControl.setLocationAllowed(true);
       setLocationPermissionScreen(false);
@@ -425,6 +501,7 @@
     }, (error) => {
       if (token !== locationRequestToken) return;
       finishRequest(); latestLocation = null; updateLocateButton("error");
+      noteLocationRequest(error?.code === 1 ? "PERMISSION_DENIED" : error?.code === 3 ? "TIMEOUT" : "POSITION_UNAVAILABLE");
       if (LocationUi.isPermissionDenied(error)) {
         musicControl.setLocationAllowed(false);
         if (accessRetry) updateLocationAccessRetry("denied");
@@ -441,6 +518,7 @@
     catch {
       if (token !== locationRequestToken) return;
       finishRequest(); latestLocation = null; updateLocateButton("error");
+      noteLocationRequest("POSITION_UNAVAILABLE");
       if (accessRetry) updateLocationAccessRetry("error");
       showLocationState({ error: { code: 2 } });
     }
@@ -480,6 +558,11 @@
   };
   const handleLocationResume = () => {
     if (document.visibilityState === "hidden") return;
+    if (locationPermissionStatus) locationPermissionState = locationPermissionStatus.state;
+    if ($("locationDiagnostics").open) renderLocationDiagnostics();
+    if (locationPermissionState === "denied" && !locationPermissionDenied) {
+      showLocationState({ error: { code: 1 } });
+    }
     if (locationPermissionDenied) {
       requestCurrentLocation();
       return;
@@ -498,8 +581,11 @@
     if (!navigator.permissions?.query) return;
     try {
       const permission = await navigator.permissions.query({ name: "geolocation" });
+      locationPermissionStatus = permission;
       locationPermissionMonitored = true;
       const updatePermission = () => {
+        locationPermissionState = permission.state;
+        if ($("locationDiagnostics").open) renderLocationDiagnostics();
         const wasAllowed = musicControl.isLocationAllowed();
         musicControl.setLocationAllowed(permission.state === "granted");
         if (permission.state === "denied") {
@@ -511,7 +597,10 @@
       if (permission.addEventListener) permission.addEventListener("change", updatePermission);
       else permission.onchange = updatePermission;
       updatePermission();
-    } catch {}
+    } catch {
+      locationPermissionState = "unknown";
+      if ($("locationDiagnostics").open) renderLocationDiagnostics();
+    }
   };
   monitorLocationPermission();
   updateLocateButton("loading");
@@ -837,6 +926,7 @@
   const receivePosition = (position) => enqueueTrackingTask(() => processPosition(position));
   const onLocationError = (error) => {
     recordDiagnosticEvent({ type: "gps-error", at: Date.now(), phase: warmingUp ? "warm-up" : recordingActive ? (initialRouteBuffer.pending ? "initial-buffer" : "recording") : "location", code: Number.isFinite(error?.code) ? error.code : null });
+    noteLocationRequest(error?.code === 1 ? "PERMISSION_DENIED" : error?.code === 3 ? "TIMEOUT" : "POSITION_UNAVAILABLE");
     cancelPendingLocationRequest();
     latestLocation = null;
     updateLocateButton("error");

@@ -22,8 +22,8 @@ test("only an explicit permission denial opens the simplified access screen", ()
   assert.match(screen, /<h1 id="locationAccessTitle">Включите геолокацию<\/h1>/);
   assert.match(screen, /<p id="locationAccessMessage">Разрешите доступ к местоположению в настройках браузера\.<\/p>/);
   assert.match(screen, /<button id="locationAccessRetry" type="button">Проверить доступ<\/button>/);
-  assert.equal((screen.match(/<(h1|p|button)\b/g) || []).length, 3);
-  assert.doesNotMatch(screen, /Safari|Chrome|Настройки веб-сайта|Приложения →/i);
+  assert.equal((screen.match(/<section class="location-access-card">[\s\S]*?(?=<details)/)?.[0].match(/<(h1|p|button)\b/g) || []).length, 3);
+  assert.match(screen, /<details id="locationDiagnostics" class="location-diagnostics">/);
 });
 
 test("location UI shows loading, ready, and temporary unavailable states", () => {

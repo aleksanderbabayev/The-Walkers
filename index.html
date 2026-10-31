@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.1.63">
+  <meta name="app-version" content="0.1.64">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=0.1.63">
+  <link rel="stylesheet" href="styles.css?v=0.1.64">
   <link rel="stylesheet" href="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.css">
 </head>
 <body>
@@ -16,6 +16,13 @@
       <h1 id="locationAccessTitle">Включите геолокацию</h1>
       <p id="locationAccessMessage">Разрешите доступ к местоположению в настройках браузера.</p>
       <button id="locationAccessRetry" type="button">Проверить доступ</button>
+      <details id="locationDiagnostics" class="location-diagnostics">
+        <summary>Диагностика геолокации</summary>
+        <dl id="locationDiagnosticsFields"></dl>
+        <button id="copyLocationDiagnostics" type="button">Копировать диагностику</button>
+        <p id="locationDiagnosticsStatus" role="status" aria-live="polite"></p>
+        <textarea id="locationDiagnosticsFallback" rows="7" readonly hidden aria-label="JSON диагностики геолокации для ручного копирования"></textarea>
+      </details>
     </section>
   </main>
   <header>
@@ -102,8 +109,9 @@
   <script src="walk-actions.js?v=0.1.45"></script>
   <script src="tracking-core.js?v=0.1.47"></script>
   <script src="walk-storage.js?v=0.1.44"></script>
-  <script src="location-ui.js?v=0.1.63"></script>
+  <script src="location-ui.js?v=0.1.64"></script>
   <script src="music-control.js?v=0.1.62"></script>
-  <script src="app.js?v=0.1.63"></script>
+  <script src="location-diagnostics.js?v=0.1.64"></script>
+  <script src="app.js?v=0.1.64"></script>
 </body>
 </html>

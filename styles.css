@@ -12,11 +12,20 @@
 body { margin: 0; min-height: 100vh; }
 .location-access-screen { position: fixed; z-index: 5000; inset: 0; width: 100%; height: 100%; min-height: 0; margin: 0; padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom)); display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; background: #f7f7f2; }
 .location-access-screen[hidden] { display: none; }
-.location-access-card { width: min(100%, 420px); padding: 26px 22px; border: 1px solid #e3e8df; border-radius: 22px; background: #fff; box-shadow: 0 12px 32px #25362412; }
+.location-access-card { width: min(100%, 420px); max-height: calc(var(--visible-viewport-height, 100vh) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 26px 22px; border: 1px solid #e3e8df; border-radius: 22px; background: #fff; box-shadow: 0 12px 32px #25362412; }
 .location-access-card h1 { margin: 0 0 12px; color: #26372a; font-size: clamp(22px, 6vw, 28px); line-height: 1.2; }
 .location-access-card p { margin: 0 0 22px; color: #5e6a60; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
 .location-access-card button { width: 100%; min-height: 48px; padding: 10px 16px; border: 0; border-radius: 14px; background: linear-gradient(180deg, #4389ed, #2868c3); color: #fff; font: inherit; font-weight: 700; box-shadow: 0 3px 0 #174b9b, 0 6px 14px #18211c20; cursor: pointer; }
 .location-access-card button:active { transform: translateY(2px); filter: brightness(.94); }
+.location-diagnostics { margin-top: 18px; padding-top: 14px; border-top: 1px solid #e9ece6; color: #3e4a41; }
+.location-diagnostics summary { min-height: 44px; display: flex; align-items: center; color: #59665b; font-size: 13px; font-weight: 650; cursor: pointer; }
+.location-diagnostics dl { margin: 8px 0 12px; display: grid; grid-template-columns: minmax(100px, .8fr) minmax(0, 1.2fr); gap: 6px 10px; font-size: 11px; line-height: 1.35; }
+.location-diagnostics dt { color: #778078; }
+.location-diagnostics dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: #344638; }
+.location-diagnostics #copyLocationDiagnostics { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid #d8dfd5; border-radius: 12px; background: #f3f7f0; color: #315b39; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.location-diagnostics #locationDiagnosticsStatus { margin: 6px 0 0; color: #68756a; font-size: 11px; line-height: 1.35; }
+.location-diagnostics #locationDiagnosticsFallback { width: 100%; margin-top: 8px; padding: 9px; border: 1px solid #d8dfd5; border-radius: 10px; color: #26372a; font: 10px/1.4 monospace; -webkit-user-select: text; user-select: text; }
+.location-diagnostics #locationDiagnosticsFallback[hidden] { display: none; }
 body.location-denied > header,
 body.location-denied > main:not(.location-access-screen),
 body.location-denied > footer,
