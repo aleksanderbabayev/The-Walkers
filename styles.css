@@ -26,12 +26,11 @@ body { margin: 0; min-height: 100vh; }
 .location-diagnostics #locationDiagnosticsStatus { margin: 6px 0 0; color: #68756a; font-size: 11px; line-height: 1.35; }
 .location-diagnostics #locationDiagnosticsFallback { width: 100%; margin-top: 8px; padding: 9px; border: 1px solid #d8dfd5; border-radius: 10px; color: #26372a; font: 10px/1.4 monospace; -webkit-user-select: text; user-select: text; }
 .location-diagnostics #locationDiagnosticsFallback[hidden] { display: none; }
-body.location-denied > header,
-body.location-denied > main:not(.location-access-screen),
-body.location-denied > footer,
-body.location-denied > .drawerBackdrop,
-body.location-denied > .walkInstructions,
-body.location-denied > .diagnosticsFallback { display: none !important; }
+body.location-pending > :not(#locationStartupScreen),
+body.location-access-denied > :not(#locationAccessScreen) {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
 header {
   height: 72px;
   padding: 0 24px;

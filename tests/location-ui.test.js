@@ -62,22 +62,17 @@ test("walk start is enabled only when storage, draft, and fresh location are rea
   assert.equal(LocationUi.canStartWalk({ ...base, busy: true }), false);
 });
 
-test("permission lock has a user-triggered safe reload and recovers on background location success", () => {
+test("active app keeps GPS retry behavior without using the startup access screen", () => {
   const fs = require("node:fs");
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
   assert.match(app, /\$\("locationRetry"\)\.addEventListener\("click"/);
   assert.match(app, /locationFresh: locationIsFresh\(latestLocation\)/);
   assert.match(app, /LocationUi\.canStartWalk\(/);
-  assert.doesNotMatch(app, /locationAccessRetry|getAccessRetryState|accessRetry/);
-  assert.match(app, /musicControl\.setLocationAllowed\(true\);\s*setLocationPermissionScreen\(false\)/);
-  assert.match(app, /\$\("locationAccessReload"\)\.addEventListener\("click", async \(\) => \{/);
-  assert.match(app, /const pendingTracking = trackingQueue;\s*await pendingTracking;[\s\S]*?await saveDraftSnapshot\(points, startedAt, initialRouteBuffer\.snapshot\(\)\);[\s\S]*?if \(pendingTracking === trackingQueue && pendingDiagnostics === diagnosticsQueue\) break;[\s\S]*?window\.location\.reload\(\)/);
-  assert.match(app, /starting \|\| finishing \|\| cancelling[\s\S]*?return;/);
+  assert.doesNotMatch(app, /locationAccessRetry|getAccessRetryState|accessRetry|locationAccessScreen|locationAccessReload|location-denied/);
+  assert.match(app, /locationPermissionDenied = false;\s*musicControl\.setLocationAllowed\(true\)/);
+  assert.match(app, /locationPermissionDenied = true;\s*musicControl\.setLocationAllowed\(false\)/);
   assert.match(app, /if \(locationPermissionDenied\) \{\s*requestCurrentLocation\(\);\s*return;/);
   assert.match(app, /permission\.addEventListener\("change", updatePermission\)/);
-  assert.equal((app.match(/window\.location\.reload\(\)/g) || []).length, 1, "the page reload exists only in the explicit button handler");
-  assert.match(app, /if \(details\.state === "denied"\) setLocationPermissionScreen\(true\)/);
-  assert.match(app, /setLocationPermissionScreen\(false\);\s*const result = Tracking\.evaluateLocationPosition/);
+  assert.match(app, /permission\.state === "granted" && !wasAllowed/);
   assert.match(app, /window\.addEventListener\("focus", handleLocationResume\)/);
-  assert.match(app, /body\.classList\.toggle\("location-denied", denied\)/);
 });

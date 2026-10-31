@@ -81,14 +81,50 @@ test("compact diagnostic JSON contains only technical fields and never includes 
   assert.doesNotMatch(json, /48\.9|21\.2/);
 });
 
-test("diagnostics button uses the clipboard from its click and exposes a selectable fallback", () => {
+test("shared diagnostics UI renders details and copies with a selectable fallback", async () => {
   const fs = require("node:fs");
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
+  const bootstrap = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
   const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
   assert.match(html, /<details id="locationDiagnostics" class="location-diagnostics">/);
   assert.match(html, /id="locationDiagnosticsFallback"[^>]*readonly hidden/);
-  assert.match(app, /\$\("copyLocationDiagnostics"\)\.addEventListener\("click", copyLocationDiagnostics\)/);
-  assert.match(app, /navigator\.clipboard\.writeText\(text\)/);
-  assert.match(app, /textarea\.focus\(\); textarea\.select\(\)/);
+  assert.match(app, /\$\("copyLocationDiagnostics"\)\.addEventListener\("click", \(\) => diagnosticsUi\.copy\(\)\)/);
+  assert.match(bootstrap, /\$\("copyLocationDiagnostics"\)\.addEventListener\("click", \(\) => diagnosticsUi\.copy\(\)\)/);
   assert.match(app, /\$\("locationDiagnostics"\)\.addEventListener\("toggle"/);
+
+  const elements = () => ({
+    hidden: true, value: "", textContent: "", children: [], focused: false, selected: false,
+    replaceChildren(...children) { this.children = children; },
+    focus() { this.focused = true; }, select() { this.selected = true; },
+    setSelectionRange(start, end) { this.selection = [start, end]; }
+  });
+  const fields = elements(), status = elements(), fallback = elements();
+  const view = Diagnostics.createUi({
+    documentLike: { createElement: (tag) => ({ tag, textContent: "" }) },
+    navigatorLike: { clipboard: { writeText: async () => {} } },
+    getReport: () => Diagnostics.createReport({
+      navigatorLike: { permissions: { query() {} } }, permissionState: "denied"
+    }),
+    fields, status, fallback
+  });
+  view.render();
+  assert.equal(fields.children.length, 22);
+  assert.ok(fields.children.some((item) => item.textContent === "Запрещено (denied)"));
+  await view.copy();
+  assert.equal(status.textContent, "Диагностика скопирована.");
+
+  const fallbackFields = elements(), fallbackStatus = elements(), textArea = elements();
+  const fallbackView = Diagnostics.createUi({
+    documentLike: { createElement: (tag) => ({ tag, textContent: "" }) },
+    navigatorLike: { clipboard: { writeText: async () => { throw new Error("clipboard unavailable"); } } },
+    getReport: () => Diagnostics.createReport({
+      navigatorLike: { permissions: { query() {} } }, permissionState: "prompt"
+    }),
+    fields: fallbackFields, status: fallbackStatus, fallback: textArea
+  });
+  await fallbackView.copy();
+  assert.equal(textArea.hidden, false);
+  assert.equal(textArea.focused, true);
+  assert.equal(textArea.selected, true);
+  assert.match(textArea.value, /"geolocationPermission":"prompt"/);
 });

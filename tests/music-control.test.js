@@ -119,6 +119,6 @@ test("application gates music on permission state and wires the saved mute setti
   assert.match(app, /MusicControl\.createMusicControl\(/);
   assert.match(app, /musicControl\.setLocationAllowed\(permission\.state === "granted"\)/);
   assert.match(app, /musicControl\.setLocationAllowed\(false\)/);
-  assert.match(app, /musicControl\.setLocationAllowed\(true\);\s*setLocationPermissionScreen\(false\)/);
+  assert.match(app, /locationPermissionDenied = false;\s*musicControl\.setLocationAllowed\(true\)/);
   assert.doesNotMatch(app, /backgroundMusic\.play\(/);
 });

@@ -62,7 +62,61 @@
     };
   };
 
-  const api = { createReport, getPlatform, getBrowser };
+  const createUi = ({ documentLike, navigatorLike, getReport, fields, status, fallback }) => {
+    const viewRows = (report) => {
+      const permissionLabels = {
+        granted: "Разрешено (granted)", prompt: "Неизвестно: ожидается решение (prompt)",
+        denied: "Запрещено (denied)", unknown: "Неизвестно", unsupported: "Не поддерживается"
+      };
+      const requestLabels = {
+        none: "Запросов не было", pending: "Запрос выполняется", success: "Успех",
+        PERMISSION_DENIED: "PERMISSION_DENIED", POSITION_UNAVAILABLE: "POSITION_UNAVAILABLE", TIMEOUT: "TIMEOUT"
+      };
+      const dateLabel = (value) => value ? new Date(value).toLocaleString() : "—";
+      const platformLabel = ({ name, version }) => version ? `${name} ${version}` : name;
+      return [
+        ["Операционная система", platformLabel(report.operatingSystem)],
+        ["Браузер", platformLabel(report.browser)],
+        ["Geolocation API", report.geolocationApi === "available" ? "Доступен" : "Не поддерживается"],
+        ["Permissions API", report.permissionsApi === "available" ? "Доступен" : "Не поддерживается"],
+        ["Разрешение geolocation", permissionLabels[report.geolocationPermission]],
+        ["Разрешение ОС", report.operatingSystemLocationPermission],
+        ["Разрешение сайта", report.siteLocationPermission],
+        ["Последний запрос", requestLabels[report.lastRequest.result] || report.lastRequest.result],
+        ["Время последней проверки", dateLabel(report.checkedAt)],
+        ["Время запроса", dateLabel(report.lastRequest.checkedAt)],
+        ["navigator.userAgent", report.userAgent]
+      ];
+    };
+    const render = () => {
+      const rows = [];
+      viewRows(getReport()).forEach(([label, value]) => {
+        const term = documentLike.createElement("dt"); term.textContent = label;
+        const detail = documentLike.createElement("dd"); detail.textContent = value;
+        rows.push(term, detail);
+      });
+      fields.replaceChildren(...rows);
+    };
+    const copy = async () => {
+      const text = JSON.stringify(getReport());
+      fallback.hidden = true;
+      status.textContent = "";
+      try {
+        if (typeof navigatorLike.clipboard?.writeText !== "function") throw new Error("Clipboard API unavailable");
+        await navigatorLike.clipboard.writeText(text);
+        status.textContent = "Диагностика скопирована.";
+      } catch {
+        fallback.value = text;
+        fallback.hidden = false;
+        status.textContent = "Буфер обмена недоступен. Выделите текст и скопируйте его вручную.";
+        fallback.focus(); fallback.select();
+        fallback.setSelectionRange(0, fallback.value.length);
+      }
+    };
+    return { render, copy };
+  };
+
+  const api = { createReport, createUi, getPlatform, getBrowser };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.WalkLocationDiagnostics = api;
 })();
