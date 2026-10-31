@@ -45,7 +45,29 @@
   };
   const canStartWalk = ({ storageReady, draftResolved, locationFresh, busy }) =>
     Boolean(storageReady && draftResolved && locationFresh && !busy);
-  const api = { getLocationState, canStartWalk, isPermissionDenied };
+  const getAccessRetryState = (state) => {
+    if (state === "checking") return {
+      buttonText: "Проверяем доступ…", disabled: true,
+      message: "Разрешите доступ к местоположению в настройках браузера."
+    };
+    if (state === "denied") return {
+      buttonText: "Проверить доступ", disabled: false,
+      message: "Геолокация всё ещё отключена. Разрешите доступ в настройках браузера."
+    };
+    if (state === "timeout") return {
+      buttonText: "Проверить доступ", disabled: false,
+      message: "Проверка заняла слишком много времени. Попробуйте ещё раз."
+    };
+    if (state === "error") return {
+      buttonText: "Проверить доступ", disabled: false,
+      message: "Не удалось проверить доступ. Попробуйте ещё раз."
+    };
+    return {
+      buttonText: "Проверить доступ", disabled: false,
+      message: "Разрешите доступ к местоположению в настройках браузера."
+    };
+  };
+  const api = { getLocationState, canStartWalk, isPermissionDenied, getAccessRetryState };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.WalkLocationUi = api;
 })();

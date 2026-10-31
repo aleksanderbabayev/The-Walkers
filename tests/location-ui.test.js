@@ -20,7 +20,7 @@ test("only an explicit permission denial opens the simplified access screen", ()
   const screen = html.match(/<main id="locationAccessScreen"[\s\S]*?<\/main>/)?.[0];
   assert.ok(screen);
   assert.match(screen, /<h1 id="locationAccessTitle">Включите геолокацию<\/h1>/);
-  assert.match(screen, /<p>Разрешите доступ к местоположению в настройках браузера\.<\/p>/);
+  assert.match(screen, /<p id="locationAccessMessage">Разрешите доступ к местоположению в настройках браузера\.<\/p>/);
   assert.match(screen, /<button id="locationAccessRetry" type="button">Проверить доступ<\/button>/);
   assert.equal((screen.match(/<(h1|p|button)\b/g) || []).length, 3);
   assert.doesNotMatch(screen, /Safari|Chrome|Настройки веб-сайта|Приложения →/i);
@@ -38,6 +38,27 @@ test("location UI shows loading, ready, and temporary unavailable states", () =>
   const unsupported = LocationUi.getLocationState({ reason: "unsupported" });
   assert.equal(unsupported.state, "unavailable");
   assert.equal(unsupported.action, "");
+});
+
+test("access retry reports checking, repeated denial, temporary error, and timeout states", () => {
+  const checking = LocationUi.getAccessRetryState("checking");
+  assert.equal(checking.buttonText, "Проверяем доступ…");
+  assert.equal(checking.disabled, true);
+
+  const denied = LocationUi.getAccessRetryState("denied");
+  assert.equal(denied.buttonText, "Проверить доступ");
+  assert.equal(denied.disabled, false);
+  assert.equal(denied.message, "Геолокация всё ещё отключена. Разрешите доступ в настройках браузера.");
+
+  const temporaryError = LocationUi.getAccessRetryState("error");
+  assert.equal(temporaryError.buttonText, "Проверить доступ");
+  assert.equal(temporaryError.disabled, false);
+  assert.match(temporaryError.message, /Попробуйте ещё раз/);
+
+  const timeout = LocationUi.getAccessRetryState("timeout");
+  assert.equal(timeout.buttonText, "Проверить доступ");
+  assert.equal(timeout.disabled, false);
+  assert.match(timeout.message, /слишком много времени/);
 });
 
 test("weak or stale fixes do not suggest changing location permissions", () => {
@@ -67,7 +88,12 @@ test("access retry rechecks geolocation, keeps the denied screen, and hides it o
   assert.match(app, /\$\("locationRetry"\)\.addEventListener\("click"/);
   assert.match(app, /locationFresh: locationIsFresh\(latestLocation\)/);
   assert.match(app, /LocationUi\.canStartWalk\(/);
-  assert.match(app, /\$\("locationAccessRetry"\)\.addEventListener\("click", \(\) => \{\s*requestCurrentLocation\(\);\s*\}\)/);
+  assert.match(app, /\$\("locationAccessRetry"\)\.addEventListener\("click", \(\) => \{\s*requestCurrentLocation\(\{ accessRetry: true \}\);\s*\}\)/);
+  assert.match(app, /if \(accessRetry\) updateLocationAccessRetry\("checking"\)/);
+  assert.match(app, /if \(accessRetry\) updateLocationAccessRetry\("denied"\)/);
+  assert.match(app, /if \(accessRetry\) updateLocationAccessRetry\("timeout"\)/);
+  assert.match(app, /if \(accessRetry\) updateLocationAccessRetry\("error"\)/);
+  assert.match(app, /if \(accessRetry\) updateLocationAccessRetry\("idle"\);\s*musicControl\.setLocationAllowed\(true\);\s*setLocationPermissionScreen\(false\)/);
   assert.match(app, /if \(details\.state === "denied"\) setLocationPermissionScreen\(true\)/);
   assert.match(app, /permission\.addEventListener\("change", updatePermission\)/);
   assert.match(app, /setLocationPermissionScreen\(false\);\s*const result = Tracking\.evaluateLocationPosition/);
