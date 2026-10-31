@@ -54,6 +54,10 @@
       buttonText: "Проверить доступ", disabled: false,
       message: "Геолокация всё ещё отключена. Разрешите доступ в настройках браузера."
     };
+    if (state === "retry-denied") return {
+      buttonText: "Проверить доступ", disabled: false, showReload: true,
+      message: "Разрешения изменены? Браузеру может потребоваться обновление страницы, чтобы применить новые настройки."
+    };
     if (state === "timeout") return {
       buttonText: "Проверить доступ", disabled: false,
       message: "Проверка заняла слишком много времени. Попробуйте ещё раз."

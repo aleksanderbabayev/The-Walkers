@@ -17,6 +17,8 @@ body { margin: 0; min-height: 100vh; }
 .location-access-card p { margin: 0 0 22px; color: #5e6a60; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
 .location-access-card button { width: 100%; min-height: 48px; padding: 10px 16px; border: 0; border-radius: 14px; background: linear-gradient(180deg, #4389ed, #2868c3); color: #fff; font: inherit; font-weight: 700; box-shadow: 0 3px 0 #174b9b, 0 6px 14px #18211c20; cursor: pointer; }
 .location-access-card button:active { transform: translateY(2px); filter: brightness(.94); }
+.location-access-card button.location-access-reload { margin-top: 10px; border: 1px solid #d8dfd5; background: #edf2e8; color: #315b39; box-shadow: none; }
+.location-access-card button[hidden] { display: none; }
 .location-diagnostics { margin-top: 18px; padding-top: 14px; border-top: 1px solid #e9ece6; color: #3e4a41; }
 .location-diagnostics summary { min-height: 44px; display: flex; align-items: center; color: #59665b; font-size: 13px; font-weight: 650; cursor: pointer; }
 .location-diagnostics dl { margin: 8px 0 12px; display: grid; grid-template-columns: minmax(100px, .8fr) minmax(0, 1.2fr); gap: 6px 10px; font-size: 11px; line-height: 1.35; }

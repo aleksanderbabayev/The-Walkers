@@ -351,6 +351,8 @@
     button.textContent = retryState.buttonText;
     button.disabled = retryState.disabled;
     $("locationAccessMessage").textContent = retryState.message;
+    $("locationAccessReload").hidden = !retryState.showReload;
+    $("locationAccessReload").disabled = false;
   };
   const updateLocationNotice = (details) => {
     const notice = $("locationNotice");
@@ -476,14 +478,14 @@
       locationRequestToken += 1;
       finishRequest(); latestLocation = null; updateLocateButton("error");
       noteLocationRequest("TIMEOUT");
-      if (accessRetry) updateLocationAccessRetry("timeout");
+      if (accessRetry || locationPermissionDenied) updateLocationAccessRetry("timeout");
       showLocationState({ error: { code: 3 } });
     }, LOCATION_WAIT_TIMEOUT_MS);
     try { navigator.geolocation.getCurrentPosition((position) => {
       if (token !== locationRequestToken) return;
       finishRequest();
       noteLocationRequest("success");
-      if (accessRetry) updateLocationAccessRetry("idle");
+      updateLocationAccessRetry("idle");
       musicControl.setLocationAllowed(true);
       setLocationPermissionScreen(false);
       const result = Tracking.evaluateLocationPosition(position, Date.now());
@@ -504,13 +506,13 @@
       noteLocationRequest(error?.code === 1 ? "PERMISSION_DENIED" : error?.code === 3 ? "TIMEOUT" : "POSITION_UNAVAILABLE");
       if (LocationUi.isPermissionDenied(error)) {
         musicControl.setLocationAllowed(false);
-        if (accessRetry) updateLocationAccessRetry("denied");
+        if (accessRetry) updateLocationAccessRetry("retry-denied");
       }
       if (locationPermissionDenied && !LocationUi.isPermissionDenied(error) && !accessRetry) {
         musicControl.setLocationAllowed(true);
         setLocationPermissionScreen(false);
       }
-      if (accessRetry && !LocationUi.isPermissionDenied(error)) {
+      if ((accessRetry || locationPermissionDenied) && !LocationUi.isPermissionDenied(error)) {
         updateLocationAccessRetry(error?.code === 3 ? "timeout" : "error");
       }
       showLocationState({ error });
@@ -519,7 +521,7 @@
       if (token !== locationRequestToken) return;
       finishRequest(); latestLocation = null; updateLocateButton("error");
       noteLocationRequest("POSITION_UNAVAILABLE");
-      if (accessRetry) updateLocationAccessRetry("error");
+      if (accessRetry || locationPermissionDenied) updateLocationAccessRetry("error");
       showLocationState({ error: { code: 2 } });
     }
   };
@@ -614,6 +616,41 @@
   });
   $("locationAccessRetry").addEventListener("click", () => {
     requestCurrentLocation({ accessRetry: true });
+  });
+  $("locationAccessReload").addEventListener("click", async () => {
+    const reloadButton = $("locationAccessReload");
+    if (reloadButton.disabled) return;
+    if (starting || finishing || cancelling) {
+      $("locationAccessMessage").textContent = "Подождите, пока текущая операция с прогулкой завершится, затем повторите обновление.";
+      return;
+    }
+    reloadButton.disabled = true;
+    $("locationAccessRetry").disabled = true;
+    $("locationAccessMessage").textContent = "Сохраняем текущую прогулку перед обновлением…";
+    try {
+      if (recordingActive || warmingUp) {
+        if (!db || !storageReady || !draftResolved) throw new Error("Draft storage is not ready");
+        while (true) {
+          const pendingTracking = trackingQueue;
+          await pendingTracking;
+          if (starting || finishing || cancelling) throw new Error("Walk operation still active");
+          await saveDraftSnapshot(points, startedAt, initialRouteBuffer.snapshot());
+          await persistDiagnosticSession();
+          const pendingDiagnostics = diagnosticsQueue;
+          await pendingDiagnostics;
+          if (diagnosticsPersistenceFailed) throw new Error("Diagnostics could not be saved");
+          if (pendingTracking === trackingQueue && pendingDiagnostics === diagnosticsQueue) break;
+        }
+      } else {
+        await trackingQueue;
+        if (starting || finishing || cancelling) throw new Error("Walk operation still active");
+      }
+      window.location.reload();
+    } catch {
+      reloadButton.disabled = false;
+      $("locationAccessRetry").disabled = false;
+      $("locationAccessMessage").textContent = "Не удалось надёжно сохранить прогулку. Обновление отменено; попробуйте ещё раз.";
+    }
   });
   const formatElapsed = (milliseconds) => {
     const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
