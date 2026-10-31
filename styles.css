@@ -10,6 +10,19 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; }
+.location-access-screen { position: fixed; z-index: 5000; inset: 0; width: 100%; height: 100%; min-height: 0; margin: 0; padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom)); display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; background: #f7f7f2; }
+.location-access-screen[hidden] { display: none; }
+.location-access-card { width: min(100%, 420px); padding: 26px 22px; border: 1px solid #e3e8df; border-radius: 22px; background: #fff; box-shadow: 0 12px 32px #25362412; }
+.location-access-card h1 { margin: 0 0 12px; color: #26372a; font-size: clamp(22px, 6vw, 28px); line-height: 1.2; }
+.location-access-card p { margin: 0 0 22px; color: #5e6a60; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
+.location-access-card button { width: 100%; min-height: 48px; padding: 10px 16px; border: 0; border-radius: 14px; background: linear-gradient(180deg, #4389ed, #2868c3); color: #fff; font: inherit; font-weight: 700; box-shadow: 0 3px 0 #174b9b, 0 6px 14px #18211c20; cursor: pointer; }
+.location-access-card button:active { transform: translateY(2px); filter: brightness(.94); }
+body.location-denied > header,
+body.location-denied > main:not(.location-access-screen),
+body.location-denied > footer,
+body.location-denied > .drawerBackdrop,
+body.location-denied > .walkInstructions,
+body.location-denied > .diagnosticsFallback { display: none !important; }
 header {
   height: 72px;
   padding: 0 24px;
@@ -264,6 +277,7 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
 button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
 
 @media (max-width: 760px) {
+  .location-access-screen { flex: none; grid-template: minmax(0, 1fr) / minmax(0, 1fr); }
   html, body {
     width: 100%;
     height: 100%;

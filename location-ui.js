@@ -1,8 +1,17 @@
 (() => {
   "use strict";
   const permissionRetryHelp = "Если браузер не показывает запрос доступа, откройте настройки сайта в браузере и разрешите геолокацию.";
+  const deniedScreenText = "Чтобы записывать прогулки и захватывать территории, разрешите приложению определять ваше местоположение";
+  const isPermissionDenied = (error) => error?.code === 1;
+  const getPermissionHelp = (userAgent = "") => {
+    const isIPhoneSafari = /iPhone|iPad|iPod/i.test(userAgent)
+      && /Safari/i.test(userAgent) && !/(CriOS|FxiOS|EdgiOS|OPiOS)/i.test(userAgent);
+    return isIPhoneSafari
+      ? "Safari на iPhone: меню страницы у адреса → «Настройки веб-сайта» → «Геопозиция» → «Разрешить». Если пункта нет: Настройки → Приложения → Safari → «Геопозиция»."
+      : "Откройте настройки браузера → разрешения сайта → геолокация и выберите «Разрешить». Затем вернитесь сюда и нажмите кнопку ещё раз.";
+  };
   const getLocationState = ({ error, reason, accuracy, permissionRetryAttempted = false } = {}) => {
-    if (error?.code === 1) return {
+    if (isPermissionDenied(error)) return {
       state: "denied",
       title: "Геолокация недоступна",
       message: permissionRetryAttempted
@@ -47,7 +56,7 @@
   };
   const canStartWalk = ({ storageReady, draftResolved, locationFresh, busy }) =>
     Boolean(storageReady && draftResolved && locationFresh && !busy);
-  const api = { getLocationState, canStartWalk };
+  const api = { getLocationState, canStartWalk, deniedScreenText, getPermissionHelp, isPermissionDenied };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.WalkLocationUi = api;
 })();

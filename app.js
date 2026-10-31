@@ -124,6 +124,7 @@
   let currentLocationMarker = null;
   let routeStartMarker = null;
   let locationState = "loading", latestLocation = null, locationRequestPending = false;
+  let locationPermissionMonitored = false;
   let locationWaitStartedAt = Date.now(), locationRequestToken = 0, locationTimeoutTimer = null;
   const LOCATION_WAIT_TIMEOUT_MS = 20000;
   const LOCATION_REFRESH_INTERVAL_MS = 5000;
@@ -350,6 +351,7 @@
     if (state === "loading" && previousState !== "loading") locationWaitStartedAt = Date.now();
   };
   let permissionRetryAttempted = false;
+  let locationPermissionDenied = false;
   const updateLocationNotice = (details) => {
     const notice = $("locationNotice");
     notice.className = `location-notice is-${details.state}`;
@@ -361,7 +363,23 @@
     retryButton.disabled = locationRequestPending;
     updateStartAvailability();
   };
-  const showLocationState = (options) => updateLocationNotice(LocationUi.getLocationState(options));
+  const setLocationPermissionScreen = (denied, showHelp = false) => {
+    locationPermissionDenied = denied;
+    document.body.classList.toggle("location-denied", denied);
+    $("locationAccessScreen").hidden = !denied;
+    $("locationAccessRetry").disabled = locationRequestPending;
+    if (!denied) return;
+    $("locationAccessText").textContent = showHelp
+      ? LocationUi.getPermissionHelp(navigator.userAgent)
+      : LocationUi.deniedScreenText;
+    if (!$("locationAccessRetry").disabled) $("locationAccessRetry").focus({ preventScroll: true });
+    updateStartAvailability();
+  };
+  const showLocationState = (options) => {
+    const details = LocationUi.getLocationState(options);
+    updateLocationNotice(details);
+    if (details.state === "denied") setLocationPermissionScreen(true, permissionRetryAttempted);
+  };
   const cancelPendingLocationRequest = () => {
     locationRequestToken += 1;
     if (locationTimeoutTimer !== null) clearTimeout(locationTimeoutTimer);
@@ -377,6 +395,7 @@
     locationRequestPending = true;
     updateLocateButton("loading");
     showLocationState({});
+    $("locationAccessRetry").disabled = true;
     const token = ++locationRequestToken;
     const finishRequest = () => {
       if (locationTimeoutTimer !== null) clearTimeout(locationTimeoutTimer);
@@ -386,11 +405,13 @@
       if (token !== locationRequestToken) return;
       locationRequestToken += 1;
       finishRequest(); latestLocation = null; updateLocateButton("error");
+      if (permissionRetryAttempted) setLocationPermissionScreen(false);
       showLocationState({ error: { code: 3 } });
     }, LOCATION_WAIT_TIMEOUT_MS);
     try { navigator.geolocation.getCurrentPosition((position) => {
       if (token !== locationRequestToken) return;
       finishRequest();
+      setLocationPermissionScreen(false);
       const result = Tracking.evaluateLocationPosition(position, Date.now());
       if (!result.accepted) {
         latestLocation = null;
@@ -407,11 +428,13 @@
     }, (error) => {
       if (token !== locationRequestToken) return;
       finishRequest(); latestLocation = null; updateLocateButton("error");
+      if (locationPermissionDenied && !LocationUi.isPermissionDenied(error)) setLocationPermissionScreen(false);
       showLocationState({ error, permissionRetryAttempted });
     }, { enableHighAccuracy: true, maximumAge: 0, timeout: LOCATION_WAIT_TIMEOUT_MS }); }
     catch {
       if (token !== locationRequestToken) return;
       finishRequest(); latestLocation = null; updateLocateButton("error");
+      if (permissionRetryAttempted) setLocationPermissionScreen(false);
       showLocationState({ error: { code: 2 } });
     }
   };
@@ -450,11 +473,38 @@
   };
   const handleLocationResume = () => {
     if (document.visibilityState === "hidden") return;
+    if (locationPermissionDenied) {
+      requestCurrentLocation();
+      return;
+    }
+    if (!recordingActive && !warmingUp && !locationPermissionMonitored) {
+      requestCurrentLocation();
+      return;
+    }
     refreshLocationReadiness();
     if (locationState === "loading" && !locationRequestPending && !recordingActive && !warmingUp) requestCurrentLocation();
   };
   document.addEventListener("visibilitychange", handleLocationResume);
   window.addEventListener("pageshow", handleLocationResume);
+  window.addEventListener("focus", handleLocationResume);
+  const monitorLocationPermission = async () => {
+    if (!navigator.permissions?.query) return;
+    try {
+      const permission = await navigator.permissions.query({ name: "geolocation" });
+      locationPermissionMonitored = true;
+      const updatePermission = () => {
+        if (permission.state === "denied") {
+          latestLocation = null;
+          updateLocateButton("error");
+          showLocationState({ error: { code: 1 }, permissionRetryAttempted });
+        } else if (locationPermissionDenied) requestCurrentLocation();
+      };
+      if (permission.addEventListener) permission.addEventListener("change", updatePermission);
+      else permission.onchange = updatePermission;
+      if (permission.state === "denied") updatePermission();
+    } catch {}
+  };
+  monitorLocationPermission();
   updateLocateButton("loading");
   setInterval(refreshLocationReadiness, LOCATION_REFRESH_INTERVAL_MS);
   requestCurrentLocation();
@@ -463,6 +513,10 @@
     latestLocation = null;
     updateLocateButton("loading");
     showLocationState({});
+    requestCurrentLocation();
+  });
+  $("locationAccessRetry").addEventListener("click", () => {
+    permissionRetryAttempted = true;
     requestCurrentLocation();
   });
   const formatElapsed = (milliseconds) => {
@@ -779,6 +833,7 @@
     cancelPendingLocationRequest();
     latestLocation = null;
     updateLocateButton("error");
+    if (locationPermissionDenied && !LocationUi.isPermissionDenied(error)) setLocationPermissionScreen(false);
     showLocationState({ error, permissionRetryAttempted });
     if (cancelling) return;
     if (warmingUp) {

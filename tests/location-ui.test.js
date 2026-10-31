@@ -13,6 +13,20 @@ test("location UI distinguishes permission denial and explains browser settings 
   assert.equal(stillDenied.action, "Разрешить геолокацию");
 });
 
+test("only an explicit permission denial opens the access screen and iPhone Safari gets its settings path", () => {
+  assert.equal(LocationUi.isPermissionDenied({ code: 1 }), true);
+  assert.equal(LocationUi.isPermissionDenied({ code: 2 }), false);
+  assert.equal(LocationUi.isPermissionDenied({ code: 3 }), false);
+  assert.match(LocationUi.getPermissionHelp("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Mobile/15E148 Safari/604.1"), /Настройки веб-сайта.*Геопозиция/);
+  assert.match(LocationUi.getPermissionHelp("Mozilla/5.0 Chrome/130.0"), /настройки браузера.*разрешения сайта/);
+
+  const fs = require("node:fs");
+  const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
+  assert.match(html, /Необходим доступ к геолокации/);
+  assert.match(html, /Чтобы записывать прогулки и захватывать территории, разрешите приложению определять ваше местоположение/);
+  assert.match(html, /id="locationAccessRetry" type="button">Разрешить геолокацию/);
+});
+
 test("location UI shows loading, ready, and temporary unavailable states", () => {
   assert.equal(LocationUi.getLocationState().title, "Определяем местоположение");
   assert.equal(LocationUi.getLocationState({ reason: "ready" }).title, "Местоположение определено");
@@ -55,4 +69,9 @@ test("app retries from the notice and gates walk start on a fresh location", () 
   assert.match(app, /locationFresh: locationIsFresh\(latestLocation\)/);
   assert.match(app, /LocationUi\.canStartWalk\(/);
   assert.match(app, /showLocationState\(\{ error, permissionRetryAttempted \}\)/);
+  assert.match(app, /\$\("locationAccessRetry"\)\.addEventListener\("click"/);
+  assert.match(app, /permission\.addEventListener\("change", updatePermission\)/);
+  assert.match(app, /setLocationPermissionScreen\(false\);\s*const result = Tracking\.evaluateLocationPosition/);
+  assert.match(app, /window\.addEventListener\("focus", handleLocationResume\)/);
+  assert.match(app, /body\.classList\.toggle\("location-denied", denied\)/);
 });
