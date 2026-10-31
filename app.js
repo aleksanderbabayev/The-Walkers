@@ -2,7 +2,7 @@
   "use strict";
   const DB_NAME = "the-walkers", DB_VERSION = 2;
   const AUTOSAVE_MS = 5000;
-  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions;
+  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi;
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   $("appVersion").textContent = `Версия ${appVersion}`;
@@ -349,25 +349,34 @@
     button.title = label;
     if (state === "loading" && previousState !== "loading") locationWaitStartedAt = Date.now();
   };
+  let permissionRetryAttempted = false;
+  const updateLocationNotice = (details) => {
+    const notice = $("locationNotice");
+    notice.className = `location-notice is-${details.state}`;
+    $("locationNoticeTitle").textContent = details.title;
+    $("locationNoticeText").textContent = details.message;
+    const retryButton = $("locationRetry");
+    retryButton.hidden = !details.action;
+    retryButton.textContent = details.action || "";
+    retryButton.disabled = locationRequestPending;
+    updateStartAvailability();
+  };
+  const showLocationState = (options) => updateLocationNotice(LocationUi.getLocationState(options));
   const cancelPendingLocationRequest = () => {
     locationRequestToken += 1;
     if (locationTimeoutTimer !== null) clearTimeout(locationTimeoutTimer);
     locationTimeoutTimer = null; locationRequestPending = false;
   };
-  const currentLocationErrorMessage = (error) => {
-    if (error?.code === 1) return "Нет доступа к геолокации. Разрешите её в настройках браузера и нажмите кнопку для повтора.";
-    if (error?.code === 3) return "Не удалось определить местоположение вовремя. Нажмите кнопку, чтобы попробовать ещё раз.";
-    return "GPS временно недоступен. Проверьте геолокацию и нажмите кнопку для повтора.";
-  };
   const requestCurrentLocation = () => {
     if (!navigator.geolocation) {
       locationRequestPending = false; latestLocation = null; updateLocateButton("error");
-      say("Геолокация недоступна в этом браузере. Проверьте разрешения или используйте другой браузер.");
+      showLocationState({ reason: "unsupported" });
       return;
     }
     if (locationRequestPending) return;
     locationRequestPending = true;
     updateLocateButton("loading");
+    showLocationState({});
     const token = ++locationRequestToken;
     const finishRequest = () => {
       if (locationTimeoutTimer !== null) clearTimeout(locationTimeoutTimer);
@@ -377,36 +386,45 @@
       if (token !== locationRequestToken) return;
       locationRequestToken += 1;
       finishRequest(); latestLocation = null; updateLocateButton("error");
-      say("Не удалось определить местоположение вовремя. Нажмите кнопку, чтобы попробовать ещё раз.");
+      showLocationState({ error: { code: 3 } });
     }, LOCATION_WAIT_TIMEOUT_MS);
     try { navigator.geolocation.getCurrentPosition((position) => {
       if (token !== locationRequestToken) return;
       finishRequest();
-      if (recordingActive || warmingUp || starting) return;
       const result = Tracking.evaluateLocationPosition(position, Date.now());
       if (!result.accepted) {
         latestLocation = null;
         updateLocateButton("error");
-        say(result.reason === "accuracy"
-          ? `Сигнал GPS пока неточный (±${Math.round(position.coords.accuracy)} м). Подождите и нажмите кнопку для повтора.`
-          : "Получены устаревшие координаты. Нажмите кнопку, чтобы определить местоположение ещё раз.");
+        showLocationState({ reason: result.reason, accuracy: position.coords.accuracy });
+        return;
+      }
+      permissionRetryAttempted = false;
+      if (recordingActive || warmingUp || starting) {
+        updateLocationNotice(LocationUi.getLocationState({ reason: "ready" }));
         return;
       }
       rememberLocation(result.point);
     }, (error) => {
       if (token !== locationRequestToken) return;
       finishRequest(); latestLocation = null; updateLocateButton("error");
-      say(currentLocationErrorMessage(error));
+      showLocationState({ error, permissionRetryAttempted });
     }, { enableHighAccuracy: true, maximumAge: 0, timeout: LOCATION_WAIT_TIMEOUT_MS }); }
     catch {
       if (token !== locationRequestToken) return;
       finishRequest(); latestLocation = null; updateLocateButton("error");
-      say("GPS временно недоступен. Проверьте настройки геолокации и попробуйте ещё раз.");
+      showLocationState({ error: { code: 2 } });
     }
   };
   const locationIsFresh = (point, now = Date.now()) => point && point.accuracy <= Tracking.LOCATION_DEFAULTS.maxAccuracyMeters
     && now - point.timestamp >= -Tracking.DEFAULTS.futureToleranceMs
     && now - point.timestamp <= Tracking.LOCATION_DEFAULTS.maxAgeMs;
+  function updateStartAvailability() {
+    const inProgress = recordingActive || warmingUp || cancelling;
+    $("start").disabled = !LocationUi.canStartWalk({
+      storageReady, draftResolved, locationFresh: locationIsFresh(latestLocation),
+      busy: starting || finishing || inProgress
+    });
+  }
   const rememberLocation = (point) => {
     if (locationRequestPending) {
       locationRequestToken += 1;
@@ -415,17 +433,19 @@
     }
     latestLocation = point;
     updateLocateButton("ready");
+    showLocationState({ reason: "ready" });
     if ($("message").textContent.startsWith("📡 Определяем ваше местоположение.")) say("");
   };
   const refreshLocationReadiness = () => {
     if (locationState === "ready" && !locationIsFresh(latestLocation)) {
       latestLocation = null;
       updateLocateButton("loading");
+      showLocationState({});
       if (!recordingActive && !warmingUp) requestCurrentLocation();
     }
     if (locationState === "loading" && !locationRequestPending && Date.now() - locationWaitStartedAt >= LOCATION_WAIT_TIMEOUT_MS) {
       updateLocateButton("error");
-      say("Не удалось получить свежий GPS-сигнал. Нажмите кнопку, чтобы попробовать ещё раз.");
+      showLocationState({ error: { code: 3 } });
     }
   };
   const handleLocationResume = () => {
@@ -438,6 +458,13 @@
   updateLocateButton("loading");
   setInterval(refreshLocationReadiness, LOCATION_REFRESH_INTERVAL_MS);
   requestCurrentLocation();
+  $("locationRetry").addEventListener("click", () => {
+    if ($("locationNotice").classList.contains("is-denied")) permissionRetryAttempted = true;
+    latestLocation = null;
+    updateLocateButton("loading");
+    showLocationState({});
+    requestCurrentLocation();
+  });
   const formatElapsed = (milliseconds) => {
     const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
     const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
@@ -468,7 +495,7 @@
     $("statusText").textContent = active ? "Точки сохраняются на устройстве" : warmingUp ? manualStartAvailable
       ? "GPS всё ещё стабилизируется. Можно начать с предупреждением, если доступна надёжная позиция."
       : "Стабилизация GPS. Подождите перед началом движения…" : cancelling ? "Останавливаем GPS и удаляем черновик…" : 'Нажмите "Начать прогулку", чтобы начать захват территории.';
-    $("start").disabled = inProgress || !storageReady || !draftResolved || starting || finishing;
+    updateStartAvailability();
     $("start").hidden = inProgress;
     $("abandonWalk").hidden = !(active || warmingUp);
     $("abandonLabel").textContent = warmingUp ? "Отмена" : "Отступить";
@@ -752,6 +779,7 @@
     cancelPendingLocationRequest();
     latestLocation = null;
     updateLocateButton("error");
+    showLocationState({ error, permissionRetryAttempted });
     if (cancelling) return;
     if (warmingUp) {
       gpsWarmup.reset();
@@ -760,7 +788,6 @@
         : "GPS-сигнал прервался. Стабилизация начнётся заново…");
       return;
     }
-    say(currentLocationErrorMessage(error));
   };
   const gpsServices = Tracking.createGpsServices({
     geolocation: navigator.geolocation,
@@ -803,8 +830,15 @@
   const startWalk = async () => {
     if (!navigator.geolocation) { say("Этот браузер не поддерживает геолокацию."); return; }
     if (!storageReady || !draftResolved || starting || recordingActive || warmingUp || finishing || cancelling) return;
+    if (!locationIsFresh(latestLocation)) {
+      showLocationState({});
+      if (!locationRequestPending) requestCurrentLocation();
+      say("Сначала дождитесь определения местоположения.");
+      return;
+    }
     positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset();
     latestLocation = null; updateLocateButton("loading"); clearLocationMarker(); clearRouteStartMarker();
+    showLocationState({});
     starting = true; setRecording(false);
     stopWarmupWaitTimer(); warmupStartedAt = null;
     cancelPendingLocationRequest();

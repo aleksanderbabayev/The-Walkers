@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.1.58">
+  <meta name="app-version" content="0.1.59">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=0.1.58">
+  <link rel="stylesheet" href="styles.css?v=0.1.59">
   <link rel="stylesheet" href="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.css">
 </head>
 <body>
@@ -33,6 +33,11 @@
           <small class="gps" id="gps">GPS</small>
         </div>
       </div>
+      <section id="locationNotice" class="location-notice is-loading" role="status" aria-live="polite" aria-atomic="true">
+        <span class="locationNoticeDot" aria-hidden="true"></span>
+        <div class="locationNoticeCopy"><b id="locationNoticeTitle">Определяем местоположение</b><small id="locationNoticeText">Получаем свежие координаты GPS…</small></div>
+        <button id="locationRetry" type="button" hidden>Разрешить геолокацию</button>
+      </section>
       <div class="actions single-action">
         <button id="start" class="primary" type="button" disabled>
           <img class="actionIcon" src="assets/icons/capture-map.svg" alt="" aria-hidden="true">
@@ -90,6 +95,7 @@
   <script src="walk-actions.js?v=0.1.45"></script>
   <script src="tracking-core.js?v=0.1.47"></script>
   <script src="walk-storage.js?v=0.1.44"></script>
-  <script src="app.js?v=0.1.58"></script>
+  <script src="location-ui.js?v=0.1.59"></script>
+  <script src="app.js?v=0.1.59"></script>
 </body>
 </html>
