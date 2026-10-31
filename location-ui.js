@@ -5,7 +5,7 @@
     if (isPermissionDenied(error)) return {
       state: "denied",
       title: "Геолокация недоступна",
-      message: "Доступ к геолокации запрещён. Нажмите кнопку, чтобы проверить доступ ещё раз.",
+      message: "Доступ к геолокации запрещён.",
       action: "Разрешить геолокацию"
     };
     if (reason === "accuracy") return {
@@ -45,33 +45,7 @@
   };
   const canStartWalk = ({ storageReady, draftResolved, locationFresh, busy }) =>
     Boolean(storageReady && draftResolved && locationFresh && !busy);
-  const getAccessRetryState = (state) => {
-    if (state === "checking") return {
-      buttonText: "Проверяем доступ…", disabled: true,
-      message: "Разрешите доступ к местоположению в настройках браузера."
-    };
-    if (state === "denied") return {
-      buttonText: "Проверить доступ", disabled: false,
-      message: "Геолокация всё ещё отключена. Разрешите доступ в настройках браузера."
-    };
-    if (state === "retry-denied") return {
-      buttonText: "Проверить доступ", disabled: false, showReload: true,
-      message: "Разрешения изменены? Браузеру может потребоваться обновление страницы, чтобы применить новые настройки."
-    };
-    if (state === "timeout") return {
-      buttonText: "Проверить доступ", disabled: false,
-      message: "Проверка заняла слишком много времени. Попробуйте ещё раз."
-    };
-    if (state === "error") return {
-      buttonText: "Проверить доступ", disabled: false,
-      message: "Не удалось проверить доступ. Попробуйте ещё раз."
-    };
-    return {
-      buttonText: "Проверить доступ", disabled: false,
-      message: "Разрешите доступ к местоположению в настройках браузера."
-    };
-  };
-  const api = { getLocationState, canStartWalk, isPermissionDenied, getAccessRetryState };
+  const api = { getLocationState, canStartWalk, isPermissionDenied };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.WalkLocationUi = api;
 })();
