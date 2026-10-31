@@ -2,7 +2,7 @@
   "use strict";
   const DB_NAME = "the-walkers", DB_VERSION = 2;
   const AUTOSAVE_MS = 5000;
-  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi;
+  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, MusicControl = window.WalkMusicControl;
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   $("appVersion").textContent = `Версия ${appVersion}`;
@@ -20,38 +20,29 @@
     button.setAttribute("aria-label", label);
     button.title = label;
   };
-  const startBackgroundMusic = async () => {
-    if (musicMuted) return;
-    try { await backgroundMusic.play(); } catch {}
-    updateMusicButton();
-  };
+  const musicControl = MusicControl.createMusicControl({
+    audio: backgroundMusic,
+    isMuted: () => musicMuted,
+    setMuted: (muted) => {
+      musicMuted = muted;
+      try { localStorage.setItem(MUSIC_PREFERENCE_KEY, String(musicMuted)); } catch {}
+    },
+    onStateChange: updateMusicButton
+  });
+  const startBackgroundMusic = () => musicControl.start();
   const unlockBackgroundMusic = (event) => {
     if (event.target.closest?.("#musicToggle")) return;
     if (!musicMuted) startBackgroundMusic().catch(() => {});
-    document.removeEventListener("pointerdown", unlockBackgroundMusic, true);
-    document.removeEventListener("keydown", unlockBackgroundMusic, true);
   };
   updateMusicButton();
   backgroundMusic.addEventListener("play", updateMusicButton);
   backgroundMusic.addEventListener("pause", updateMusicButton);
-  startBackgroundMusic().catch(() => {});
   document.addEventListener("pointerdown", unlockBackgroundMusic, true);
   document.addEventListener("keydown", unlockBackgroundMusic, true);
   ["gesturestart", "gesturechange", "gestureend"].forEach((eventName) => {
     document.addEventListener(eventName, (event) => event.preventDefault(), { passive: false });
   });
-  $("musicToggle").addEventListener("click", async () => {
-    if (!musicMuted && backgroundMusic.paused) {
-      await startBackgroundMusic().catch(() => {});
-      updateMusicButton();
-      return;
-    }
-    musicMuted = !musicMuted;
-    try { localStorage.setItem(MUSIC_PREFERENCE_KEY, String(musicMuted)); } catch {}
-    if (musicMuted) backgroundMusic.pause();
-    else await startBackgroundMusic().catch(() => {});
-    updateMusicButton();
-  });
+  $("musicToggle").addEventListener("click", () => { musicControl.toggle(); });
   const isMobileViewport = () => window.matchMedia("(max-width: 760px)").matches;
   const syncMobileViewportHeight = () => {
     if (!isMobileViewport()) {
@@ -406,6 +397,7 @@
     try { navigator.geolocation.getCurrentPosition((position) => {
       if (token !== locationRequestToken) return;
       finishRequest();
+      musicControl.setLocationAllowed(true);
       setLocationPermissionScreen(false);
       const result = Tracking.evaluateLocationPosition(position, Date.now());
       if (!result.accepted) {
@@ -422,7 +414,11 @@
     }, (error) => {
       if (token !== locationRequestToken) return;
       finishRequest(); latestLocation = null; updateLocateButton("error");
-      if (locationPermissionDenied && !LocationUi.isPermissionDenied(error)) setLocationPermissionScreen(false);
+      if (LocationUi.isPermissionDenied(error)) musicControl.setLocationAllowed(false);
+      if (locationPermissionDenied && !LocationUi.isPermissionDenied(error)) {
+        musicControl.setLocationAllowed(true);
+        setLocationPermissionScreen(false);
+      }
       showLocationState({ error });
     }, { enableHighAccuracy: true, maximumAge: 0, timeout: LOCATION_WAIT_TIMEOUT_MS }); }
     catch {
@@ -486,15 +482,17 @@
       const permission = await navigator.permissions.query({ name: "geolocation" });
       locationPermissionMonitored = true;
       const updatePermission = () => {
+        const wasAllowed = musicControl.isLocationAllowed();
+        musicControl.setLocationAllowed(permission.state === "granted");
         if (permission.state === "denied") {
           latestLocation = null;
           updateLocateButton("error");
           showLocationState({ error: { code: 1 } });
-        } else if (locationPermissionDenied) requestCurrentLocation();
+        } else if (locationPermissionDenied || (wasAllowed && permission.state !== "granted")) requestCurrentLocation();
       };
       if (permission.addEventListener) permission.addEventListener("change", updatePermission);
       else permission.onchange = updatePermission;
-      if (permission.state === "denied") updatePermission();
+      updatePermission();
     } catch {}
   };
   monitorLocationPermission();
@@ -824,7 +822,11 @@
     cancelPendingLocationRequest();
     latestLocation = null;
     updateLocateButton("error");
-    if (locationPermissionDenied && !LocationUi.isPermissionDenied(error)) setLocationPermissionScreen(false);
+    if (LocationUi.isPermissionDenied(error)) musicControl.setLocationAllowed(false);
+    if (locationPermissionDenied && !LocationUi.isPermissionDenied(error)) {
+      musicControl.setLocationAllowed(true);
+      setLocationPermissionScreen(false);
+    }
     showLocationState({ error });
     if (cancelling) return;
     if (warmingUp) {
