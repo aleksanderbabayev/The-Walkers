@@ -350,7 +350,6 @@
     button.title = label;
     if (state === "loading" && previousState !== "loading") locationWaitStartedAt = Date.now();
   };
-  let permissionRetryAttempted = false;
   let locationPermissionDenied = false;
   const updateLocationNotice = (details) => {
     const notice = $("locationNotice");
@@ -363,22 +362,19 @@
     retryButton.disabled = locationRequestPending;
     updateStartAvailability();
   };
-  const setLocationPermissionScreen = (denied, showHelp = false) => {
+  const setLocationPermissionScreen = (denied) => {
     locationPermissionDenied = denied;
     document.body.classList.toggle("location-denied", denied);
     $("locationAccessScreen").hidden = !denied;
     $("locationAccessRetry").disabled = locationRequestPending;
     if (!denied) return;
-    $("locationAccessText").textContent = showHelp
-      ? LocationUi.getPermissionHelp(navigator.userAgent)
-      : LocationUi.deniedScreenText;
     if (!$("locationAccessRetry").disabled) $("locationAccessRetry").focus({ preventScroll: true });
     updateStartAvailability();
   };
   const showLocationState = (options) => {
     const details = LocationUi.getLocationState(options);
     updateLocationNotice(details);
-    if (details.state === "denied") setLocationPermissionScreen(true, permissionRetryAttempted);
+    if (details.state === "denied") setLocationPermissionScreen(true);
   };
   const cancelPendingLocationRequest = () => {
     locationRequestToken += 1;
@@ -405,7 +401,6 @@
       if (token !== locationRequestToken) return;
       locationRequestToken += 1;
       finishRequest(); latestLocation = null; updateLocateButton("error");
-      if (permissionRetryAttempted) setLocationPermissionScreen(false);
       showLocationState({ error: { code: 3 } });
     }, LOCATION_WAIT_TIMEOUT_MS);
     try { navigator.geolocation.getCurrentPosition((position) => {
@@ -419,7 +414,6 @@
         showLocationState({ reason: result.reason, accuracy: position.coords.accuracy });
         return;
       }
-      permissionRetryAttempted = false;
       if (recordingActive || warmingUp || starting) {
         updateLocationNotice(LocationUi.getLocationState({ reason: "ready" }));
         return;
@@ -429,12 +423,11 @@
       if (token !== locationRequestToken) return;
       finishRequest(); latestLocation = null; updateLocateButton("error");
       if (locationPermissionDenied && !LocationUi.isPermissionDenied(error)) setLocationPermissionScreen(false);
-      showLocationState({ error, permissionRetryAttempted });
+      showLocationState({ error });
     }, { enableHighAccuracy: true, maximumAge: 0, timeout: LOCATION_WAIT_TIMEOUT_MS }); }
     catch {
       if (token !== locationRequestToken) return;
       finishRequest(); latestLocation = null; updateLocateButton("error");
-      if (permissionRetryAttempted) setLocationPermissionScreen(false);
       showLocationState({ error: { code: 2 } });
     }
   };
@@ -496,7 +489,7 @@
         if (permission.state === "denied") {
           latestLocation = null;
           updateLocateButton("error");
-          showLocationState({ error: { code: 1 }, permissionRetryAttempted });
+          showLocationState({ error: { code: 1 } });
         } else if (locationPermissionDenied) requestCurrentLocation();
       };
       if (permission.addEventListener) permission.addEventListener("change", updatePermission);
@@ -509,14 +502,12 @@
   setInterval(refreshLocationReadiness, LOCATION_REFRESH_INTERVAL_MS);
   requestCurrentLocation();
   $("locationRetry").addEventListener("click", () => {
-    if ($("locationNotice").classList.contains("is-denied")) permissionRetryAttempted = true;
     latestLocation = null;
     updateLocateButton("loading");
     showLocationState({});
     requestCurrentLocation();
   });
   $("locationAccessRetry").addEventListener("click", () => {
-    permissionRetryAttempted = true;
     requestCurrentLocation();
   });
   const formatElapsed = (milliseconds) => {
@@ -834,7 +825,7 @@
     latestLocation = null;
     updateLocateButton("error");
     if (locationPermissionDenied && !LocationUi.isPermissionDenied(error)) setLocationPermissionScreen(false);
-    showLocationState({ error, permissionRetryAttempted });
+    showLocationState({ error });
     if (cancelling) return;
     if (warmingUp) {
       gpsWarmup.reset();
