@@ -56,3 +56,13 @@ test("short routes remain ineligible for Finish but can be retained by Retreat",
   assert.equal(retreatResult.status, "retreated");
   assert.equal(retreatResult.closed, false);
 });
+
+test("a successful capture focuses only its new polygon and caps the zoom", () => {
+  const appSource = fs.readFileSync(require.resolve("../app.js"), "utf8");
+  assert.match(appSource, /const redrawSaved = async \(\{ fitAll = false, focusWalkId = null \} = \{\}\)/);
+  assert.match(appSource, /if \(walk\.id === focusWalkId && walk\.closed && !retreated\) focusedTerritory = layers\[0\] \|\| null;/);
+  assert.match(appSource, /map\.fitBounds\(focusedTerritory\.getBounds\(\), \{ padding: \[16, 16\], maxZoom: 16 \}\);/);
+  assert.match(appSource, /redrawSaved\(\{ focusWalkId: closed \? walk\.id : null \}\)/);
+  assert.match(appSource, /else if \(fitAll && !points\.length\)/);
+  assert.match(appSource, /await redrawSaved\(\{ fitAll: true \}\);/);
+});

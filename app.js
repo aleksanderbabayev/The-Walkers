@@ -608,9 +608,10 @@
       return L.polyline(segment.map((point) => [point.lat, point.lng]), { color: "#e0765d", weight: 4 }).addTo(map);
     });
   };
-  const redrawSaved = async () => {
+  const redrawSaved = async ({ fitAll = false, focusWalkId = null } = {}) => {
     savedLayers.forEach((layer) => map.removeLayer(layer));
     savedLayers = [];
+    let focusedTerritory = null;
     const walks = await WalkStorage.readWalks(db);
     walksById = new Map(walks.map((walk) => [walk.id, walk]));
     diagnosticsByWalkId.clear();
@@ -632,6 +633,7 @@
       const layers = !Tracking.shouldDisplayWalkOnMap(walk) ? [] : walk.closed
         ? [L.polygon((walk.points || []).map((point) => [point.lat, point.lng]), { color: "#477b43", weight: 3, fillColor: "#8fbd70", fillOpacity: 0.35 })]
         : segments.filter((segment) => segment.length > 1).map((segment) => L.polyline(segment.map((point) => [point.lat, point.lng]), { color: "#e0765d", weight: 4 }));
+      if (walk.id === focusWalkId && walk.closed && !retreated) focusedTerritory = layers[0] || null;
       layers.forEach((layer) => { layer.addTo(map); savedLayers.push(layer); });
       const row = document.createElement("div"); row.className = retreated ? "route retreated" : "route";
       const icon = document.createElement("span"); icon.className = "routeIcon"; icon.textContent = retreated ? "↩" : walk.closed ? "⬟" : "↗";
@@ -649,7 +651,9 @@
       const actions = document.createElement("div"); actions.className = "routeActions"; actions.append(copyButton, deleteButton);
       row.append(icon, details, actions); list.append(row);
     });
-    if (!points.length) {
+    if (focusedTerritory) {
+      map.fitBounds(focusedTerritory.getBounds(), { padding: [16, 16], maxZoom: 16 });
+    } else if (fitAll && !points.length) {
       const group = L.featureGroup(savedLayers);
       if (group.getBounds().isValid()) map.fitBounds(group.getBounds().pad(0.15), { maxZoom: 16 });
     }
@@ -1063,7 +1067,7 @@
         ? retreated ? "Вы отступили. Маршрут сохранён в истории, территория не захвачена."
           : closed ? "Маршрут замкнут, территория закрашена." : "Контур не замкнулся — захват не состоялся."
         : "Прогулка сохранена, но диагностику не удалось сохранить.");
-      try { await redrawSaved(); } catch { say("Прогулка сохранена, но список не удалось обновить."); }
+      try { await redrawSaved({ focusWalkId: closed ? walk.id : null }); } catch { say("Прогулка сохранена, но список не удалось обновить."); }
     } catch {
       if (diagnosticSession?.state === "finalizing") {
         diagnosticSession.state = "active";
@@ -1114,7 +1118,7 @@
     try {
       db = await openDb();
       const draft = await WalkStorage.readDraft(db);
-      await redrawSaved();
+      await redrawSaved({ fitAll: true });
       storageReady = true;
       if (draft) {
         positionFilter.reset(); gpsWarmup.reset();
