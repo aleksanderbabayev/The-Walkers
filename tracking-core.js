@@ -77,6 +77,21 @@
   };
 
   const evaluateLocationPosition = (position, now = Date.now()) => evaluatePosition(position, null, now, { ...DEFAULTS, ...LOCATION_DEFAULTS });
+  const isLocationFresh = (point, now = Date.now()) => Boolean(point
+    && point.accuracy <= LOCATION_DEFAULTS.maxAccuracyMeters
+    && now - point.timestamp >= -DEFAULTS.futureToleranceMs
+    && now - point.timestamp <= LOCATION_DEFAULTS.maxAgeMs);
+  const evaluateLocationUpdate = (position, previousPoint, now = Date.now()) => {
+    const result = evaluateLocationPosition(position, now);
+    const previousFresh = isLocationFresh(previousPoint, now);
+    if (result.accepted && previousPoint && result.point.timestamp <= previousPoint.timestamp) {
+      return { accepted: false, reason: "stale", point: previousFresh ? previousPoint : null, keepPrevious: previousFresh };
+    }
+    if (result.accepted && previousFresh && result.point.accuracy > previousPoint.accuracy) {
+      return { accepted: false, reason: "lower-accuracy", point: previousPoint, keepPrevious: true };
+    }
+    return { ...result, point: result.accepted ? result.point : previousFresh ? previousPoint : null, keepPrevious: !result.accepted && previousFresh };
+  };
 
   const createPositionFilter = () => {
     let pendingGapPoint = null;
@@ -252,5 +267,5 @@
     return { start, startWatch, stopAutosave, stop };
   };
 
-  return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, distanceMeters, evaluatePosition, evaluateLocationPosition, createPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, shouldDisplayWalkOnMap, createGpsServices };
+  return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, distanceMeters, evaluatePosition, evaluateLocationPosition, isLocationFresh, evaluateLocationUpdate, createPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, shouldDisplayWalkOnMap, createGpsServices };
 });

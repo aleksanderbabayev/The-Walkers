@@ -28,6 +28,37 @@ test("current-location fixes allow up to 50 m accuracy and expire after 30 secon
   assert.equal(Tracking.evaluateLocationPosition(position(48.9, 21.2, now - 30000, 10), now).accepted, true);
 });
 
+test("idle location keeps a fresh good fix through a rejected fix, then accepts a newer good fix", () => {
+  const first = Tracking.evaluateLocationUpdate(position(48.9, 21.2, now - 1000, 12), null, now);
+  assert.equal(first.accepted, true);
+  const rejected = Tracking.evaluateLocationUpdate(position(48.9002, 21.2, now, 75), first.point, now);
+  assert.equal(rejected.accepted, false);
+  assert.equal(rejected.keepPrevious, true);
+  assert.equal(rejected.point, first.point);
+
+  const recovered = Tracking.evaluateLocationUpdate(position(48.90001, 21.2, now + 1000, 9), rejected.point, now + 1000);
+  assert.equal(recovered.accepted, true);
+  assert.equal(recovered.keepPrevious, false);
+  assert.ok(recovered.point.timestamp > first.point.timestamp);
+});
+
+test("idle location does not replace a fresh better fix with a lower-quality accepted fix", () => {
+  const previous = { lat: 48.9, lng: 21.2, accuracy: 5, timestamp: now - 1000 };
+  const result = Tracking.evaluateLocationUpdate(position(48.9001, 21.2, now, 20), previous, now);
+  assert.equal(result.accepted, false);
+  assert.equal(result.reason, "lower-accuracy");
+  assert.equal(result.keepPrevious, true);
+  assert.equal(result.point, previous);
+});
+
+test("idle location does not preserve a fix after it exceeds the freshness window", () => {
+  const previous = { lat: 48.9, lng: 21.2, accuracy: 8, timestamp: now - 30001 };
+  const result = Tracking.evaluateLocationUpdate(position(48.9002, 21.2, now, 75), previous, now);
+  assert.equal(result.accepted, false);
+  assert.equal(result.keepPrevious, false);
+  assert.equal(result.point, null);
+});
+
 test("rejects implausible walking speed and accuracy-sized stationary drift", () => {
   const previous = point(0, 0, now - 5000, true);
   assert.equal(Tracking.evaluatePosition(position(0.001, 0), previous, now).reason, "speed");

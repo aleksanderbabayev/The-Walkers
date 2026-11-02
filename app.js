@@ -388,7 +388,9 @@
     musicControl.setLocationAllowed(true);
     const result = Tracking.evaluateLocationPosition(position, Date.now());
     if (!result.accepted) {
+      if (locationIsFresh(latestLocation)) return;
       latestLocation = null;
+      clearLocationMarker();
       updateLocateButton("error");
       showLocationState({ reason: result.reason, accuracy: position.coords.accuracy });
       return;
@@ -400,7 +402,9 @@
     if (rememberLocation(result.point)) updateLocationMarker(result.point);
   };
   const handleCurrentLocationError = (error, reason) => {
+    if (!LocationUi.isPermissionDenied(error) && locationIsFresh(latestLocation)) return;
     latestLocation = null;
+    clearLocationMarker();
     updateLocateButton("error");
     if (error?.code) noteLocationRequest(error.code === 1 ? "PERMISSION_DENIED" : error.code === 3 ? "TIMEOUT" : "POSITION_UNAVAILABLE");
     if (LocationUi.isPermissionDenied(error)) {
@@ -446,9 +450,7 @@
       handleCurrentLocationError({ code: 2 });
     }
   };
-  const locationIsFresh = (point, now = Date.now()) => point && point.accuracy <= Tracking.LOCATION_DEFAULTS.maxAccuracyMeters
-    && now - point.timestamp >= -Tracking.DEFAULTS.futureToleranceMs
-    && now - point.timestamp <= Tracking.LOCATION_DEFAULTS.maxAgeMs;
+  const locationIsFresh = Tracking.isLocationFresh;
   function updateStartAvailability() {
     const inProgress = recordingActive || warmingUp || cancelling;
     $("start").disabled = !LocationUi.canStartWalk({
@@ -473,8 +475,10 @@
   const refreshLocationReadiness = () => {
     if (locationState === "ready" && !locationIsFresh(latestLocation)) {
       latestLocation = null;
+      clearLocationMarker();
       updateLocateButton("loading");
       showLocationState({});
+      updateStartAvailability();
       if (!recordingActive && !warmingUp) requestCurrentLocation();
     }
     if (locationState === "loading" && !locationRequestPending && Date.now() - locationWaitStartedAt >= LOCATION_WAIT_TIMEOUT_MS) {
@@ -713,10 +717,9 @@
     if (finishing || cancelling) return;
     const processedAt = Date.now();
     if (!warmingUp && !recordingActive) {
-      if (latestLocation && position.timestamp <= latestLocation.timestamp) return;
-      const result = Tracking.evaluateLocationPosition(position, processedAt);
+      const result = Tracking.evaluateLocationUpdate(position, latestLocation, processedAt);
       if (!result.accepted) {
-        if (result.reason === "stale" && locationIsFresh(latestLocation)) return;
+        if (result.keepPrevious) return;
         latestLocation = null;
         clearLocationMarker();
         updateLocateButton("error");

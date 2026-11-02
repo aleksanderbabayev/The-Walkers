@@ -82,7 +82,7 @@ test("idle GPS watch updates only the current-position marker and keeps map rece
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
   const idlePositionBranch = app.match(/if \(!warmingUp && !recordingActive\) \{([\s\S]*?)\n    \}\n    if \(warmingUp\)/)?.[1];
   assert.ok(idlePositionBranch);
-  assert.match(idlePositionBranch, /Tracking\.evaluateLocationPosition\(position, processedAt\)/);
+  assert.match(idlePositionBranch, /Tracking\.evaluateLocationUpdate\(position, latestLocation, processedAt\)/);
   assert.match(idlePositionBranch, /rememberLocation\(result\.point\).*updateLocationMarker\(result\.point\)/);
   assert.doesNotMatch(idlePositionBranch, /saveDraftSnapshot|drawCurrent|updateDistance|centerMapOnPosition|setView|distanceMetersTotal|points\s*=/);
   assert.match(app, /try \{ gpsServices\.startWatch\(\); \}\s*catch/);
@@ -90,5 +90,6 @@ test("idle GPS watch updates only the current-position marker and keeps map rece
   assert.doesNotMatch(app, /gpsServices\.stop\(\)/);
   assert.match(app, /if \(!locationIsFresh\(latestLocation\)\) \{\s*latestLocation = null;\s*updateLocateButton\("loading"\);\s*say\("📡 Определяем ваше местоположение/);
   assert.match(app, /const finishWalk = async \(retreated = false\) => \{[\s\S]*?stopTrackingServices\(\);/);
+  assert.match(app, /if \(locationState === "ready" && !locationIsFresh\(latestLocation\)\) \{\s*latestLocation = null;\s*clearLocationMarker\(\);\s*updateLocateButton\("loading"\);/);
   assert.match(app, /const centerMapOnPosition = \(point, requestId\) =>/);
 });
