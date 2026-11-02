@@ -5,6 +5,7 @@
   const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl, MapFollow = window.WalkMapFollow;
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
+  const startupPosition = window.WalkStartupResult?.position;
   $("appVersion").textContent = `Версия ${appVersion}`;
   const MUSIC_PREFERENCE_KEY = "the-walkers-music-muted";
   const backgroundMusic = $("backgroundMusic");
@@ -90,7 +91,7 @@
     shiftKeyRotate: true,
     rotateControl: { position: "topright", behavior: "reset", closeOnZeroBearing: false },
     preventPageGestures: true
-  }).setView([48.998, 21.239], 14);
+  }).setView([startupPosition.coords.latitude, startupPosition.coords.longitude], 15);
   const compassButton = map.getContainer().querySelector(".leaflet-control-rotate a");
   if (compassButton) {
     compassButton.setAttribute("aria-label", "Повернуть карту на север");
@@ -624,7 +625,7 @@
       return L.polyline(segment.map((point) => [point.lat, point.lng]), { color: "#e0765d", weight: 4 }).addTo(map);
     });
   };
-  const redrawSaved = async ({ fitAll = false, focusWalkId = null } = {}) => {
+  const redrawSaved = async ({ focusWalkId = null } = {}) => {
     savedLayers.forEach((layer) => map.removeLayer(layer));
     savedLayers = [];
     let focusedTerritory = null;
@@ -669,9 +670,6 @@
     });
     if (focusedTerritory) {
       map.fitBounds(focusedTerritory.getBounds(), { padding: [16, 16], maxZoom: 16 });
-    } else if (fitAll && !points.length) {
-      const group = L.featureGroup(savedLayers);
-      if (group.getBounds().isValid()) map.fitBounds(group.getBounds().pad(0.15), { maxZoom: 16 });
     }
     if (!isMobileViewport()) preloadWalkDiagnostics();
   };
@@ -1146,7 +1144,7 @@
     try {
       db = await openDb();
       const draft = await WalkStorage.readDraft(db);
-      await redrawSaved({ fitAll: true });
+      await redrawSaved();
       storageReady = true;
       if (draft) {
         positionFilter.reset(); gpsWarmup.reset();

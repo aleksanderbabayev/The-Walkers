@@ -1,7 +1,19 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
-const { createLocationStartupGate } = require("../location-bootstrap.js");
+const { createLocationStartupGate, validateStartupPosition } = require("../location-bootstrap.js");
+const position = (coords = {}) => ({
+  timestamp: Date.now(),
+  coords: { latitude: 48.15, longitude: 17.11, accuracy: 8, ...coords }
+});
+
+test("startup accepts only fresh valid GPS coordinates within the 50 m location limit", () => {
+  const now = Date.now();
+  assert.equal(validateStartupPosition(position({ accuracy: 50 }), now).accepted, true);
+  assert.deepEqual(validateStartupPosition(position({ accuracy: 50.1 }), now), { accepted: false, reason: "accuracy", accuracy: 50.1 });
+  assert.equal(validateStartupPosition({ ...position(), timestamp: now - 30001 }, now).reason, "stale");
+  assert.equal(validateStartupPosition({ ...position(), coords: { latitude: 91, longitude: 0, accuracy: 4 } }, now).reason, "invalid");
+});
 
 const makePermission = (state) => {
   const listeners = new Set();
@@ -49,8 +61,9 @@ test("first launch requests geolocation immediately while the app remains gated"
   assert.equal(env.requests[0].options.timeout, 20000);
   assert.deepEqual(env.readyResults, []);
   assert.equal(env.gate.getState(), "checking");
-  env.requests[0].success({ coords: { latitude: 48, longitude: 21, accuracy: 90 } });
-  assert.equal(env.readyResults[0].state, "ready", "permission success is separate from GPS accuracy validation");
+  env.requests[0].success(position());
+  assert.equal(env.readyResults[0].state, "ready");
+  assert.equal(env.readyResults[0].result.position.coords.latitude, 48.15);
 });
 
 test("an already granted permission still requires a Geolocation API response before startup", async () => {
@@ -59,7 +72,7 @@ test("an already granted permission still requires a Geolocation API response be
   await Promise.resolve();
   assert.equal(env.requests.length, 1);
   assert.deepEqual(env.readyResults, []);
-  env.requests[0].success({ coords: { latitude: 48, longitude: 21, accuracy: 6 } });
+  env.requests[0].success(position());
   assert.equal(env.readyResults[0].state, "ready");
 });
 
@@ -72,17 +85,20 @@ test("a denied startup stays on the access screen, then recovers after permissio
   await Promise.resolve();
   env.permission.change("granted");
   assert.equal(env.requests.length, 2);
-  env.requests[1].success({ coords: { latitude: 48, longitude: 21, accuracy: 12 } });
+  env.requests[1].success(position());
   assert.equal(env.readyResults[0].state, "ready");
 });
 
 for (const [name, error] of [["timeout", { code: 3 }], ["unavailable GPS", { code: 2 }]]) {
-  test(`temporary ${name} does not become a permission denial or wait indefinitely`, () => {
+  test(`temporary ${name} leaves the map gated and offers a retry`, () => {
     const env = makeEnvironment();
     env.gate.start();
     env.requests[0].error(error);
     assert.equal(env.gateStates.some(({ state }) => state === "denied"), false);
-    assert.equal(env.readyResults[0].state, "unavailable");
+    assert.equal(env.gate.getState(), "unavailable");
+    assert.deepEqual(env.readyResults, []);
+    env.gate.retry();
+    assert.equal(env.requests.length, 2);
   });
 }
 
@@ -92,7 +108,24 @@ test("startup fallback is bounded and runs the app only after geolocation resolv
   const [timer] = env.timers.values();
   assert.equal(timer.delay, 21000);
   timer.callback();
-  assert.equal(env.readyResults[0].state, "unavailable");
+  assert.equal(env.gate.getState(), "unavailable");
+  assert.deepEqual(env.readyResults, []);
+});
+
+test("poor accuracy and stale coordinates keep the startup screen until a reliable retry", () => {
+  const env = makeEnvironment();
+  env.gate.start();
+  env.requests[0].success(position({ accuracy: 74 }));
+  assert.equal(env.gate.getState(), "unavailable");
+  assert.deepEqual(env.readyResults, []);
+  env.gate.retry();
+  env.requests[1].success({ ...position(), timestamp: Date.now() - 31000 });
+  assert.equal(env.gate.getState(), "unavailable");
+  env.gate.retry();
+  const freshFix = position({ latitude: 50.08, longitude: 14.43, accuracy: 16 });
+  env.requests[2].success(freshFix);
+  assert.equal(env.readyResults[0].state, "ready");
+  assert.equal(env.readyResults[0].result.position.coords.latitude, 50.08);
 });
 
 test("the page gates Leaflet and app scripts until startup geolocation completes", () => {
@@ -112,4 +145,12 @@ test("the page gates Leaflet and app scripts until startup geolocation completes
   assert.match(bootstrap, /\$\("locationAccessReload"\)\.addEventListener\("click", \(\) => window\.location\.reload\(\)\)/);
   assert.doesNotMatch(bootstrap, /trackingQueue|saveDraftSnapshot|finishWalk/);
   assert.match(app, /const startupResult = window\.WalkStartupResult;\s*delete window\.WalkStartupResult;\s*if \(startupResult\?\.state === "ready"\) handleCurrentLocationSuccess\(startupResult\.position\);\s*else if \(startupResult\) handleCurrentLocationError\(startupResult\.error, startupResult\.reason\);\s*else requestCurrentLocation\(\)/);
+  assert.match(html, /id="locationStartupRetry"[^>]+hidden/);
+  assert.match(bootstrap, /validateStartupPosition\(position, now\(\)\)/);
+  assert.match(bootstrap, /retry\.addEventListener|locationStartupRetry"\)\.addEventListener\("click", \(\) => gate\.retry\(\)\)/);
+  assert.match(app, /\.setView\(\[startupPosition\.coords\.latitude, startupPosition\.coords\.longitude\], 15\)/);
+  assert.doesNotMatch(app, /setView\([^\n]*mapFollow/);
+  assert.doesNotMatch(app, /48\.998|21\.239|redrawSaved\(\{ fitAll: true \}\)/);
+  assert.match(app, /const redrawSaved = async \(\{ focusWalkId = null \} = \{\}\)/);
+  assert.match(app, /layers\.forEach\(\(layer\) => \{ layer\.addTo\(map\); savedLayers\.push\(layer\); \}\)/);
 });

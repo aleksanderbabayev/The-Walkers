@@ -41,6 +41,12 @@ test("GPS updates pan the map center while preserving zoom and bearing", () => {
   assert.equal(map.bearing, 32);
 });
 
+test("GPS movement cannot recenter the map when follow mode is off", () => {
+  const map = new FakeMap(), follow = MapFollow.createMapFollow({ map, storage: makeStorage() });
+  assert.equal(follow.centerOn({ lat: 48.9, lng: 21.2 }), false);
+  assert.deepEqual(map.center, [0, 0]);
+});
+
 test("manual drag disables following, while a programmatic pan does not", () => {
   const map = new FakeMap(), follow = MapFollow.createMapFollow({ map, storage: makeStorage() });
   follow.setEnabled(true);
@@ -70,6 +76,6 @@ test("capture completion disables follow and GPS following reuses the shared wat
   assert.match(app, /button\.classList\.toggle\("is-following", mapFollow\?\.enabled === true\)/);
   assert.match(app, /button\.setAttribute\("aria-pressed", String\(mapFollow\?\.enabled === true\)\)/);
   assert.match(app, /Отключить следование за вашим местоположением/);
-  assert.match(bootstrap, /"map-follow\.js\?v=0\.1\.72"[\s\S]*"app\.js\?v=0\.1\.72"/);
+  assert.match(bootstrap, /"map-follow\.js\?v=0\.1\.72"[\s\S]*"app\.js\?v=0\.1\.73"/);
   assert.doesNotMatch(fs.readFileSync(require.resolve("../map-follow.js"), "utf8"), /watchPosition/);
 });

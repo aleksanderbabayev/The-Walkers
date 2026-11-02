@@ -1,12 +1,29 @@
 (() => {
   "use strict";
 
+  const STARTUP_LOCATION_LIMITS = Object.freeze({ maxAccuracyMeters: 50, maxAgeMs: 30000, futureToleranceMs: 5000 });
+  const validateStartupPosition = (position, now = Date.now()) => {
+    const { latitude, longitude, accuracy } = position?.coords || {};
+    const timestamp = position?.timestamp;
+    if (![latitude, longitude, accuracy, timestamp].every(Number.isFinite)
+      || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || accuracy <= 0) {
+      return { accepted: false, reason: "invalid" };
+    }
+    if (accuracy > STARTUP_LOCATION_LIMITS.maxAccuracyMeters) return { accepted: false, reason: "accuracy", accuracy };
+    const age = now - timestamp;
+    if (age > STARTUP_LOCATION_LIMITS.maxAgeMs || age < -STARTUP_LOCATION_LIMITS.futureToleranceMs) {
+      return { accepted: false, reason: "stale" };
+    }
+    return { accepted: true };
+  };
+
   const createLocationStartupGate = ({
     navigatorLike,
     onState = () => {},
     onPermissionState = () => {},
     onReady = () => {},
     timeoutMs = 20000,
+    now = Date.now,
     setTimer = setTimeout,
     clearTimer = clearTimeout
   }) => {
@@ -30,7 +47,8 @@
       if (ready || requestPending) return;
       const geolocation = navigatorLike?.geolocation;
       if (typeof geolocation?.getCurrentPosition !== "function") {
-        complete("unavailable", { reason: "unsupported" });
+        state = "unavailable";
+        onState(state, { reason: "unsupported" });
         return;
       }
 
@@ -40,7 +58,7 @@
       const currentRequest = ++requestId;
       const finish = (nextState, result) => {
         if (currentRequest !== requestId || ready) return;
-        if (nextState === "denied") {
+        if (nextState !== "ready") {
           clearRequest();
           state = nextState;
           onState(nextState, result);
@@ -51,7 +69,14 @@
       timeoutHandle = setTimer(() => finish("unavailable", { error: { code: 3 } }), timeoutMs + 1000);
       try {
         geolocation.getCurrentPosition(
-          (position) => finish("ready", { position }),
+          (position) => {
+            const validation = validateStartupPosition(position, now());
+            if (!validation.accepted) {
+              finish("unavailable", { reason: validation.reason, accuracy: validation.accuracy });
+              return;
+            }
+            finish("ready", { position });
+          },
           (error) => finish(error?.code === 1 ? "denied" : "unavailable", { error }),
           { enableHighAccuracy: true, maximumAge: 0, timeout: timeoutMs }
         );
@@ -102,10 +127,10 @@
       navigatorLike?.window?.removeEventListener("focus", handleResume);
       navigatorLike?.document?.removeEventListener("visibilitychange", handleVisibility);
     };
-    return { start, dispose, getState: () => state };
+    return { start, retry: request, dispose, getState: () => state };
   };
 
-  if (typeof module !== "undefined" && module.exports) module.exports = { createLocationStartupGate };
+  if (typeof module !== "undefined" && module.exports) module.exports = { createLocationStartupGate, validateStartupPosition };
   if (typeof window === "undefined" || typeof document === "undefined") return;
 
   const $ = (id) => document.getElementById(id);
@@ -116,6 +141,7 @@
     if (state === "checking") return "pending";
     if (state === "ready") return "success";
     if (state === "denied") return "PERMISSION_DENIED";
+    if (state === "unavailable") return result?.error?.code === 3 ? "TIMEOUT" : "POSITION_UNAVAILABLE";
     if (result?.error?.code === 3) return "TIMEOUT";
     if (result?.error?.code === 2) return "POSITION_UNAVAILABLE";
     return "none";
@@ -132,6 +158,27 @@
     fields: $("locationDiagnosticsFields"), status: $("locationDiagnosticsStatus"), fallback: $("locationDiagnosticsFallback")
   });
   const renderDiagnostics = () => diagnosticsUi.render();
+  const showStartupState = (state, result) => {
+    const title = $("locationStartupTitle"), message = $("locationStartupMessage"), retry = $("locationStartupRetry");
+    retry.hidden = state !== "unavailable" || result?.reason === "unsupported";
+    retry.disabled = state === "checking";
+    if (state === "checking") {
+      title.textContent = "Запуск The Walkers. Проверяем геолокацию…";
+      message.textContent = "Ожидаем свежую и достаточно точную GPS-позицию.";
+    } else if (state === "unavailable") {
+      title.textContent = result?.reason === "accuracy" ? "Ожидаем точный GPS-сигнал" : "Не удалось определить местоположение";
+      message.textContent = result?.reason === "accuracy"
+        ? `Точность GPS пока недостаточна (±${Math.round(result.accuracy)} м). Перейдите на открытое место и попробуйте снова.`
+        : result?.reason === "stale"
+          ? "Получены устаревшие координаты. Попробуйте получить свежую GPS-позицию ещё раз."
+        : result?.reason === "unsupported"
+          ? "Этот браузер не поддерживает геолокацию. Откройте приложение в другом браузере."
+          : result?.error?.code === 3
+            ? "GPS не ответил вовремя. Проверьте сигнал и попробуйте снова."
+            : "GPS временно недоступен. Проверьте сигнал и попробуйте снова.";
+      retry.textContent = "Попробовать снова";
+    }
+  };
   const loadScript = (source) => new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = source;
@@ -144,7 +191,7 @@
     "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
     "https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.umd.min.js",
     "walk-diagnostics.js?v=0.1.44", "walk-actions.js?v=0.1.45", "tracking-core.js?v=0.1.71",
-    "walk-storage.js?v=0.1.44", "location-ui.js?v=0.1.68", "music-control.js?v=0.1.62", "map-follow.js?v=0.1.72", "app.js?v=0.1.72"
+    "walk-storage.js?v=0.1.44", "location-ui.js?v=0.1.68", "music-control.js?v=0.1.62", "map-follow.js?v=0.1.72", "app.js?v=0.1.73"
   ];
   let appStarted = false;
   const startApp = async (state, result) => {
@@ -171,6 +218,7 @@
     onState: (state, result) => {
       const outcome = requestResult(state, result);
       if (outcome !== "none") lastRequest = { result: outcome, checkedAt: Date.now() };
+      if (state === "checking" || state === "unavailable") showStartupState(state, result);
       if (state === "denied") {
         document.body.classList.remove("location-pending");
         document.body.classList.add("location-access-denied");
@@ -186,6 +234,7 @@
     },
     onReady: startApp
   });
+  $("locationStartupRetry").addEventListener("click", () => gate.retry());
   $("locationAccessReload").addEventListener("click", () => window.location.reload());
   $("locationDiagnostics").addEventListener("toggle", () => {
     if ($("locationDiagnostics").open) renderDiagnostics();
