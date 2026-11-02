@@ -219,28 +219,37 @@
 
   const createGpsServices = ({ geolocation, onPosition, onError, onAutosave, schedule = setInterval, cancel = clearInterval, intervalMs = 5000, watchOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 } }) => {
     let watchId = null, timerId = null;
-    const stop = () => {
-      const activeWatchId = watchId;
+    const stopAutosave = () => {
       const activeTimerId = timerId;
-      watchId = null; timerId = null;
-      if (activeWatchId !== null) {
-        try { geolocation.clearWatch(activeWatchId); } catch {}
-      }
+      timerId = null;
       if (activeTimerId !== null) {
         try { cancel(activeTimerId); } catch {}
       }
     };
+    const stopWatch = () => {
+      const activeWatchId = watchId;
+      watchId = null;
+      if (activeWatchId !== null) {
+        try { geolocation.clearWatch(activeWatchId); } catch {}
+      }
+    };
+    const stop = () => { stopAutosave(); stopWatch(); };
+    const startWatch = () => {
+      if (watchId === null) watchId = geolocation.watchPosition(onPosition, onError, watchOptions);
+    };
+    const startAutosave = () => {
+      if (timerId === null) timerId = schedule(onAutosave, intervalMs);
+    };
     const start = () => {
-      stop();
       try {
-        watchId = geolocation.watchPosition(onPosition, onError, watchOptions);
-        timerId = schedule(onAutosave, intervalMs);
+        startWatch();
+        startAutosave();
       } catch (error) {
         stop();
         throw error;
       }
     };
-    return { start, stop };
+    return { start, startWatch, stopAutosave, stop };
   };
 
   return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, distanceMeters, evaluatePosition, evaluateLocationPosition, createPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, shouldDisplayWalkOnMap, createGpsServices };

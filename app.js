@@ -397,7 +397,7 @@
       updateLocationNotice(LocationUi.getLocationState({ reason: "ready" }));
       return;
     }
-    rememberLocation(result.point);
+    if (rememberLocation(result.point)) updateLocationMarker(result.point);
   };
   const handleCurrentLocationError = (error, reason) => {
     latestLocation = null;
@@ -457,6 +457,7 @@
     });
   }
   const rememberLocation = (point) => {
+    if (latestLocation && point.timestamp < latestLocation.timestamp) return false;
     if (locationRequestPending) {
       locationRequestToken += 1;
       if (locationTimeoutTimer !== null) clearTimeout(locationTimeoutTimer);
@@ -466,6 +467,8 @@
     updateLocateButton("ready");
     showLocationState({ reason: "ready" });
     if ($("message").textContent.startsWith("📡 Определяем ваше местоположение.")) say("");
+    updateStartAvailability();
+    return true;
   };
   const refreshLocationReadiness = () => {
     if (locationState === "ready" && !locationIsFresh(latestLocation)) {
@@ -709,6 +712,21 @@
   const processPosition = async (position) => {
     if (finishing || cancelling) return;
     const processedAt = Date.now();
+    if (!warmingUp && !recordingActive) {
+      if (latestLocation && position.timestamp <= latestLocation.timestamp) return;
+      const result = Tracking.evaluateLocationPosition(position, processedAt);
+      if (!result.accepted) {
+        if (result.reason === "stale" && locationIsFresh(latestLocation)) return;
+        latestLocation = null;
+        clearLocationMarker();
+        updateLocateButton("error");
+        showLocationState({ reason: result.reason, accuracy: position.coords?.accuracy });
+        updateStartAvailability();
+        return;
+      }
+      if (rememberLocation(result.point)) updateLocationMarker(result.point);
+      return;
+    }
     if (warmingUp) {
       const warmup = gpsWarmup.add(position, Date.now());
       const warmupDecision = warmup.reason === "accuracy" || warmup.reason === "stale" ? "rejected" : warmup.stable ? "accepted" : "pending_confirmation";
@@ -856,9 +874,11 @@
   const onLocationError = (error) => {
     recordDiagnosticEvent({ type: "gps-error", at: Date.now(), phase: warmingUp ? "warm-up" : recordingActive ? (initialRouteBuffer.pending ? "initial-buffer" : "recording") : "location", code: Number.isFinite(error?.code) ? error.code : null });
     noteLocationRequest(error?.code === 1 ? "PERMISSION_DENIED" : error?.code === 3 ? "TIMEOUT" : "POSITION_UNAVAILABLE");
-    cancelPendingLocationRequest();
+    if (warmingUp || recordingActive) cancelPendingLocationRequest();
     latestLocation = null;
     updateLocateButton("error");
+    if (!warmingUp && !recordingActive) clearLocationMarker();
+    updateStartAvailability();
     if (LocationUi.isPermissionDenied(error)) {
       locationPermissionDenied = true;
       musicControl.setLocationAllowed(false);
@@ -883,7 +903,9 @@
     intervalMs: AUTOSAVE_MS
   });
   const startTrackingServices = () => gpsServices.start();
-  const stopTrackingServices = () => gpsServices.stop();
+  const stopTrackingServices = () => gpsServices.stopAutosave();
+  try { gpsServices.startWatch(); }
+  catch { onLocationError({ code: 2 }); }
   const resumeAfterFinishFailure = (message) => {
     positionFilter.reset();
     gpsWarmup.reset();

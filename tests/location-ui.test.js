@@ -76,3 +76,19 @@ test("active app keeps GPS retry behavior without using the startup access scree
   assert.match(app, /permission\.state === "granted" && !wasAllowed/);
   assert.match(app, /window\.addEventListener\("focus", handleLocationResume\)/);
 });
+
+test("idle GPS watch updates only the current-position marker and keeps map recentering manual", () => {
+  const fs = require("node:fs");
+  const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
+  const idlePositionBranch = app.match(/if \(!warmingUp && !recordingActive\) \{([\s\S]*?)\n    \}\n    if \(warmingUp\)/)?.[1];
+  assert.ok(idlePositionBranch);
+  assert.match(idlePositionBranch, /Tracking\.evaluateLocationPosition\(position, processedAt\)/);
+  assert.match(idlePositionBranch, /rememberLocation\(result\.point\).*updateLocationMarker\(result\.point\)/);
+  assert.doesNotMatch(idlePositionBranch, /saveDraftSnapshot|drawCurrent|updateDistance|centerMapOnPosition|setView|distanceMetersTotal|points\s*=/);
+  assert.match(app, /try \{ gpsServices\.startWatch\(\); \}\s*catch/);
+  assert.match(app, /const stopTrackingServices = \(\) => gpsServices\.stopAutosave\(\);/);
+  assert.doesNotMatch(app, /gpsServices\.stop\(\)/);
+  assert.match(app, /if \(!locationIsFresh\(latestLocation\)\) \{\s*latestLocation = null;\s*updateLocateButton\("loading"\);\s*say\("📡 Определяем ваше местоположение/);
+  assert.match(app, /const finishWalk = async \(retreated = false\) => \{[\s\S]*?stopTrackingServices\(\);/);
+  assert.match(app, /const centerMapOnPosition = \(point, requestId\) =>/);
+});

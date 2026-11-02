@@ -476,6 +476,48 @@ test("stops both GPS watch and autosave timer for new walks and restored drafts"
   assert.deepEqual(cancelledTimers, [101, 102]);
 });
 
+test("keeps one location watch running while walk autosave starts and stops", () => {
+  const clearedWatches = [], cancelledTimers = [];
+  let watchId = 0, timerId = 100;
+  const services = Tracking.createGpsServices({
+    geolocation: { watchPosition: () => ++watchId, clearWatch: (id) => clearedWatches.push(id) },
+    onPosition() {}, onError() {}, onAutosave() {},
+    schedule: () => ++timerId, cancel: (id) => cancelledTimers.push(id)
+  });
+
+  services.startWatch();
+  services.start();
+  services.start();
+  assert.equal(watchId, 1);
+  services.stopAutosave();
+  assert.deepEqual(clearedWatches, []);
+  services.start();
+  assert.equal(watchId, 1);
+  services.stop();
+  assert.deepEqual(clearedWatches, [1]);
+  assert.deepEqual(cancelledTimers, [101, 102]);
+});
+
+test("the retained location watch can deliver fixes again after a temporary GPS error", () => {
+  let onPosition, onError, watchCalls = 0;
+  const acceptedFixes = [];
+  const services = Tracking.createGpsServices({
+    geolocation: {
+      watchPosition(success, error) { watchCalls += 1; onPosition = success; onError = error; return watchCalls; },
+      clearWatch() {}
+    },
+    onPosition: (fix) => acceptedFixes.push(fix), onError() {}, onAutosave() {}
+  });
+  services.startWatch();
+  onError({ code: 2 });
+  const recoveredFix = { timestamp: now, coords: { latitude: 48.9, longitude: 21.2, accuracy: 8 } };
+  onPosition(recoveredFix);
+
+  assert.equal(watchCalls, 1);
+  assert.deepEqual(acceptedFixes, [recoveredFix]);
+  services.stop();
+});
+
 test("keeps a continuous route eligible for closure", () => {
   const points = [point(0, 0, now - 20000, true), point(0, 0.00002, now - 15000), point(0.00002, 0.00002, now - 10000), point(0.00002, 0, now - 5000)];
   assert.equal(Tracking.canCloseTrack(points), true);
