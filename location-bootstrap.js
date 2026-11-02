@@ -143,8 +143,8 @@
   const appScripts = [
     "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
     "https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.umd.min.js",
-    "walk-diagnostics.js?v=0.1.44", "walk-actions.js?v=0.1.45", "tracking-core.js?v=0.1.70",
-    "walk-storage.js?v=0.1.44", "location-ui.js?v=0.1.68", "music-control.js?v=0.1.62", "app.js?v=0.1.70"
+    "walk-diagnostics.js?v=0.1.44", "walk-actions.js?v=0.1.45", "tracking-core.js?v=0.1.71",
+    "walk-storage.js?v=0.1.44", "location-ui.js?v=0.1.68", "music-control.js?v=0.1.62", "app.js?v=0.1.71"
   ];
   let appStarted = false;
   const startApp = async (state, result) => {

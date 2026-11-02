@@ -87,8 +87,12 @@
     if (result.accepted && previousPoint && result.point.timestamp <= previousPoint.timestamp) {
       return { accepted: false, reason: "stale", point: previousFresh ? previousPoint : null, keepPrevious: previousFresh };
     }
-    if (result.accepted && previousFresh && result.point.accuracy > previousPoint.accuracy) {
-      return { accepted: false, reason: "lower-accuracy", point: previousPoint, keepPrevious: true };
+    if (result.accepted && previousFresh) {
+      const distance = distanceMeters(previousPoint, result.point);
+      const movementThreshold = Math.min(8, Math.max(4, (previousPoint.accuracy + result.point.accuracy) / 2));
+      if (distance <= movementThreshold) {
+        return { accepted: false, reason: "drift", point: previousPoint, keepPrevious: true, distanceMeters: distance, movementThresholdMeters: movementThreshold };
+      }
     }
     return { ...result, point: result.accepted ? result.point : previousFresh ? previousPoint : null, keepPrevious: !result.accepted && previousFresh };
   };

@@ -36,19 +36,42 @@ test("idle location keeps a fresh good fix through a rejected fix, then accepts 
   assert.equal(rejected.keepPrevious, true);
   assert.equal(rejected.point, first.point);
 
-  const recovered = Tracking.evaluateLocationUpdate(position(48.90001, 21.2, now + 1000, 9), rejected.point, now + 1000);
+  const recovered = Tracking.evaluateLocationUpdate(position(48.900135, 21.2, now + 1000, 9), rejected.point, now + 1000);
   assert.equal(recovered.accepted, true);
   assert.equal(recovered.keepPrevious, false);
   assert.ok(recovered.point.timestamp > first.point.timestamp);
 });
 
-test("idle location does not replace a fresh better fix with a lower-quality accepted fix", () => {
-  const previous = { lat: 48.9, lng: 21.2, accuracy: 5, timestamp: now - 1000 };
-  const result = Tracking.evaluateLocationUpdate(position(48.9001, 21.2, now, 20), previous, now);
-  assert.equal(result.accepted, false);
-  assert.equal(result.reason, "lower-accuracy");
-  assert.equal(result.keepPrevious, true);
-  assert.equal(result.point, previous);
+test("idle location follows 15 m of walking even when accuracy changes from 5 m to 12 m", () => {
+  const previous = Tracking.evaluateLocationUpdate(position(48.9, 21.2, now - 1000, 5), null, now).point;
+  const moved = Tracking.evaluateLocationUpdate(position(48.900135, 21.2, now, 12), previous, now);
+  assert.equal(moved.accepted, true);
+  assert.equal(moved.keepPrevious, false);
+  assert.ok(Tracking.distanceMeters(previous, moved.point) > 14);
+});
+
+test("idle location tracks consecutive movement while GPS accuracy varies", () => {
+  let current = Tracking.evaluateLocationUpdate(position(48.9, 21.2, now - 1000, 5), null, now).point;
+  for (const fix of [
+    position(48.900162, 21.2, now, 12),
+    position(48.900324, 21.2, now + 1000, 24),
+    position(48.900486, 21.2, now + 2000, 8)
+  ]) {
+    const update = Tracking.evaluateLocationUpdate(fix, current, fix.timestamp);
+    assert.equal(update.accepted, true);
+    current = update.point;
+  }
+  assert.ok(current.lat > 48.9004);
+});
+
+test("idle location rejects stationary GPS noise using reported accuracy", () => {
+  const previous = Tracking.evaluateLocationUpdate(position(48.9, 21.2, now - 1000, 5), null, now).point;
+  const noisy = Tracking.evaluateLocationUpdate(position(48.900054, 21.2, now, 20), previous, now);
+  assert.equal(noisy.accepted, false);
+  assert.equal(noisy.reason, "drift");
+  assert.equal(noisy.keepPrevious, true);
+  assert.equal(noisy.point, previous);
+  assert.ok(noisy.distanceMeters < noisy.movementThresholdMeters);
 });
 
 test("idle location does not preserve a fix after it exceeds the freshness window", () => {
