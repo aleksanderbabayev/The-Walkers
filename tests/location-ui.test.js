@@ -77,18 +77,20 @@ test("active app keeps GPS retry behavior without using the startup access scree
   assert.match(app, /window\.addEventListener\("focus", handleLocationResume\)/);
 });
 
-test("idle GPS watch updates only the current-position marker and keeps map recentering manual", () => {
+test("idle GPS watch updates its marker and follow mode is an explicit user choice", () => {
   const fs = require("node:fs");
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
   const idlePositionBranch = app.match(/if \(!warmingUp && !recordingActive\) \{([\s\S]*?)\n    \}\n    if \(warmingUp\)/)?.[1];
   assert.ok(idlePositionBranch);
   assert.match(idlePositionBranch, /Tracking\.evaluateLocationUpdate\(position, latestLocation, processedAt\)/);
-  assert.match(idlePositionBranch, /rememberLocation\(result\.point\).*updateLocationMarker\(result\.point\)/);
+  assert.match(idlePositionBranch, /rememberLocation\(result\.point\)\) \{[\s\S]*?updateLocationMarker\(result\.point\);\s*mapFollow\.centerOn\(result\.point\)/);
   assert.doesNotMatch(idlePositionBranch, /saveDraftSnapshot|drawCurrent|updateDistance|centerMapOnPosition|setView|distanceMetersTotal|points\s*=/);
   assert.match(app, /try \{ gpsServices\.startWatch\(\); \}\s*catch/);
   assert.match(app, /const stopTrackingServices = \(\) => gpsServices\.stopAutosave\(\);/);
   assert.doesNotMatch(app, /gpsServices\.stop\(\)/);
-  assert.match(app, /if \(!locationIsFresh\(latestLocation\)\) \{\s*latestLocation = null;\s*updateLocateButton\("loading"\);\s*say\("📡 Определяем ваше местоположение/);
+  assert.match(app, /if \(!mapFollow\.toggle\(\)\) \{[\s\S]*?Следование за местоположением отключено/);
+  assert.match(app, /if \(locationIsFresh\(latestLocation\)\) \{\s*centerMapOnPosition\(latestLocation, requestId\)/);
+  assert.match(app, /Следование включено\. Определяем ваше местоположение/);
   assert.match(app, /const finishWalk = async \(retreated = false\) => \{[\s\S]*?stopTrackingServices\(\);/);
   assert.match(app, /if \(locationState === "ready" && !locationIsFresh\(latestLocation\)\) \{\s*latestLocation = null;\s*clearLocationMarker\(\);\s*updateLocateButton\("loading"\);/);
   assert.match(app, /const centerMapOnPosition = \(point, requestId\) =>/);

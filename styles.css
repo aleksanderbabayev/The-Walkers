@@ -268,6 +268,7 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
 }
 .mapLocate.is-ready { border-color: #d7eddd; background: #e7f4e9; color: #2f7440; box-shadow: 0 1px 5px #0003, inset 0 0 0 1px #2f74401a; }
 .mapLocate.is-error { border-color: #f1d5c7; background: #fff5ee; color: #a54b31; }
+.mapLocate.is-following { border-color: #2877df; background: #e4efff; color: #1559b4; box-shadow: 0 0 0 3px #2877df35, 0 1px 6px #0004; }
 .mapLocate:active { background: #edf2e8; }
 .route-start-marker { border: 0; background: transparent; }
 .route-start-content { width: 82px; height: 32px; display: flex; align-items: center; gap: 2px; filter: drop-shadow(0 1px 2px #0005); }

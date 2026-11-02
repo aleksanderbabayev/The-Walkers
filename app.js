@@ -2,7 +2,7 @@
   "use strict";
   const DB_NAME = "the-walkers", DB_VERSION = 2;
   const AUTOSAVE_MS = 5000;
-  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl;
+  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl, MapFollow = window.WalkMapFollow;
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   $("appVersion").textContent = `Версия ${appVersion}`;
@@ -175,9 +175,9 @@
   const centerMapOnPosition = (point, requestId) => {
     syncMobileViewportHeight();
     requestAnimationFrame(() => {
-      if (requestId !== locateRequestId) return;
+      if (requestId !== locateRequestId || !mapFollow.enabled) return;
       map.invalidateSize({ pan: false });
-      map.setView([point.lat, point.lng], map.getZoom(), { animate: false });
+      mapFollow.centerOn(point);
       updateLocationMarker(point);
       reportMapDiagnostics("locate", point);
     });
@@ -336,9 +336,12 @@
     button.classList.toggle("is-locating", state === "loading");
     button.classList.toggle("is-ready", state === "ready");
     button.classList.toggle("is-error", state === "error");
+    button.classList.toggle("is-following", mapFollow?.enabled === true);
     button.textContent = state === "error" ? "↻" : "◎";
     button.setAttribute("aria-busy", String(state === "loading"));
-    const label = state === "ready" ? "Центрировать карту на вашем местоположении"
+    button.setAttribute("aria-pressed", String(mapFollow?.enabled === true));
+    const label = mapFollow?.enabled ? "Отключить следование за вашим местоположением"
+      : state === "ready" ? "Включить следование за вашим местоположением"
       : state === "error" ? "Повторить определение местоположения" : "Определяем ваше местоположение";
     button.setAttribute("aria-label", label);
     button.title = label;
@@ -399,7 +402,10 @@
       updateLocationNotice(LocationUi.getLocationState({ reason: "ready" }));
       return;
     }
-    if (rememberLocation(result.point)) updateLocationMarker(result.point);
+    if (rememberLocation(result.point)) {
+      updateLocationMarker(result.point);
+      mapFollow.centerOn(result.point);
+    }
   };
   const handleCurrentLocationError = (error, reason) => {
     if (!LocationUi.isPermissionDenied(error) && locationIsFresh(latestLocation)) return;
@@ -451,6 +457,9 @@
     }
   };
   const locationIsFresh = Tracking.isLocationFresh;
+  let mapFollowStorage = null;
+  try { mapFollowStorage = window.localStorage; } catch {}
+  const mapFollow = MapFollow.createMapFollow({ map, storage: mapFollowStorage, onChange: () => updateLocateButton(locationState) });
   function updateStartAvailability() {
     const inProgress = recordingActive || warmingUp || cancelling;
     $("start").disabled = !LocationUi.canStartWalk({
@@ -703,7 +712,7 @@
     stopWarmupWaitTimer();
     const recordedStartPoint = initialRouteBuffer.snapshot()[0];
     points = []; startedAt = recordingStartedAt; distanceMetersTotal = 0;
-    warmingUp = false; warmupStartedAt = null; updateDistance(); updateRouteStartMarker(recordedStartPoint); rememberLocation(initialPoint); updateLocationMarker(initialPoint);
+    warmingUp = false; warmupStartedAt = null; updateDistance(); updateRouteStartMarker(recordedStartPoint); rememberLocation(initialPoint); updateLocationMarker(initialPoint); mapFollow.centerOn(initialPoint);
     $("gps").textContent = `±${Math.round(initialPoint.accuracy)} м`;
     setRecording(true); startStopwatch();
     say(manual ? "Прогулка начата с предупреждением: точность GPS ниже обычной. Продолжаем проверять каждую точку." : "GPS готов. Можно идти!");
@@ -727,7 +736,10 @@
         updateStartAvailability();
         return;
       }
-      if (rememberLocation(result.point)) updateLocationMarker(result.point);
+      if (rememberLocation(result.point)) {
+        updateLocationMarker(result.point);
+        mapFollow.centerOn(result.point);
+      }
       return;
     }
     if (warmingUp) {
@@ -806,6 +818,7 @@
         if (lastValidatedPoint) {
           rememberLocation(lastValidatedPoint);
           updateLocationMarker(lastValidatedPoint);
+          mapFollow.centerOn(lastValidatedPoint);
         }
         return;
       }
@@ -836,6 +849,7 @@
       if (lastValidatedPoint) {
         rememberLocation(lastValidatedPoint);
         updateLocationMarker(lastValidatedPoint);
+        mapFollow.centerOn(lastValidatedPoint);
       }
       return;
     }
@@ -857,7 +871,7 @@
     persistDiagnosticEvent(gpsEvent);
     persistDiagnosticUpdates(resolveDiagnosticEvents(result.points || [result.point], ["recording"], true));
     rememberLocation(result.point);
-    drawCurrent(); updateDistance(); updateLocationMarker(result.point);
+    drawCurrent(); updateDistance(); updateLocationMarker(result.point); mapFollow.centerOn(result.point);
     $("gps").textContent = `±${Math.round(result.point.accuracy)} м`;
     if (result.newSegment && points.length > 1) say("После перерыва начат новый участок маршрута.");
   };
@@ -1092,6 +1106,7 @@
         ? retreated ? "Вы отступили. Маршрут сохранён в истории, территория не захвачена."
           : closed ? "Маршрут замкнут, территория закрашена." : "Контур не замкнулся — захват не состоялся."
         : "Прогулка сохранена, но диагностику не удалось сохранить.");
+      if (closed) mapFollow.setEnabled(false);
       try { await redrawSaved({ focusWalkId: closed ? walk.id : null }); } catch { say("Прогулка сохранена, но список не удалось обновить."); }
     } catch {
       if (diagnosticSession?.state === "finalizing") {
@@ -1115,29 +1130,17 @@
   let locateRequestId = 0;
   $("locate").addEventListener("click", () => {
     const requestId = ++locateRequestId;
-    if (recordingActive || warmingUp || starting) {
-      if (locationIsFresh(latestLocation)) centerMapOnPosition(latestLocation, requestId);
-      else say("📡 Определяем ваше местоположение. Пожалуйста, подождите.");
+    if (!mapFollow.toggle()) {
+      say("Следование за местоположением отключено.");
       return;
     }
-    if (locationState === "loading") {
-      say("📡 Определяем ваше местоположение. Пожалуйста, подождите.");
-      return;
+    if (locationIsFresh(latestLocation)) {
+      centerMapOnPosition(latestLocation, requestId);
+      say("");
+    } else {
+      say("📡 Следование включено. Определяем ваше местоположение.");
+      if (!recordingActive && !warmingUp && locationState === "error") requestCurrentLocation();
     }
-    if (locationState === "error") {
-      say("📡 Определяем ваше местоположение. Пожалуйста, подождите.");
-      requestCurrentLocation();
-      return;
-    }
-    if (!locationIsFresh(latestLocation)) {
-      latestLocation = null;
-      updateLocateButton("loading");
-      say("📡 Определяем ваше местоположение. Пожалуйста, подождите.");
-      requestCurrentLocation();
-      return;
-    }
-    centerMapOnPosition(latestLocation, requestId);
-    say("");
   });
   (async () => {
     try {
