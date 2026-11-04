@@ -6,7 +6,8 @@
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   const startupPosition = window.WalkStartupResult?.position;
-  const expeditionCompassState = Expedition.createCompassState();
+  const expeditionCompassState = Expedition.createCompassState(Tracking.distanceMeters);
+  let displayedCompassRotation = null;
   $("appVersion").textContent = `Версия ${appVersion}`;
   const MUSIC_PREFERENCE_KEY = "the-walkers-music-muted";
   const backgroundMusic = $("backgroundMusic");
@@ -193,9 +194,13 @@
   const hideExpeditionCompass = () => {
     const compass = $("expeditionCompass");
     expeditionCompassState.reset();
+    displayedCompassRotation = null;
     compass.hidden = true;
     compass.classList.remove("is-stale");
-    $("expeditionCompassNeedle").style.transform = "rotate(0deg)";
+    const needle = $("expeditionCompassNeedle");
+    needle.classList.remove("is-ready");
+    needle.style.visibility = "hidden";
+    needle.style.transform = "rotate(0deg)";
     $("expeditionCompassDistance").textContent = "";
     $("expeditionCompassFreshness").textContent = "До цели";
     compass.setAttribute("aria-label", "Компас до цели");
@@ -204,9 +209,11 @@
     const compass = $("expeditionCompass");
     if (compass.hidden) return;
     expeditionCompassState.markStale();
+    const hasDirection = $("expeditionCompassNeedle").classList.contains("is-ready");
     compass.classList.add("is-stale");
-    $("expeditionCompassFreshness").textContent = "Последняя позиция · GPS устарел";
-    compass.setAttribute("aria-label", `Компас до цели. Последняя позиция устарела. ${$("expeditionCompassDistance").textContent}`);
+    $("expeditionCompassFreshness").textContent = hasDirection
+      ? "Последнее направление · GPS устарел" : "GPS устарел · начните движение";
+    compass.setAttribute("aria-label", `Компас до цели. ${$("expeditionCompassFreshness").textContent}. ${$("expeditionCompassDistance").textContent}`);
   };
   const updateExpeditionCompass = (point, distanceMeters) => {
     if (!recordingActive || activeMode !== "expedition" || finishing || expeditionCompletionPending || !expeditionTarget) {
@@ -226,12 +233,38 @@
     }
     const compass = $("expeditionCompass");
     const distanceLabel = reading.distanceMeters < 1000 ? `${Math.round(reading.distanceMeters)} м` : formatKilometers(reading.distanceMeters);
-    $("expeditionCompassNeedle").style.transform = `rotate(${reading.bearing}deg)`;
+    const needle = $("expeditionCompassNeedle");
+    if (reading.relativeBearing === null) {
+      needle.classList.remove("is-ready");
+      needle.style.visibility = "hidden";
+      $("expeditionCompassFreshness").textContent = "Начните движение";
+    } else if (displayedCompassRotation === null) {
+      displayedCompassRotation = reading.relativeBearing;
+      needle.style.transform = `rotate(${displayedCompassRotation}deg)`;
+      needle.style.visibility = "hidden";
+      requestAnimationFrame(() => {
+        if (!compass.hidden && displayedCompassRotation !== null) {
+          needle.classList.add("is-ready");
+          needle.style.visibility = "visible";
+          if (compass.classList.contains("is-stale")) {
+            $("expeditionCompassFreshness").textContent = "Последнее направление · GPS устарел";
+          }
+        }
+      });
+      $("expeditionCompassFreshness").textContent = reading.headingUpdated ? "Направление движения" : "Направление сохранено";
+    } else {
+      displayedCompassRotation = Expedition.nearestContinuousAngle(displayedCompassRotation, reading.relativeBearing);
+      needle.style.transform = `rotate(${displayedCompassRotation}deg)`;
+      needle.style.visibility = "visible";
+      needle.classList.add("is-ready");
+      $("expeditionCompassFreshness").textContent = reading.headingUpdated ? "Направление движения" : "Направление сохранено";
+    }
     $("expeditionCompassDistance").textContent = distanceLabel;
-    $("expeditionCompassFreshness").textContent = "До цели";
     compass.classList.remove("is-stale");
     compass.hidden = false;
-    compass.setAttribute("aria-label", `Направление до цели ${Math.round(reading.bearing)} градусов. Осталось ${distanceLabel}`);
+    compass.setAttribute("aria-label", reading.relativeBearing === null
+      ? `Компас до цели. ${distanceLabel}. Начните движение, чтобы определить направление.`
+      : `Направление до цели ${Math.round(reading.relativeBearing)} градусов относительно движения. Осталось ${distanceLabel}. ${reading.headingUpdated ? "Направление обновлено." : "Последнее определённое направление сохранено."}`);
   };
   const updateExpeditionProgress = (point) => {
     if (activeMode !== "expedition" || !expeditionTarget) return false;

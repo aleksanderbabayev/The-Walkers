@@ -7,6 +7,9 @@
 
   const EARTH_RADIUS_METERS = 6371000;
   const ARRIVAL_RADIUS_METERS = 30;
+  const COMPASS_MIN_MOVEMENT_METERS = 8;
+  const COMPASS_MOVEMENT_WINDOW_SIZE = 5;
+  const COMPASS_MIN_MOVEMENT_POINTS = 3;
 
   const createRandomTarget = (origin, distanceMeters, random = Math.random) => {
     if (!origin || !Number.isFinite(origin.lat) || !Number.isFinite(origin.lng)
@@ -49,23 +52,55 @@
     return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
   };
 
-  const createCompassState = () => {
-    let latest = null;
+  const createCompassState = (distanceMeters) => {
+    let latest = null, positions = [], movementBearing = null;
     const snapshot = () => latest ? { ...latest } : null;
     return {
-      update(point, target, distanceMeters) {
-        const bearing = calculateBearing(point, target);
-        if (bearing === null || !Number.isFinite(distanceMeters) || distanceMeters < 0) return snapshot();
-        latest = { bearing, distanceMeters, stale: false };
+      update(point, target, targetDistanceMeters) {
+        if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)
+          || !Number.isFinite(point.timestamp) || !target || !Number.isFinite(targetDistanceMeters)
+          || targetDistanceMeters < 0 || typeof distanceMeters !== "function") return snapshot();
+        const previous = positions.at(-1);
+        if (!previous || previous.timestamp !== point.timestamp) {
+          positions.push({ lat: point.lat, lng: point.lng, timestamp: point.timestamp });
+          positions = positions.slice(-COMPASS_MOVEMENT_WINDOW_SIZE);
+        }
+        const startOfWindow = positions[0];
+        const movedMeters = positions.length >= COMPASS_MIN_MOVEMENT_POINTS
+          ? distanceMeters(startOfWindow, point) : 0;
+        const headingUpdated = movedMeters >= COMPASS_MIN_MOVEMENT_METERS;
+        if (headingUpdated) {
+          movementBearing = calculateBearing(startOfWindow, point);
+          if (movementBearing !== null) positions = [{ lat: point.lat, lng: point.lng, timestamp: point.timestamp }];
+        }
+        const targetBearing = calculateBearing(point, target);
+        if (headingUpdated && movementBearing !== null && targetBearing !== null) {
+          const relativeBearing = (targetBearing - movementBearing + 360) % 360;
+          latest = { relativeBearing, distanceMeters: targetDistanceMeters, stale: false, headingUpdated: true };
+        } else if (latest) {
+          latest = { ...latest, distanceMeters: targetDistanceMeters, stale: false, headingUpdated: false };
+        } else {
+          latest = { relativeBearing: null, distanceMeters: targetDistanceMeters, stale: false, headingUpdated: false };
+        }
         return snapshot();
       },
       markStale() {
         if (latest) latest = { ...latest, stale: true };
         return snapshot();
       },
-      reset() { latest = null; }
+      reset() { latest = null; positions = []; movementBearing = null; }
     };
   };
 
-  return { ARRIVAL_RADIUS_METERS, createRandomTarget, hasReachedTarget, calculateBearing, createCompassState };
+  const nearestContinuousAngle = (previousAngle, nextAngle) => {
+    if (!Number.isFinite(nextAngle)) return null;
+    if (!Number.isFinite(previousAngle)) return nextAngle;
+    const difference = ((nextAngle - previousAngle) % 360 + 360) % 360;
+    return previousAngle + (difference > 180 ? difference - 360 : difference);
+  };
+
+  return {
+    ARRIVAL_RADIUS_METERS, COMPASS_MIN_MOVEMENT_METERS, COMPASS_MOVEMENT_WINDOW_SIZE,
+    createRandomTarget, hasReachedTarget, calculateBearing, createCompassState, nearestContinuousAngle
+  };
 });

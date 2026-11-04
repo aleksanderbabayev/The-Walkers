@@ -33,30 +33,110 @@ test("an expedition is reached only inside the 30 meter radius", () => {
   assert.equal(Expedition.hasReachedTarget(null, target, distance), false);
 });
 
-test("compass bearings point north, east, south, and west", () => {
-  const origin = { lat: 0, lng: 0 };
-  assert.ok(Math.abs(Expedition.calculateBearing(origin, { lat: 1, lng: 0 }) - 0) < 1e-9);
-  assert.ok(Math.abs(Expedition.calculateBearing(origin, { lat: 0, lng: 1 }) - 90) < 1e-9);
-  assert.ok(Math.abs(Expedition.calculateBearing(origin, { lat: -1, lng: 0 }) - 180) < 1e-9);
-  assert.ok(Math.abs(Expedition.calculateBearing(origin, { lat: 0, lng: -1 }) - 270) < 1e-9);
+const compassReadingAfterNorthWalk = (target) => {
+  const compass = Expedition.createCompassState(Tracking.distanceMeters);
+  const points = [
+    { lat: -0.00012, lng: 0, timestamp: 1000 },
+    { lat: -0.00006, lng: 0, timestamp: 2000 },
+    { lat: 0, lng: 0, timestamp: 3000 }
+  ];
+  return points.map((point) => compass.update(point, target, Tracking.distanceMeters(point, target))).at(-1);
+};
+
+test("relative compass points up, right, down, and left for cardinal targets", () => {
+  const targets = [
+    [{ lat: 0.001, lng: 0 }, 0],
+    [{ lat: 0, lng: 0.001 }, 90],
+    [{ lat: -0.001, lng: 0 }, 180],
+    [{ lat: 0, lng: -0.001 }, 270]
+  ];
+  for (const [target, expectedAngle] of targets) {
+    const reading = compassReadingAfterNorthWalk(target);
+    assert.ok(Math.abs(reading.relativeBearing - expectedAngle) < 1e-6);
+    assert.equal(reading.headingUpdated, true);
+  }
 });
 
-test("compass bearing uses both coordinates and updates as the player moves", () => {
+test("bearing remains geographic while movement and target use different coordinates", () => {
   const origin = { lat: 48.1486, lng: 17.1077 };
   const target = { lat: 48.2082, lng: 16.3738 };
   const firstBearing = Expedition.calculateBearing(origin, target);
-  const moved = { lat: 48.16, lng: 17.1077 };
-  const nextBearing = Expedition.calculateBearing(moved, target);
   assert.ok(firstBearing > 250 && firstBearing < 330);
-  assert.notEqual(nextBearing, firstBearing);
   assert.equal(Expedition.calculateBearing({ lat: 95, lng: 0 }, target), null);
 });
 
-test("stale compass state preserves the last reliable direction and distance", () => {
-  const compass = Expedition.createCompassState();
-  const point = { lat: 0, lng: 0 };
-  const target = { lat: 0, lng: 1 };
-  const fresh = compass.update(point, target, 1000);
+test("compass waits for movement, suppresses small GPS noise, and retains heading while stopped", () => {
+  assert.equal(Expedition.COMPASS_MIN_MOVEMENT_METERS, 8);
+  assert.equal(Expedition.COMPASS_MOVEMENT_WINDOW_SIZE, 5);
+  const compass = Expedition.createCompassState(Tracking.distanceMeters);
+  const target = { lat: 0.01, lng: 0 };
+  const stationary = [
+    { lat: 0, lng: 0, timestamp: 1000 },
+    { lat: 0.00001, lng: 0, timestamp: 2000 },
+    { lat: -0.00001, lng: 0, timestamp: 3000 },
+    { lat: 0.000005, lng: 0, timestamp: 4000 }
+  ];
+  let reading;
+  for (const point of stationary) reading = compass.update(point, target, Tracking.distanceMeters(point, target));
+  assert.equal(reading.relativeBearing, null);
+
+  const walking = [
+    { lat: 0.00005, lng: 0, timestamp: 5000 },
+    { lat: 0.0001, lng: 0, timestamp: 6000 }
+  ];
+  for (const point of walking) reading = compass.update(point, target, Tracking.distanceMeters(point, target));
+  const walkingBearing = reading.relativeBearing;
+  assert.notEqual(walkingBearing, null);
+
+  const stopped = [
+    { lat: 0.0001, lng: 0, timestamp: 7000 },
+    { lat: 0.000101, lng: 0, timestamp: 8000 },
+    { lat: 0.000099, lng: 0, timestamp: 9000 },
+    { lat: 0.0001, lng: 0, timestamp: 10000 },
+    { lat: 0.000101, lng: 0, timestamp: 11000 }
+  ];
+  for (const point of stopped) reading = compass.update(point, target, Tracking.distanceMeters(point, target));
+  assert.equal(reading.relativeBearing, walkingBearing);
+  assert.equal(reading.headingUpdated, false);
+});
+
+test("compass updates after a turn and resumes with fresh points after restoration", () => {
+  const compass = Expedition.createCompassState(Tracking.distanceMeters);
+  const target = { lat: 0.01, lng: 0 };
+  let reading;
+  const route = [
+    { lat: 0, lng: 0, timestamp: 1000 },
+    { lat: 0.00006, lng: 0, timestamp: 2000 },
+    { lat: 0.00012, lng: 0, timestamp: 3000 },
+    { lat: 0.00012, lng: 0.00006, timestamp: 4000 },
+    { lat: 0.00012, lng: 0.00012, timestamp: 5000 },
+    { lat: 0.00012, lng: 0.00018, timestamp: 6000 },
+    { lat: 0.00012, lng: 0.00024, timestamp: 7000 },
+    { lat: 0.00012, lng: 0.0003, timestamp: 8000 }
+  ];
+  for (const point of route) reading = compass.update(point, target, Tracking.distanceMeters(point, target));
+  assert.ok(reading.relativeBearing > 240 && reading.relativeBearing < 300);
+
+  const restoredCompass = Expedition.createCompassState(Tracking.distanceMeters);
+  const restored = restoredCompass.update(route.at(-1), target, Tracking.distanceMeters(route.at(-1), target));
+  assert.equal(restored.relativeBearing, null);
+});
+
+test("compass uses the shortest visual rotation through north", () => {
+  assert.equal(Expedition.nearestContinuousAngle(350, 10), 370);
+  assert.equal(Expedition.nearestContinuousAngle(10, 350), -10);
+  assert.equal(Expedition.nearestContinuousAngle(90, 90), 90);
+});
+
+test("stale compass state preserves the last reliable relative direction and distance", () => {
+  const compass = Expedition.createCompassState(Tracking.distanceMeters);
+  const target = { lat: 0, lng: 0.01 };
+  let fresh;
+  for (const point of [
+    { lat: -0.00012, lng: 0, timestamp: 1000 },
+    { lat: -0.00006, lng: 0, timestamp: 2000 },
+    { lat: 0, lng: 0, timestamp: 3000 }
+  ]) fresh = compass.update(point, target, Tracking.distanceMeters(point, target));
   const stale = compass.markStale();
   assert.deepEqual(stale, { ...fresh, stale: true });
   assert.deepEqual(compass.update(null, target, NaN), stale);
@@ -82,12 +162,19 @@ test("expedition UI, accepted GPS completion, persistence and territory isolatio
   assert.ok(app.includes("mode: activeMode,"));
   assert.ok(app.includes("target: { ...expeditionTarget }"));
   assert.ok(app.includes('activeMode = draft.mode === "expedition" ? "expedition" : "territory"'));
-  assert.ok(app.includes("Expedition.createCompassState()"));
-  assert.ok(app.includes("Expedition.calculateBearing(point, expeditionTarget)") === false);
+  assert.ok(app.includes("Expedition.createCompassState(Tracking.distanceMeters)"));
   assert.ok(app.includes("expeditionCompassState.update("));
+  assert.ok(app.includes("Expedition.nearestContinuousAngle(displayedCompassRotation, reading.relativeBearing)"));
   assert.ok(app.includes("expeditionCompassState.markStale()"));
   assert.ok(app.includes('if (recordingActive && activeMode === "expedition") setExpeditionCompassStale()'));
+  assert.ok(app.includes('activeMode !== "expedition" || finishing || expeditionCompletionPending'));
+  assert.ok(app.includes('$("expeditionCompassFreshness").textContent = "Начните движение"'));
+  assert.ok(app.includes('if (reading.relativeBearing === null)'));
+  assert.ok(app.includes('needle.style.visibility = "hidden"'));
   assert.ok(app.includes('if (!active || activeMode !== "expedition" || finishing || expeditionCompletionPending) hideExpeditionCompass()'));
+  assert.match(html, /id="expeditionCompass"[^>]+hidden/);
+  assert.doesNotMatch(html, /compassNorth|>N</);
+  assert.doesNotMatch(app + html, /DeviceOrientation|deviceorientation/);
   assert.ok(app.includes("const receivePosition = (position) => enqueueTrackingTask(() => processPosition(position))"));
   const processingStart = app.indexOf("const processPosition");
   const processingEnd = app.indexOf('$("manualWarmupStart").addEventListener', processingStart);
@@ -101,7 +188,7 @@ test("expedition UI, accepted GPS completion, persistence and territory isolatio
   assert.ok(app.includes('active ? activeMode === "expedition" ? "Идёт экспедиция"'));
   assert.ok(app.includes('if (walk.expeditionStatus === "reached") showExpeditionResult(walk)'));
   assert.match(html, /Экспедиция завершена/);
-  assert.ok(bootstrap.includes('"expedition-core.js?v=0.2.1"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.1"'));
+  assert.ok(bootstrap.includes('"expedition-core.js?v=0.2.2"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.2"'));
   assert.doesNotMatch(app, /router|routing service|OSRM|GraphHopper/i);
 });

@@ -92,8 +92,8 @@ main {
 .expedition-compass[hidden] { display: none; }
 .expeditionCompassFace { width: 40px; height: 40px; flex: none; overflow: visible; }
 .expeditionCompassFace circle { fill: #fff; stroke: #809082; stroke-width: 1.5; }
-.expeditionCompassFace .compassNorth { fill: #667269; font: 700 8px sans-serif; text-anchor: middle; }
-.expeditionCompassFace .compassNeedle { transform-box: view-box; transform-origin: 50% 58.333%; transition: transform 180ms ease-out; }
+.expeditionCompassFace .compassNeedle { visibility: hidden; transform-box: view-box; transform-origin: 50% 58.333%; }
+.expeditionCompassFace .compassNeedle.is-ready { transition: transform 180ms ease-out; }
 .expeditionCompassFace .compassNeedle path { fill: #2877df; stroke: #1b569f; stroke-width: .7; stroke-linejoin: round; }
 .expeditionCompassFace .compassNeedle circle { fill: #344638; stroke: #fff; stroke-width: 1; }
 .compassReading { display: flex; flex-direction: column; gap: 1px; }
@@ -101,7 +101,7 @@ main {
 .compassReading small { color: #647165; font-size: 11px; }
 .expedition-compass.is-stale { border-color: #e8dfc7; background: #fbf8ef; }
 .expedition-compass.is-stale .compassReading small { color: #8a6d30; }
-@media (prefers-reduced-motion: reduce) { .expeditionCompassFace .compassNeedle { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .expeditionCompassFace .compassNeedle.is-ready { transition: none; } }
 .mode-selector, .expeditionMethods { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; border-radius: 13px; background: #f0f3ed; }
 .mode-selector { margin-top: 7px; }
 .mode-selector button, .expeditionMethods button { min-width: 0; min-height: 38px; padding: 6px 8px; border: 0; border-radius: 10px; background: transparent; color: #59665b; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
