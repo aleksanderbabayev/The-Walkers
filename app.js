@@ -6,6 +6,7 @@
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   const startupPosition = window.WalkStartupResult?.position;
+  const expeditionCompassState = Expedition.createCompassState();
   $("appVersion").textContent = `Версия ${appVersion}`;
   const MUSIC_PREFERENCE_KEY = "the-walkers-music-muted";
   const backgroundMusic = $("backgroundMusic");
@@ -189,15 +190,60 @@
     $("startExpedition").disabled = !expeditionTarget || !locationIsFresh(latestLocation)
       || !storageReady || !draftResolved || starting || finishing || cancelling;
   };
+  const hideExpeditionCompass = () => {
+    const compass = $("expeditionCompass");
+    expeditionCompassState.reset();
+    compass.hidden = true;
+    compass.classList.remove("is-stale");
+    $("expeditionCompassNeedle").style.transform = "rotate(0deg)";
+    $("expeditionCompassDistance").textContent = "";
+    $("expeditionCompassFreshness").textContent = "До цели";
+    compass.setAttribute("aria-label", "Компас до цели");
+  };
+  const setExpeditionCompassStale = () => {
+    const compass = $("expeditionCompass");
+    if (compass.hidden) return;
+    expeditionCompassState.markStale();
+    compass.classList.add("is-stale");
+    $("expeditionCompassFreshness").textContent = "Последняя позиция · GPS устарел";
+    compass.setAttribute("aria-label", `Компас до цели. Последняя позиция устарела. ${$("expeditionCompassDistance").textContent}`);
+  };
+  const updateExpeditionCompass = (point, distanceMeters) => {
+    if (!recordingActive || activeMode !== "expedition" || finishing || expeditionCompletionPending || !expeditionTarget) {
+      hideExpeditionCompass();
+      return;
+    }
+    if (!Tracking.isLocationFresh(point)) {
+      setExpeditionCompassStale();
+      return;
+    }
+    const reading = expeditionCompassState.update(
+      point, expeditionTarget, distanceMeters
+    );
+    if (!reading) {
+      setExpeditionCompassStale();
+      return;
+    }
+    const compass = $("expeditionCompass");
+    const distanceLabel = reading.distanceMeters < 1000 ? `${Math.round(reading.distanceMeters)} м` : formatKilometers(reading.distanceMeters);
+    $("expeditionCompassNeedle").style.transform = `rotate(${reading.bearing}deg)`;
+    $("expeditionCompassDistance").textContent = distanceLabel;
+    $("expeditionCompassFreshness").textContent = "До цели";
+    compass.classList.remove("is-stale");
+    compass.hidden = false;
+    compass.setAttribute("aria-label", `Направление до цели ${Math.round(reading.bearing)} градусов. Осталось ${distanceLabel}`);
+  };
   const updateExpeditionProgress = (point) => {
     if (activeMode !== "expedition" || !expeditionTarget) return false;
     expeditionDistanceMeters = Tracking.distanceMeters(point, expeditionTarget);
+    updateExpeditionCompass(point, expeditionDistanceMeters);
     const remaining = expeditionDistanceMeters < 1000
       ? `${Math.round(expeditionDistanceMeters)} м`
       : formatKilometers(expeditionDistanceMeters);
     $("statusText").textContent = `До цели: ${remaining}`;
     if (Expedition.hasReachedTarget(point, expeditionTarget, Tracking.distanceMeters)) {
       expeditionCompletionPending = true;
+      hideExpeditionCompass();
       $("statusText").textContent = "Цель достигнута. Завершаем экспедицию…";
       return true;
     }
@@ -601,6 +647,7 @@
     return true;
   };
   const refreshLocationReadiness = () => {
+    if (recordingActive && activeMode === "expedition" && !locationIsFresh(latestLocation)) setExpeditionCompassStale();
     if (locationState === "ready" && !locationIsFresh(latestLocation)) {
       latestLocation = null;
       clearLocationMarker();
@@ -698,6 +745,7 @@
   };
   const setRecording = (active) => {
     recordingActive = active;
+    if (!active || activeMode !== "expedition" || finishing || expeditionCompletionPending) hideExpeditionCompass();
     const inProgress = active || warmingUp || starting || cancelling;
     document.querySelector(".status").classList.toggle("recording", active);
     $("statusTitle").textContent = active ? activeMode === "expedition" ? "Идёт экспедиция" : "Идёт захват территории" : warmingUp ? "Стабилизация GPS" : cancelling ? "Отступление" : "Готовы к прогулке?";
@@ -1033,6 +1081,7 @@
     recordDiagnosticEvent({ type: "gps-error", at: Date.now(), phase: warmingUp ? "warm-up" : recordingActive ? (initialRouteBuffer.pending ? "initial-buffer" : "recording") : "location", code: Number.isFinite(error?.code) ? error.code : null });
     noteLocationRequest(error?.code === 1 ? "PERMISSION_DENIED" : error?.code === 3 ? "TIMEOUT" : "POSITION_UNAVAILABLE");
     if (warmingUp || recordingActive) cancelPendingLocationRequest();
+    if (recordingActive && activeMode === "expedition") setExpeditionCompassStale();
     latestLocation = null;
     updateLocateButton("error");
     if (!warmingUp && !recordingActive) clearLocationMarker();
@@ -1201,6 +1250,7 @@
     initialRouteBuffer.reset();
     expeditionTarget = null; expeditionDistanceMeters = null; expeditionCompletionPending = false;
     activeMode = "territory"; selectedMode = "territory"; targetMethod = "manual";
+    hideExpeditionCompass();
     updateExpeditionTargetMarker(null);
     $("expeditionTargetHint").textContent = "Коснитесь карты, чтобы выбрать цель.";
     $("anotherTarget").hidden = true; $("generateTarget").hidden = false;
@@ -1268,6 +1318,7 @@
       initialRouteBuffer.reset();
       expeditionCompletionPending = false;
       expeditionTarget = null; expeditionDistanceMeters = null;
+      hideExpeditionCompass();
       activeMode = "territory"; selectedMode = "territory"; targetMethod = "manual";
       updateExpeditionTargetMarker(null);
       $("expeditionTargetHint").textContent = "Коснитесь карты, чтобы выбрать цель.";

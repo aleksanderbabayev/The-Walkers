@@ -33,6 +33,37 @@ test("an expedition is reached only inside the 30 meter radius", () => {
   assert.equal(Expedition.hasReachedTarget(null, target, distance), false);
 });
 
+test("compass bearings point north, east, south, and west", () => {
+  const origin = { lat: 0, lng: 0 };
+  assert.ok(Math.abs(Expedition.calculateBearing(origin, { lat: 1, lng: 0 }) - 0) < 1e-9);
+  assert.ok(Math.abs(Expedition.calculateBearing(origin, { lat: 0, lng: 1 }) - 90) < 1e-9);
+  assert.ok(Math.abs(Expedition.calculateBearing(origin, { lat: -1, lng: 0 }) - 180) < 1e-9);
+  assert.ok(Math.abs(Expedition.calculateBearing(origin, { lat: 0, lng: -1 }) - 270) < 1e-9);
+});
+
+test("compass bearing uses both coordinates and updates as the player moves", () => {
+  const origin = { lat: 48.1486, lng: 17.1077 };
+  const target = { lat: 48.2082, lng: 16.3738 };
+  const firstBearing = Expedition.calculateBearing(origin, target);
+  const moved = { lat: 48.16, lng: 17.1077 };
+  const nextBearing = Expedition.calculateBearing(moved, target);
+  assert.ok(firstBearing > 250 && firstBearing < 330);
+  assert.notEqual(nextBearing, firstBearing);
+  assert.equal(Expedition.calculateBearing({ lat: 95, lng: 0 }, target), null);
+});
+
+test("stale compass state preserves the last reliable direction and distance", () => {
+  const compass = Expedition.createCompassState();
+  const point = { lat: 0, lng: 0 };
+  const target = { lat: 0, lng: 1 };
+  const fresh = compass.update(point, target, 1000);
+  const stale = compass.markStale();
+  assert.deepEqual(stale, { ...fresh, stale: true });
+  assert.deepEqual(compass.update(null, target, NaN), stale);
+  compass.reset();
+  assert.equal(compass.markStale(), null);
+});
+
 test("expedition UI, accepted GPS completion, persistence and territory isolation are wired into shared tracking", () => {
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
   const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
@@ -51,6 +82,12 @@ test("expedition UI, accepted GPS completion, persistence and territory isolatio
   assert.ok(app.includes("mode: activeMode,"));
   assert.ok(app.includes("target: { ...expeditionTarget }"));
   assert.ok(app.includes('activeMode = draft.mode === "expedition" ? "expedition" : "territory"'));
+  assert.ok(app.includes("Expedition.createCompassState()"));
+  assert.ok(app.includes("Expedition.calculateBearing(point, expeditionTarget)") === false);
+  assert.ok(app.includes("expeditionCompassState.update("));
+  assert.ok(app.includes("expeditionCompassState.markStale()"));
+  assert.ok(app.includes('if (recordingActive && activeMode === "expedition") setExpeditionCompassStale()'));
+  assert.ok(app.includes('if (!active || activeMode !== "expedition" || finishing || expeditionCompletionPending) hideExpeditionCompass()'));
   assert.ok(app.includes("const receivePosition = (position) => enqueueTrackingTask(() => processPosition(position))"));
   const processingStart = app.indexOf("const processPosition");
   const processingEnd = app.indexOf('$("manualWarmupStart").addEventListener', processingStart);
@@ -64,7 +101,7 @@ test("expedition UI, accepted GPS completion, persistence and territory isolatio
   assert.ok(app.includes('active ? activeMode === "expedition" ? "Идёт экспедиция"'));
   assert.ok(app.includes('if (walk.expeditionStatus === "reached") showExpeditionResult(walk)'));
   assert.match(html, /Экспедиция завершена/);
-  assert.ok(bootstrap.includes('"expedition-core.js?v=0.2.0"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.0"'));
+  assert.ok(bootstrap.includes('"expedition-core.js?v=0.2.1"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.1"'));
   assert.doesNotMatch(app, /router|routing service|OSRM|GraphHopper/i);
 });

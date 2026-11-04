@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.2.0">
+  <meta name="app-version" content="0.2.1">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=0.2.0">
+  <link rel="stylesheet" href="styles.css?v=0.2.1">
   <link rel="stylesheet" href="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.css">
 </head>
 <body class="location-pending">
@@ -53,6 +53,17 @@
           <small id="distance">0,00 км</small>
           <small class="gps" id="gps">GPS</small>
         </div>
+      </div>
+      <div id="expeditionCompass" class="expedition-compass" role="status" aria-live="polite" aria-label="Компас до цели" hidden>
+        <svg class="expeditionCompassFace" viewBox="0 0 48 48" aria-hidden="true">
+          <text class="compassNorth" x="24" y="8">N</text>
+          <circle cx="24" cy="28" r="17" />
+          <g id="expeditionCompassNeedle" class="compassNeedle">
+            <path d="M24 13 29 31 24 28 19 31Z" />
+            <circle cx="24" cy="28" r="2.5" />
+          </g>
+        </svg>
+        <div class="compassReading"><b id="expeditionCompassDistance"></b><small id="expeditionCompassFreshness">До цели</small></div>
       </div>
       <div id="modeSelector" class="mode-selector" role="group" aria-label="Игровой режим">
         <button id="territoryMode" type="button" aria-pressed="true">Захват территории</button>
@@ -145,6 +156,6 @@
   </div>
   <footer>Карта © OpenStreetMap · Маршруты хранятся на этом устройстве</footer>
   <script src="location-diagnostics.js?v=0.1.72"></script>
-  <script src="location-bootstrap.js?v=0.2.0"></script>
+  <script src="location-bootstrap.js?v=0.2.1"></script>
 </body>
 </html>
