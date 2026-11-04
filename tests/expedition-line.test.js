@@ -50,14 +50,36 @@ test("accepted movement updates the start, preserves the target and reuses one p
   assert.equal(calls.added, 1);
 });
 
-test("rejected or stale coordinates cannot move the line and stale position hides it", () => {
+test("a rejected stale measurement preserves the line while the last accepted fix is fresh", () => {
   const { line, calls, layers } = createHarness();
-  line.update(point(48.1, 17.1), target, true);
+  const lastAccepted = point(48.1, 17.1);
+  line.update(lastAccepted, target, true);
   const [layer] = layers;
-  // App calls update only for accepted filtered points; a rejected point is never passed here.
-  line.update(point(48.12, 17.15, false), target, true);
+  // A rejected measurement is not passed to update; the accepted fix remains fresh.
+  const rejectedMeasurement = point(48.12, 17.15, false);
+  assert.equal(rejectedMeasurement.fresh, false);
+  assert.equal(lastAccepted.fresh, true);
+  assert.equal(layers.has(layer), true);
+  assert.deepEqual(layer.points, [[48.1, 17.1], [target.lat, target.lng]]);
+  line.update(point(48.11, 17.12), target, true);
+  assert.equal(layers.has(layer), true);
+  assert.deepEqual(layer.points, [[48.11, 17.12], [target.lat, target.lng]]);
+  assert.equal(calls.created, 1);
+});
+
+test("actual expiry of the last accepted position hides and then restores the same line", () => {
+  const { line, calls, layers } = createHarness();
+  const lastAccepted = point(48.1, 17.1);
+  line.update(lastAccepted, target, true);
+  const [layer] = layers;
+  lastAccepted.fresh = false;
+  line.update(lastAccepted, target, true);
   assert.equal(layers.size, 0);
   assert.deepEqual(layer.points, [[48.1, 17.1], [target.lat, target.lng]]);
+  const recovered = point(48.11, 17.12);
+  line.update(recovered, target, true);
+  assert.equal([...layers][0], layer);
+  assert.deepEqual(layer.points, [[48.11, 17.12], [target.lat, target.lng]]);
   assert.equal(calls.created, 1);
 });
 
@@ -99,6 +121,9 @@ test("app wires line updates only through accepted expedition progress and hides
   assert.ok(app.includes("ExpeditionLine.createExpeditionLine"));
   assert.ok(app.includes('activeMode = draft.mode === "expedition" ? "expedition" : "territory"'));
   assert.ok(app.includes("startTrackingServices();"));
-  assert.match(html, /name="app-version" content="0\.2\.3"/);
+  assert.match(html, /name="app-version" content="0\.2\.4"/);
   assert.ok(bootstrap.includes('"expedition-line.js?v=0.2.3"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.4"'));
+  assert.doesNotMatch(processing, /result\.reason === "stale"[^\n]*expeditionLine\.hide/);
+  assert.match(app, /if \(recordingActive && activeMode === "expedition" && !locationIsFresh\(latestLocation\)\)[\s\S]*?expeditionLine\.hide\(\)/);
 });

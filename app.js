@@ -1018,7 +1018,6 @@
       if (gpsEvent) gpsEvent.includedInRoute = null;
     }
     if (!result.accepted) {
-      if (result.reason === "stale" && recordingActive && activeMode === "expedition") expeditionLine.hide();
       if (decision === "rejected" && gpsEvent) gpsEvent.includedInRoute = false;
       persistDiagnosticEvent(gpsEvent);
       if (Number.isFinite(position.coords?.accuracy)) $("gps").textContent = `±${Math.round(position.coords.accuracy)} м`;
