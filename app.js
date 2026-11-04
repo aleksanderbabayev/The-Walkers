@@ -2,7 +2,7 @@
   "use strict";
   const DB_NAME = "the-walkers", DB_VERSION = 2;
   const AUTOSAVE_MS = 5000;
-  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl, MapFollow = window.WalkMapFollow;
+  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl, MapFollow = window.WalkMapFollow, Expedition = window.WalkExpedition;
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   const startupPosition = window.WalkStartupResult?.position;
@@ -104,6 +104,8 @@
   }).addTo(map);
 
   let db, storageReady = false, draftResolved = false, starting = false, finishing = false, cancelling = false;
+  let selectedMode = "territory", activeMode = "territory", expeditionTarget = null, expeditionTargetMarker = null;
+  let targetMethod = "manual", expeditionDistanceMeters = null, expeditionCompletionPending = false;
   let recordingActive = false, warmingUp = false, points = [], distanceMetersTotal = 0, currentLines = [], savedLayers = [], stopwatchTimer = null, warmupWaitTimer = null, warmupStartedAt = null, startedAt = null;
   let walksById = new Map();
   let trackingQueue = Promise.resolve();
@@ -123,6 +125,7 @@
   let locationWaitStartedAt = Date.now(), locationRequestToken = 0, locationTimeoutTimer = null;
   const LOCATION_WAIT_TIMEOUT_MS = 20000;
   const LOCATION_REFRESH_INTERVAL_MS = 5000;
+  const EXPEDITION_RADII = new Set([500, 1000, 2000, 3000]);
   const mapDiagnosticsEnabled = new URLSearchParams(window.location.search).get("mapDebug") === "1";
   const updateLocationMarker = (point) => {
     const latlng = [point.lat, point.lng];
@@ -148,6 +151,117 @@
     if (routeStartMarker) map.removeLayer(routeStartMarker);
     routeStartMarker = null;
   };
+  const updateExpeditionTargetMarker = (target) => {
+    if (!target) {
+      if (expeditionTargetMarker) map.removeLayer(expeditionTargetMarker);
+      expeditionTargetMarker = null;
+      return;
+    }
+    const icon = L.divIcon({ className: "expedition-target-icon", iconSize: [38, 38], iconAnchor: [19, 34], html: '<span aria-hidden="true">⚑</span>' });
+    if (expeditionTargetMarker) expeditionTargetMarker.setLatLng([target.lat, target.lng]).setIcon(icon);
+    else expeditionTargetMarker = L.marker([target.lat, target.lng], { icon, title: "Цель экспедиции", keyboard: false, interactive: false, zIndexOffset: 1100 }).addTo(map);
+  };
+  const setExpeditionTarget = (target, source = targetMethod) => {
+    if (!target || !Number.isFinite(target.lat) || !Number.isFinite(target.lng)) return false;
+    expeditionTarget = { lat: target.lat, lng: target.lng };
+    targetMethod = source;
+    updateExpeditionTargetMarker(expeditionTarget);
+    $("expeditionTargetHint").textContent = source === "random"
+      ? "Случайная цель отмечена на карте. Можно сгенерировать другую точку."
+      : `Цель отмечена на карте: ${expeditionTarget.lat.toFixed(5)}, ${expeditionTarget.lng.toFixed(5)}.`;
+    $("anotherTarget").hidden = source !== "random";
+    $("generateTarget").hidden = source === "random";
+    updateStartAvailability();
+    return true;
+  };
+  const updateModeSelection = () => {
+    const inProgress = recordingActive || warmingUp || starting || cancelling;
+    document.body.classList.toggle("expedition-mode", selectedMode === "expedition");
+    $("modeSelector").hidden = inProgress;
+    $("expeditionSetup").hidden = inProgress || selectedMode !== "expedition";
+    $("start").hidden = inProgress || selectedMode !== "territory";
+    $("startExpedition").hidden = inProgress || selectedMode !== "expedition";
+    $("territoryMode").setAttribute("aria-pressed", String(selectedMode === "territory"));
+    $("expeditionMode").setAttribute("aria-pressed", String(selectedMode === "expedition"));
+    $("manualTargetMode").setAttribute("aria-pressed", String(targetMethod === "manual"));
+    $("randomTargetMode").setAttribute("aria-pressed", String(targetMethod === "random"));
+    $("randomTargetControls").hidden = selectedMode !== "expedition" || targetMethod !== "random";
+    $("startExpedition").disabled = !expeditionTarget || !locationIsFresh(latestLocation)
+      || !storageReady || !draftResolved || starting || finishing || cancelling;
+  };
+  const updateExpeditionProgress = (point) => {
+    if (activeMode !== "expedition" || !expeditionTarget) return false;
+    expeditionDistanceMeters = Tracking.distanceMeters(point, expeditionTarget);
+    const remaining = expeditionDistanceMeters < 1000
+      ? `${Math.round(expeditionDistanceMeters)} м`
+      : formatKilometers(expeditionDistanceMeters);
+    $("statusText").textContent = `До цели: ${remaining}`;
+    if (Expedition.hasReachedTarget(point, expeditionTarget, Tracking.distanceMeters)) {
+      expeditionCompletionPending = true;
+      $("statusText").textContent = "Цель достигнута. Завершаем экспедицию…";
+      return true;
+    }
+    return false;
+  };
+  const generateExpeditionTarget = () => {
+    if (!locationIsFresh(latestLocation)) {
+      $("expeditionTargetHint").textContent = "Ожидаем достоверную GPS-позицию для случайной цели.";
+      say("Для случайной цели сначала дождитесь достоверной GPS-позиции.");
+      if (!locationRequestPending) requestCurrentLocation();
+      return;
+    }
+    const radius = Number($("expeditionRadius").value);
+    if (!EXPEDITION_RADII.has(radius)) return;
+    const target = Expedition.createRandomTarget(latestLocation, radius);
+    if (setExpeditionTarget(target, "random")) say("");
+  };
+  map.on("click", (event) => {
+    if (selectedMode !== "expedition" || targetMethod !== "manual" || recordingActive || warmingUp || starting || cancelling) return;
+    setExpeditionTarget(event.latlng, "manual");
+    say("");
+  });
+  $("territoryMode").addEventListener("click", () => {
+    if (recordingActive || warmingUp || starting || cancelling) return;
+    selectedMode = "territory";
+    expeditionTarget = null; expeditionDistanceMeters = null; expeditionCompletionPending = false;
+    updateExpeditionTargetMarker(null); updateModeSelection();
+  });
+  $("expeditionMode").addEventListener("click", () => {
+    if (recordingActive || warmingUp || starting || cancelling) return;
+    selectedMode = "expedition";
+    targetMethod = "manual";
+    expeditionTarget = null; expeditionDistanceMeters = null;
+    updateExpeditionTargetMarker(null);
+    $("expeditionTargetHint").textContent = "Коснитесь карты, чтобы выбрать цель.";
+    $("anotherTarget").hidden = true;
+    updateModeSelection(); updateStartAvailability();
+  });
+  $("manualTargetMode").addEventListener("click", () => {
+    if (recordingActive || warmingUp || starting) return;
+    if (targetMethod === "manual") return;
+    targetMethod = "manual";
+    expeditionTarget = null;
+    updateExpeditionTargetMarker(null);
+    $("expeditionTargetHint").textContent = "Коснитесь карты, чтобы выбрать цель.";
+    $("anotherTarget").hidden = true;
+    $("generateTarget").hidden = true;
+    updateModeSelection(); updateStartAvailability();
+  });
+  $("randomTargetMode").addEventListener("click", () => {
+    if (recordingActive || warmingUp || starting) return;
+    if (targetMethod === "random") return;
+    targetMethod = "random";
+    expeditionTarget = null;
+    updateExpeditionTargetMarker(null);
+    $("expeditionTargetHint").textContent = "Готовим случайную цель…";
+    updateModeSelection();
+    generateExpeditionTarget();
+  });
+  $("expeditionRadius").addEventListener("change", () => {
+    if (targetMethod === "random" && selectedMode === "expedition") generateExpeditionTarget();
+  });
+  $("generateTarget").addEventListener("click", generateExpeditionTarget);
+  $("anotherTarget").addEventListener("click", generateExpeditionTarget);
   const reportMapDiagnostics = (reason, point) => {
     if (!mapDiagnosticsEnabled) return;
     const center = map.getCenter(), size = map.getSize(), rect = map.getContainer().getBoundingClientRect();
@@ -467,6 +581,10 @@
       storageReady, draftResolved, locationFresh: locationIsFresh(latestLocation),
       busy: starting || finishing || inProgress
     });
+    $("startExpedition").disabled = !expeditionTarget || !LocationUi.canStartWalk({
+      storageReady, draftResolved, locationFresh: locationIsFresh(latestLocation),
+      busy: starting || finishing || inProgress
+    });
   }
   const rememberLocation = (point) => {
     if (latestLocation && point.timestamp < latestLocation.timestamp) return false;
@@ -580,22 +698,25 @@
   };
   const setRecording = (active) => {
     recordingActive = active;
-    const inProgress = active || warmingUp || cancelling;
+    const inProgress = active || warmingUp || starting || cancelling;
     document.querySelector(".status").classList.toggle("recording", active);
-    $("statusTitle").textContent = active ? "Идёт захват территории" : warmingUp ? "Стабилизация GPS" : cancelling ? "Отступление" : "Готовы к прогулке?";
+    $("statusTitle").textContent = active ? activeMode === "expedition" ? "Идёт экспедиция" : "Идёт захват территории" : warmingUp ? "Стабилизация GPS" : cancelling ? "Отступление" : "Готовы к прогулке?";
     const manualStartAvailable = warmingUp && warmupStartedAt !== null && Date.now() - warmupStartedAt >= Tracking.GPS_WARMUP_DEFAULTS.manualStartAfterMs;
-    $("statusText").textContent = active ? "Точки сохраняются на устройстве" : warmingUp ? manualStartAvailable
+    $("statusText").textContent = active ? activeMode === "expedition" && Number.isFinite(expeditionDistanceMeters)
+      ? `До цели: ${expeditionDistanceMeters < 1000 ? `${Math.round(expeditionDistanceMeters)} м` : formatKilometers(expeditionDistanceMeters)}` : activeMode === "expedition" ? "Записываем путь к цели" : "Точки сохраняются на устройстве" : warmingUp ? manualStartAvailable
       ? "GPS всё ещё стабилизируется. Можно начать с предупреждением, если доступна надёжная позиция."
       : "Стабилизация GPS. Подождите перед началом движения…" : cancelling ? "Останавливаем GPS и удаляем черновик…" : 'Нажмите "Начать прогулку", чтобы начать захват территории.';
     updateStartAvailability();
-    $("start").hidden = inProgress;
+    $("start").hidden = inProgress || selectedMode !== "territory";
+    $("startExpedition").hidden = inProgress || selectedMode !== "expedition";
+    updateModeSelection();
     $("abandonWalk").hidden = !(active || warmingUp);
     $("abandonLabel").textContent = warmingUp ? "Отмена" : "Отступить";
     $("abandonWalk").disabled = cancelling || finishing;
     $("manualWarmupStart").hidden = !manualStartAvailable;
     $("manualWarmupStart").disabled = !manualStartAvailable || !gpsWarmup.manualStartPoint(Date.now(), Date.now() - warmupStartedAt);
     $("finish").disabled = !active || finishing;
-    $("finish").hidden = !active;
+    $("finish").hidden = !active || activeMode === "expedition";
     $("copyActiveDiagnostics").hidden = !(active || warmingUp || diagnosticSession);
   };
   const refreshManualWarmupStart = () => {
@@ -611,12 +732,21 @@
   };
   const draftSnapshot = (nextPoints = points, nextStartedAt = startedAt, nextInitialBuffer = initialRouteBuffer.snapshot()) => ({
     id: "active", points: nextPoints, startedAt: nextStartedAt, updatedAt: Date.now(),
+    ...(nextPoints[0] || nextInitialBuffer[0] ? { startPosition: { ...(nextPoints[0] || nextInitialBuffer[0]) } } : {}),
+    mode: activeMode,
+    ...(activeMode === "expedition" ? {
+      targetMethod,
+      ...(expeditionTarget ? { target: { ...expeditionTarget } } : {})
+    } : {}),
     ...(nextInitialBuffer.length ? { initialBuffer: nextInitialBuffer } : {})
   });
   const saveDraftSnapshot = (nextPoints = points, nextStartedAt = startedAt, nextInitialBuffer = initialRouteBuffer.snapshot()) => WalkStorage.writeDraft(db, draftSnapshot(nextPoints, nextStartedAt, nextInitialBuffer));
   const enqueueTrackingTask = (task) => {
     const pending = trackingQueue.then(task);
     trackingQueue = pending.catch((error) => say(`Не удалось сохранить прогулку: ${error.message || "ошибка IndexedDB"}.`));
+    pending.then(() => {
+      if (expeditionCompletionPending && recordingActive && activeMode === "expedition") finishWalk(false).catch(() => {});
+    }, () => {});
     return pending;
   };
   const drawCurrent = () => {
@@ -646,18 +776,26 @@
     }
     walks.forEach((walk, index) => {
       const retreated = walk.status === "retreated";
+      const expedition = walk.mode === "expedition";
       const segments = Tracking.splitSegments(walk.points || []);
       const layers = !Tracking.shouldDisplayWalkOnMap(walk) ? [] : walk.closed
         ? [L.polygon((walk.points || []).map((point) => [point.lat, point.lng]), { color: "#477b43", weight: 3, fillColor: "#8fbd70", fillOpacity: 0.35 })]
         : segments.filter((segment) => segment.length > 1).map((segment) => L.polyline(segment.map((point) => [point.lat, point.lng]), { color: "#e0765d", weight: 4 }));
+      if (Tracking.shouldDisplayWalkOnMap(walk) && expedition && walk.target) {
+        layers.push(L.circleMarker([walk.target.lat, walk.target.lng], { radius: 8, color: "#fff", weight: 2, fillColor: "#d89a32", fillOpacity: 1 }));
+      }
       if (walk.id === focusWalkId && walk.closed && !retreated) focusedTerritory = layers[0] || null;
       layers.forEach((layer) => { layer.addTo(map); savedLayers.push(layer); });
       const row = document.createElement("div"); row.className = retreated ? "route retreated" : "route";
-      const icon = document.createElement("span"); icon.className = "routeIcon"; icon.textContent = retreated ? "↩" : walk.closed ? "⬟" : "↗";
+      const icon = document.createElement("span"); icon.className = "routeIcon"; icon.textContent = expedition ? retreated ? "↗" : "⚑" : retreated ? "↩" : walk.closed ? "⬟" : "↗";
       const details = document.createElement("div");
-      const title = document.createElement("strong"); title.textContent = `${retreated ? "Отступление" : walk.closed ? "Захваченная территория" : "Маршрут"} ${walks.length - index}`;
+      const title = document.createElement("strong");
+      const walkLabel = expedition ? retreated ? "Экспедиция не завершена" : "Экспедиция завершена"
+        : retreated ? "Отступление" : walk.closed ? "Захваченная территория" : "Маршрут";
+      title.textContent = `${walkLabel} ${walks.length - index}`;
       const distance = Number.isFinite(walk.distanceMeters) ? Math.max(0, walk.distanceMeters) : distanceForPoints(walk.points || []);
-      const meta = document.createElement("small"); meta.textContent = `${new Date(walk.finishedAt).toLocaleString("ru-RU", { dateStyle: "medium", timeStyle: "short" })} · ${formatElapsed(durationOfWalk(walk))} · ${formatKilometers(distance)} · ${walk.points.length} точек`;
+      const targetSummary = expedition && walk.target ? ` · цель ${walk.target.lat.toFixed(4)}, ${walk.target.lng.toFixed(4)}` : "";
+      const meta = document.createElement("small"); meta.textContent = `${new Date(walk.finishedAt).toLocaleString("ru-RU", { dateStyle: "medium", timeStyle: "short" })} · ${formatElapsed(durationOfWalk(walk))} · ${formatKilometers(distance)} · ${walk.points.length} точек${targetSummary}`;
       details.append(title, meta);
       const deleteButton = document.createElement("button"); deleteButton.className = "routeDelete"; deleteButton.type = "button";
       deleteButton.textContent = "Удалить"; deleteButton.dataset.walkId = walk.id;
@@ -714,6 +852,7 @@
     $("gps").textContent = `±${Math.round(initialPoint.accuracy)} м`;
     setRecording(true); startStopwatch();
     say(manual ? "Прогулка начата с предупреждением: точность GPS ниже обычной. Продолжаем проверять каждую точку." : "GPS готов. Можно идти!");
+    if (updateExpeditionProgress(initialPoint)) say("Цель достигнута. Завершаем экспедицию…");
     warmupDiagnosticPrevious = null;
     if (manual) recordDiagnosticEvent({ type: "manual-warmup-start", at: Date.now(), timestamp: initialPoint.timestamp, accuracyMeters: initialPoint.accuracy, maxAllowedAccuracyMeters: Tracking.DEFAULTS.maxAccuracyMeters });
     recordDiagnosticEvent({ type: "gps-ready", at: Date.now(), timestamp: initialPoint.timestamp, accuracyMeters: initialPoint.accuracy, manualStart: manual });
@@ -817,6 +956,7 @@
           rememberLocation(lastValidatedPoint);
           updateLocationMarker(lastValidatedPoint);
           mapFollow.centerOn(lastValidatedPoint);
+          if (updateExpeditionProgress(lastValidatedPoint)) say("Цель достигнута. Завершаем экспедицию…");
         }
         return;
       }
@@ -848,6 +988,7 @@
         rememberLocation(lastValidatedPoint);
         updateLocationMarker(lastValidatedPoint);
         mapFollow.centerOn(lastValidatedPoint);
+        if (updateExpeditionProgress(lastValidatedPoint)) say("Цель достигнута. Завершаем экспедицию…");
       }
       return;
     }
@@ -870,6 +1011,7 @@
     persistDiagnosticUpdates(resolveDiagnosticEvents(result.points || [result.point], ["recording"], true));
     rememberLocation(result.point);
     drawCurrent(); updateDistance(); updateLocationMarker(result.point); mapFollow.centerOn(result.point);
+    if (updateExpeditionProgress(result.point)) say("Цель достигнута. Завершаем экспедицию…");
     $("gps").textContent = `±${Math.round(result.point.accuracy)} м`;
     if (result.newSegment && points.length > 1) say("После перерыва начат новый участок маршрута.");
   };
@@ -877,7 +1019,8 @@
     if (!warmingUp || warmupStartedAt === null || Date.now() - warmupStartedAt < Tracking.GPS_WARMUP_DEFAULTS.manualStartAfterMs) return;
     const candidate = gpsWarmup.manualStartPoint(Date.now(), Date.now() - warmupStartedAt);
     if (!candidate) { refreshManualWarmupStart(); return; }
-    if (!confirm(`Точность GPS сейчас ±${Math.round(candidate.accuracy)} м. Начать прогулку с предупреждением? Захват территории будет использовать только точки, прошедшие обычную фильтрацию.`)) return;
+    const modeNote = activeMode === "expedition" ? "Цель будет засчитана только по достоверной GPS-позиции." : "Захват территории будет использовать только точки, прошедшие обычную фильтрацию.";
+    if (!confirm(`Точность GPS сейчас ±${Math.round(candidate.accuracy)} м. Начать прогулку с предупреждением? ${modeNote}`)) return;
     enqueueTrackingTask(async () => {
       if (!warmingUp || cancelling) return;
       const freshCandidate = gpsWarmup.manualStartPoint(Date.now(), Date.now() - warmupStartedAt);
@@ -936,6 +1079,18 @@
       say("Черновик сохранён, но GPS не удалось возобновить. Перезагрузите страницу, чтобы восстановить прогулку.");
     }
   };
+  const showExpeditionResult = (walk) => {
+    $("expeditionResultDistance").textContent = formatKilometers(walk.distanceMeters);
+    $("expeditionResultDuration").textContent = formatElapsed(walk.durationMs);
+    $("expeditionResultTarget").textContent = `${walk.target.lat.toFixed(5)}, ${walk.target.lng.toFixed(5)}`;
+    $("expeditionResult").hidden = false;
+    $("expeditionResultClose").focus({ preventScroll: true });
+  };
+  const closeExpeditionResult = () => {
+    $("expeditionResult").hidden = true;
+    $("start").focus({ preventScroll: true });
+  };
+  $("expeditionResultClose").addEventListener("click", closeExpeditionResult);
   const showWalkInstructions = () => {
     $("walkInstructions").hidden = false;
     $("walkInstructionsClose").focus({ preventScroll: true });
@@ -947,16 +1102,25 @@
   $("walkInstructionsClose").addEventListener("click", closeWalkInstructions);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !$("walkInstructions").hidden) closeWalkInstructions();
+    if (event.key === "Escape" && !$("expeditionResult").hidden) closeExpeditionResult();
   });
-  const startWalk = async () => {
+  const startWalk = async (mode = selectedMode) => {
     if (!navigator.geolocation) { say("Этот браузер не поддерживает геолокацию."); return; }
     if (!storageReady || !draftResolved || starting || recordingActive || warmingUp || finishing || cancelling) return;
+    if (mode === "expedition" && !expeditionTarget) {
+      say("Сначала выберите цель экспедиции на карте или создайте случайную цель.");
+      return;
+    }
     if (!locationIsFresh(latestLocation)) {
       showLocationState({});
       if (!locationRequestPending) requestCurrentLocation();
       say("Сначала дождитесь определения местоположения.");
       return;
     }
+    selectedMode = mode;
+    activeMode = mode;
+    expeditionCompletionPending = false;
+    expeditionDistanceMeters = mode === "expedition" ? Tracking.distanceMeters(latestLocation, expeditionTarget) : null;
     positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset();
     latestLocation = null; updateLocateButton("loading"); clearLocationMarker(); clearRouteStartMarker();
     showLocationState({});
@@ -970,6 +1134,7 @@
       await WalkStorage.createDraft(db, draftSnapshot([], newStartedAt));
     } catch {
       gpsWarmup.reset();
+      activeMode = "territory";
       starting = false; draftResolved = false; setRecording(false);
       say("Найдена незавершённая прогулка или хранилище недоступно. Перезагрузите страницу, чтобы восстановить черновик.");
       return;
@@ -985,7 +1150,7 @@
       startTrackingServices();
       starting = false; setRecording(false); say("");
       warmupWaitTimer = setInterval(refreshManualWarmupStart, 1000);
-      showWalkInstructions();
+      if (mode === "territory") showWalkInstructions();
     } catch {
       positionFilter.reset(); initialRouteBuffer.reset();
       gpsWarmup.reset(); warmingUp = false;
@@ -1001,7 +1166,10 @@
   const abandonWalk = async () => {
     if ((!warmingUp && !recordingActive) || cancelling || finishing) return;
     if (recordingActive) {
-      if (!confirm("Отступить и сохранить пройденный маршрут в истории? Территория захвачена не будет.")) return;
+      const confirmText = activeMode === "expedition"
+        ? "Отступить и сохранить пройденный маршрут как незавершённую экспедицию?"
+        : "Отступить и сохранить пройденный маршрут в истории? Территория захвачена не будет.";
+      if (!confirm(confirmText)) return;
       await finishWalk(true);
       return;
     }
@@ -1031,16 +1199,25 @@
   const clearActiveWalkView = () => {
     points = []; distanceMetersTotal = 0; startedAt = null;
     initialRouteBuffer.reset();
+    expeditionTarget = null; expeditionDistanceMeters = null; expeditionCompletionPending = false;
+    activeMode = "territory"; selectedMode = "territory"; targetMethod = "manual";
+    updateExpeditionTargetMarker(null);
+    $("expeditionTargetHint").textContent = "Коснитесь карты, чтобы выбрать цель.";
+    $("anotherTarget").hidden = true; $("generateTarget").hidden = false;
     clearInterval(stopwatchTimer); stopwatchTimer = null;
     $("elapsed").textContent = "00:00:00";
     $("gps").textContent = "GPS";
     updateDistance();
     currentLines.forEach((line) => map.removeLayer(line)); currentLines = [];
     clearRouteStartMarker();
+    updateModeSelection();
   };
   const finishWalk = async (retreated = false) => {
     if (!recordingActive || finishing || cancelling) return;
-    recordDiagnosticEvent({ type: retreated ? "retreat" : "finish", at: Date.now() });
+    const walkMode = activeMode;
+    const expeditionReached = walkMode === "expedition" && !retreated && expeditionCompletionPending;
+    if (walkMode === "expedition" && !retreated && !expeditionReached) return;
+    recordDiagnosticEvent({ type: retreated ? "retreat" : expeditionReached ? "expedition-reached" : "finish", at: Date.now() });
     positionFilter.reset(); gpsWarmup.reset();
     finishing = true; setRecording(true); stopTrackingServices();
     try {
@@ -1048,17 +1225,22 @@
       const bufferedPoints = initialRouteBuffer.pending ? initialRouteBuffer.flush().points : [];
       const finishedPoints = [...points, ...bufferedPoints];
       const finishedDistance = distanceForPoints(finishedPoints);
-      if (!retreated && finishedPoints.length < 2) {
+      if (!retreated && walkMode === "territory" && finishedPoints.length < 2) {
         recordDiagnosticEvent({ type: "finish-rejected", at: Date.now(), reason: "insufficient-route-points", pointCount: finishedPoints.length });
         resumeAfterFinishFailure("Нужно ещё GPS-точек для сохранения. Продолжаем запись.");
         return;
       }
       const finishedAt = Date.now();
-      const closed = !retreated && Tracking.canCloseTrack(finishedPoints);
+      const closed = walkMode === "territory" && !retreated && Tracking.canCloseTrack(finishedPoints);
       const walk = {
         id: crypto.randomUUID(), points: finishedPoints, startedAt, finishedAt,
         durationMs: finishedAt - startedAt, distanceMeters: finishedDistance,
-        closed, showOnMap: !retreated && closed,
+        ...(finishedPoints[0] ? { startPosition: { ...finishedPoints[0] } } : {}),
+        mode: walkMode, closed, showOnMap: !retreated && (closed || walkMode === "expedition"),
+        ...(walkMode === "expedition" ? {
+          target: expeditionTarget ? { ...expeditionTarget } : null,
+          expeditionStatus: retreated ? "incomplete" : "reached"
+        } : {}),
         ...(retreated ? { status: "retreated" } : {})
       };
       if (initialRouteBuffer.pending) recordDiagnosticEvent({
@@ -1084,6 +1266,12 @@
       stopStopwatch(finishedAt);
       points = []; distanceMetersTotal = 0; startedAt = null; draftResolved = true; updateDistance();
       initialRouteBuffer.reset();
+      expeditionCompletionPending = false;
+      expeditionTarget = null; expeditionDistanceMeters = null;
+      activeMode = "territory"; selectedMode = "territory"; targetMethod = "manual";
+      updateExpeditionTargetMarker(null);
+      $("expeditionTargetHint").textContent = "Коснитесь карты, чтобы выбрать цель.";
+      $("anotherTarget").hidden = true; $("generateTarget").hidden = false;
       setRecording(false);
       let diagnosticsSaved = true;
       try {
@@ -1102,10 +1290,13 @@
       currentLines.forEach((line) => map.removeLayer(line)); currentLines = [];
       say(diagnosticsSaved
         ? retreated ? "Вы отступили. Маршрут сохранён в истории, территория не захвачена."
-          : closed ? "Маршрут замкнут, территория закрашена." : "Контур не замкнулся — захват не состоялся."
+          : walkMode === "expedition" ? "Экспедиция завершена. Цель достигнута."
+            : closed ? "Маршрут замкнут, территория закрашена." : "Контур не замкнулся — захват не состоялся."
         : "Прогулка сохранена, но диагностику не удалось сохранить.");
       if (closed) mapFollow.setEnabled(false);
       try { await redrawSaved({ focusWalkId: closed ? walk.id : null }); } catch { say("Прогулка сохранена, но список не удалось обновить."); }
+      updateModeSelection();
+      if (walk.expeditionStatus === "reached") showExpeditionResult(walk);
     } catch {
       if (diagnosticSession?.state === "finalizing") {
         diagnosticSession.state = "active";
@@ -1121,7 +1312,8 @@
       resumeAfterFinishFailure("Не удалось завершить прогулку. Черновик сохранён, запись продолжается.");
     }
   };
-  $("start").addEventListener("click", startWalk);
+  $("start").addEventListener("click", () => startWalk("territory"));
+  $("startExpedition").addEventListener("click", () => startWalk("expedition"));
   Actions.bindClick($("abandonWalk"), abandonWalk);
   Actions.bindClick($("finish"), () => finishWalk());
   $("copyActiveDiagnostics").addEventListener("click", copyActiveDiagnostics);
@@ -1161,6 +1353,18 @@
             setRecording(false);
             return;
           }
+        starting = true;
+        activeMode = draft.mode === "expedition" ? "expedition" : "territory";
+        selectedMode = activeMode;
+        targetMethod = draft.targetMethod === "random" ? "random" : "manual";
+        expeditionTarget = activeMode === "expedition" && Number.isFinite(draft.target?.lat) && Number.isFinite(draft.target?.lng)
+          ? { lat: draft.target.lat, lng: draft.target.lng } : null;
+        expeditionDistanceMeters = null; expeditionCompletionPending = false;
+        updateExpeditionTargetMarker(expeditionTarget);
+        $("expeditionTargetHint").textContent = expeditionTarget
+          ? targetMethod === "random" ? "Восстановлена случайная цель экспедиции." : "Восстановлена цель экспедиции."
+          : "У черновика экспедиции нет сохранённой цели. Можно отступить и сохранить пройденный маршрут.";
+        updateModeSelection();
         let restoredDiagnostics = null;
         let diagnosticsReadFailed = false;
         try { restoredDiagnostics = await WalkStorage.readDiagnostics(db, "active"); }
@@ -1192,7 +1396,8 @@
           locateRequestId += 1;
           points = draftPoints;
           initialRouteBuffer.restore(draftInitialBuffer);
-          latestLocation = null; updateLocateButton("loading"); clearLocationMarker();
+          if (locationIsFresh(latestLocation)) updateLocationMarker(latestLocation);
+          else { latestLocation = null; updateLocateButton("loading"); clearLocationMarker(); }
           distanceMetersTotal = distanceForPoints(points);
           startedAt = Number.isFinite(draft.startedAt) ? draft.startedAt : Date.now();
           warmingUp = wasWarmingUp;
@@ -1201,16 +1406,16 @@
           const restoredValidatedPoints = points.length ? points : initialRouteBuffer.flush().points;
           if (restoredValidatedPoints.length) {
             if (!warmingUp) updateRouteStartMarker(restoredValidatedPoints[0]);
-            rememberLocation(restoredValidatedPoints.at(-1));
-            updateLocationMarker(restoredValidatedPoints.at(-1));
           }
           draftResolved = true;
           try {
             startTrackingServices();
+            starting = false;
             setRecording(!warmingUp);
             if (warmingUp) { say(""); warmupWaitTimer = setInterval(refreshManualWarmupStart, 1000); }
             else { startStopwatch(); say("Прогулка восстановлена. Ожидаем свежую GPS-точку…"); }
           } catch {
+            starting = false;
             positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset(); warmingUp = false;
             stopWarmupWaitTimer(); warmupStartedAt = null;
             recordDiagnosticEvent({ type: "gps-error", at: Date.now(), phase: "draft-restoration", source: "tracking-start" });
@@ -1218,7 +1423,7 @@
             say("Черновик сохранён, но GPS не удалось запустить. Перезагрузите страницу, чтобы попробовать снова.");
           }
         } else {
-          try { await WalkStorage.deleteDraft(db); draftResolved = true; }
+          try { await WalkStorage.deleteDraft(db); draftResolved = true; clearActiveWalkView(); }
           catch {
             draftResolved = false;
             say("Черновик не удалось удалить. Он сохранён, чтобы не потерять прогулку.");
@@ -1238,6 +1443,7 @@
       }
       setRecording(recordingActive);
     } catch {
+      starting = false;
       positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset(); warmingUp = false;
       stopWarmupWaitTimer(); warmupStartedAt = null;
       storageReady = false; draftResolved = false; setRecording(false);

@@ -84,6 +84,30 @@ test("initial validation buffer survives draft autosave and reload", async () =>
   assert.deepEqual(restored.points, []);
 });
 
+test("expedition mode and target survive draft recovery and completed history while old walks stay compatible", async () => {
+  const db = new MemoryDatabase();
+  const target = { lat: 50.08, lng: 14.43 };
+  const draft = {
+    id: "active", mode: "expedition", targetMethod: "random", target,
+    points: [{ lat: 50.07, lng: 14.42, timestamp: 1000 }], startedAt: 900
+  };
+  await Storage.createDraft(db, draft);
+  assert.deepEqual(await Storage.readDraft(db), draft);
+
+  const expedition = {
+    id: "expedition-1", mode: "expedition", target, expeditionStatus: "reached",
+    points: draft.points, startedAt: 900, finishedAt: 1100, durationMs: 200,
+    distanceMeters: 1200, closed: false, showOnMap: true
+  };
+  const legacyWalk = { id: "legacy", points: [], startedAt: 1, finishedAt: 2, closed: true };
+  await Storage.completeWalk(db, expedition);
+  await Storage.completeWalk(db, legacyWalk);
+  const walks = await Storage.readWalks(db);
+  assert.equal(walks.find((walk) => walk.id === "expedition-1").expeditionStatus, "reached");
+  assert.deepEqual(walks.find((walk) => walk.id === "expedition-1").target, target);
+  assert.equal(walks.find((walk) => walk.id === "legacy").mode, undefined);
+});
+
 test("diagnostic events and session metadata survive reload", async () => {
   const db = new MemoryDatabase();
   await Storage.writeDiagnosticSession(db, { id: "active", formatVersion: 1, appVersion: "0.1.43", events: [] });

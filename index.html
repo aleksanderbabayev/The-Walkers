@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.1.73">
+  <meta name="app-version" content="0.2.0">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=0.1.73">
+  <link rel="stylesheet" href="styles.css?v=0.2.0">
   <link rel="stylesheet" href="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.css">
 </head>
 <body class="location-pending">
@@ -54,6 +54,28 @@
           <small class="gps" id="gps">GPS</small>
         </div>
       </div>
+      <div id="modeSelector" class="mode-selector" role="group" aria-label="Игровой режим">
+        <button id="territoryMode" type="button" aria-pressed="true">Захват территории</button>
+        <button id="expeditionMode" type="button" aria-pressed="false">Экспедиция</button>
+      </div>
+      <section id="expeditionSetup" class="expedition-setup" hidden>
+        <div class="expeditionMethods" role="group" aria-label="Способ выбора цели">
+          <button id="manualTargetMode" type="button" aria-pressed="true">Точка на карте</button>
+          <button id="randomTargetMode" type="button" aria-pressed="false">Случайная цель</button>
+        </div>
+        <div id="randomTargetControls" class="random-target-controls" hidden>
+          <label for="expeditionRadius">Расстояние</label>
+          <select id="expeditionRadius">
+            <option value="500">500 м</option>
+            <option value="1000">1 км</option>
+            <option value="2000">2 км</option>
+            <option value="3000">3 км</option>
+          </select>
+          <button id="generateTarget" type="button">Случайная точка</button>
+          <button id="anotherTarget" type="button" hidden>Другая точка</button>
+        </div>
+        <p id="expeditionTargetHint" role="status" aria-live="polite">Коснитесь карты, чтобы выбрать цель.</p>
+      </section>
       <section id="locationNotice" class="location-notice is-loading" role="status" aria-live="polite" aria-atomic="true">
         <span class="locationNoticeDot" aria-hidden="true"></span>
         <div class="locationNoticeCopy"><b id="locationNoticeTitle">Определяем местоположение</b><small id="locationNoticeText">Получаем свежие координаты GPS…</small></div>
@@ -74,6 +96,9 @@
         </button>
         <button id="manualWarmupStart" class="warmup-manual" type="button" hidden disabled>
           <span>Начать с текущей точностью</span>
+        </button>
+        <button id="startExpedition" class="primary" type="button" hidden disabled>
+          <span>Начать</span>
         </button>
       </div>
       <button id="copyActiveDiagnostics" class="diagnosticsCopy" type="button" hidden>Копировать диагностику</button>
@@ -109,8 +134,17 @@
       <button id="walkInstructionsClose" type="button">Понятно</button>
     </section>
   </div>
+  <div id="expeditionResult" class="expedition-result" role="dialog" aria-modal="true" aria-labelledby="expeditionResultTitle" hidden>
+    <section class="expeditionResultCard">
+      <h2 id="expeditionResultTitle">Экспедиция завершена</h2>
+      <p>Пройденное расстояние <strong id="expeditionResultDistance"></strong></p>
+      <p>Продолжительность <strong id="expeditionResultDuration"></strong></p>
+      <p>Достигнутая цель <strong id="expeditionResultTarget"></strong></p>
+      <button id="expeditionResultClose" type="button">Понятно</button>
+    </section>
+  </div>
   <footer>Карта © OpenStreetMap · Маршруты хранятся на этом устройстве</footer>
   <script src="location-diagnostics.js?v=0.1.72"></script>
-  <script src="location-bootstrap.js?v=0.1.73"></script>
+  <script src="location-bootstrap.js?v=0.2.0"></script>
 </body>
 </html>

@@ -88,6 +88,20 @@ main {
 .status small { font-size: 12px; line-height: 1.4; }
 .status #statusDot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: #aab2a8; }
 .status.recording #statusDot { background: #e47159; box-shadow: 0 0 0 5px #e4715920; }
+.mode-selector, .expeditionMethods { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; border-radius: 13px; background: #f0f3ed; }
+.mode-selector { margin-top: 7px; }
+.mode-selector button, .expeditionMethods button { min-width: 0; min-height: 38px; padding: 6px 8px; border: 0; border-radius: 10px; background: transparent; color: #59665b; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.mode-selector button:focus-visible, .expeditionMethods button:focus-visible, .random-target-controls button:focus-visible, #startExpedition:focus-visible { outline: 3px solid #2877df75; outline-offset: 2px; }
+.mode-selector button[aria-pressed="true"] { background: #fff; color: #315b39; box-shadow: 0 1px 4px #18211c16; }
+.expedition-setup { margin-top: 6px; padding: 6px; border: 1px solid #e8ede5; border-radius: 13px; background: #fafbf8; }
+.expedition-setup[hidden], #randomTargetControls[hidden], #startExpedition[hidden] { display: none; }
+.expeditionMethods button[aria-pressed="true"] { background: #e5efff; color: #235aa3; }
+.random-target-controls { margin-top: 6px; display: grid; grid-template-columns: auto minmax(75px, .7fr) minmax(92px, 1.2fr); align-items: center; gap: 6px; }
+.random-target-controls label { color: #667269; font-size: 11px; }
+.random-target-controls select { min-width: 0; height: 38px; padding: 4px 8px; border: 1px solid #dce3d9; border-radius: 9px; background: #fff; color: #344438; font: inherit; font-size: 12px; }
+.random-target-controls button { min-width: 0; min-height: 38px; padding: 4px 6px; border: 1px solid #dce3d9; border-radius: 10px; background: #fff; color: #315b39; font: inherit; font-size: 11px; font-weight: 650; }
+.random-target-controls button:disabled { opacity: .55; }
+#expeditionTargetHint { min-height: 0; margin: 5px 1px 0; color: #68756a; font-size: 11px; line-height: 1.3; }
 .gps { margin-left: auto; color: #8d968c; font-size: 10px; letter-spacing: 1px; white-space: nowrap; }
 .stopwatch { margin-left: auto; display: flex; flex: none; flex-direction: column; align-items: flex-end; gap: 3px; }
 .stopwatch b { font-size: 14px; font-variant-numeric: tabular-nums; letter-spacing: .4px; white-space: nowrap; }
@@ -121,6 +135,7 @@ main {
 .actions.single-action { grid-template-columns: minmax(0, 1fr); }
 .actions.single-action button { width: 100%; grid-column: 1 / -1; }
 .actions #start,
+.actions #startExpedition,
 .actions #finish,
 .actions #abandonWalk {
   display: inline-flex;
@@ -146,12 +161,14 @@ main {
 }
 #manualWarmupStart[hidden] { display: none; }
 #start[hidden],
+#startExpedition[hidden],
 #finish[hidden],
 #abandonWalk[hidden] { display: none; }
 .actions #start {
   --action-shadow: #174b9b;
   background: linear-gradient(180deg, #4389ed 0%, #2868c3 100%);
 }
+.actions #startExpedition { --action-shadow: #174b9b; background: linear-gradient(180deg, #4389ed 0%, #2868c3 100%); }
 .actions #finish {
   --action-shadow: #205a32;
   background: linear-gradient(180deg, #4b9b5c 0%, #327344 100%);
@@ -168,6 +185,7 @@ main {
   object-fit: contain;
 }
 .actions #start:active,
+.actions #startExpedition:active,
 .actions #finish:active,
 .actions #abandonWalk:active:not(:disabled) {
   transform: translateY(2px);
@@ -182,6 +200,7 @@ main {
 }
 @media (hover: hover) and (pointer: fine) {
   .actions #start:hover:not(:disabled),
+  .actions #startExpedition:hover:not(:disabled),
   .actions #finish:hover:not(:disabled),
   .actions #abandonWalk:hover:not(:disabled) {
     filter: brightness(1.07);
@@ -219,6 +238,13 @@ main {
 .walkInstructionsCard p { margin: 0 0 18px; color: #59665b; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
 .walkInstructionsCard button { width: 100%; min-height: 48px; border: 0; border-radius: 14px; background: #365f3a; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .walkInstructionsCard button:active { background: #294b2d; }
+.expedition-result { position: fixed; z-index: 3100; inset: 0; padding: calc(18px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom)); display: grid; place-items: center; background: #17201965; }
+.expedition-result[hidden] { display: none; }
+.expeditionResultCard { width: min(100%, 420px); padding: 22px; border: 1px solid #e4eae1; border-radius: 22px; background: #fff; box-shadow: 0 12px 40px #0003; }
+.expeditionResultCard h2 { margin: 0 0 18px; color: #26372a; font-size: 21px; }
+.expeditionResultCard p { margin: 10px 0; color: #68756a; font-size: 13px; }
+.expeditionResultCard strong { display: block; margin-top: 3px; color: #26372a; font-size: 16px; }
+.expeditionResultCard button { width: 100%; min-height: 48px; margin-top: 12px; border: 0; border-radius: 14px; background: #365f3a; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: center; }
 .brandTitle { display: flex; align-items: center; gap: 8px; }
 .brandTitle strong { display: inline; }
@@ -269,6 +295,8 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
 .mapLocate.is-ready { border-color: #d7eddd; background: #e7f4e9; color: #2f7440; box-shadow: 0 1px 5px #0003, inset 0 0 0 1px #2f74401a; }
 .mapLocate.is-error { border-color: #f1d5c7; background: #fff5ee; color: #a54b31; }
 .mapLocate.is-following { border-color: #2877df; background: #e4efff; color: #1559b4; box-shadow: 0 0 0 3px #2877df35, 0 1px 6px #0004; }
+.leaflet-div-icon.expedition-target-icon { border: 0; background: transparent; }
+.expedition-target-icon span { display: grid; width: 36px; height: 36px; place-items: center; border: 2px solid #fff; border-radius: 50%; background: #d89a32; color: #fff; font-size: 22px; line-height: 1; box-shadow: 0 2px 7px #18211c50; }
 .mapLocate:active { background: #edf2e8; }
 .route-start-marker { border: 0; background: transparent; }
 .route-start-content { width: 82px; height: 32px; display: flex; align-items: center; gap: 2px; filter: drop-shadow(0 1px 2px #0005); }
@@ -324,6 +352,7 @@ button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
     gap: 8px;
     overflow: hidden;
   }
+  body.expedition-mode main { grid-template-rows: minmax(0, .8fr) minmax(0, 1.2fr); }
   .mapFrame { width: 100%; max-width: 100%; min-width: 0; min-height: 0; height: 100%; }
   #map { width: 100%; max-width: 100%; min-width: 0; height: 100%; min-height: 0; border-radius: 20px; }
   .panel { position: relative; width: 100%; max-width: 100%; min-width: 0; min-height: 0; padding: 10px 14px; overflow: hidden; }
@@ -334,6 +363,15 @@ button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
   .status { padding-bottom: 6px; gap: 8px; }
   .status small { font-size: 11px; line-height: 1.25; }
   .location-notice { margin-top: 5px; padding: 6px 8px; gap: 7px; }
+  body.expedition-mode .location-notice.is-ready { display: none; }
+  .mode-selector { margin-top: 4px; }
+  .mode-selector, .expeditionMethods { gap: 3px; padding: 2px; }
+  .mode-selector button, .expeditionMethods button { min-height: 36px; padding: 5px; font-size: 11px; }
+  .expedition-setup { margin-top: 4px; padding: 5px; }
+  .random-target-controls { grid-template-columns: auto minmax(70px, .65fr) minmax(84px, 1.2fr); gap: 4px; }
+  .random-target-controls select { height: 36px; padding: 4px 5px; font-size: 11px; }
+  .random-target-controls button { min-height: 36px; font-size: 10px; }
+  #expeditionTargetHint { margin-top: 4px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .locationNoticeCopy b { font-size: 11px; }
   .locationNoticeCopy small { font-size: 10px; line-height: 1.2; }
   #locationRetry { min-height: 44px; padding: 5px 7px; font-size: 10px; }

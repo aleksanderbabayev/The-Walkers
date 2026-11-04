@@ -12,7 +12,7 @@ test("Finish and Retreat button dispatch call their actions without passing the 
   const appSource = fs.readFileSync(require.resolve("../app.js"), "utf8");
   assert.match(appSource, /Actions\.bindClick\(\$\("finish"\), \(\) => finishWalk\(\)\);/);
   assert.match(appSource, /await finishWalk\(true\);/);
-  assert.match(appSource, /const closed = !retreated && Tracking\.canCloseTrack\(finishedPoints\);/);
+  assert.match(appSource, /const closed = walkMode === "territory" && !retreated && Tracking\.canCloseTrack\(finishedPoints\);/);
   assert.match(appSource, /status: "retreated"/);
   assert.match(appSource, /diagnosticSession\.walkStatus = retreated \? "retreated" : "completed"/);
 
