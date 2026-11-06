@@ -309,8 +309,6 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
 .mapLocate.is-ready { border-color: #d7eddd; background: #e7f4e9; color: #2f7440; box-shadow: 0 1px 5px #0003, inset 0 0 0 1px #2f74401a; }
 .mapLocate.is-error { border-color: #f1d5c7; background: #fff5ee; color: #a54b31; }
 .mapLocate.is-following { border-color: #2877df; background: #e4efff; color: #1559b4; box-shadow: 0 0 0 3px #2877df35, 0 1px 6px #0004; }
-.leaflet-div-icon.expedition-target-icon { border: 0; background: transparent; }
-.expedition-target-icon span { display: grid; width: 36px; height: 36px; place-items: center; border: 2px solid #fff; border-radius: 50%; background: #d89a32; color: #fff; font-size: 22px; line-height: 1; box-shadow: 0 2px 7px #18211c50; }
 .mapLocate:active { background: #edf2e8; }
 .route-start-marker { border: 0; background: transparent; }
 .route-start-content { width: 82px; height: 32px; display: flex; align-items: center; gap: 2px; filter: drop-shadow(0 1px 2px #0005); }

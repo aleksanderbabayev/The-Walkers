@@ -2,7 +2,7 @@
   "use strict";
   const DB_NAME = "the-walkers", DB_VERSION = 2;
   const AUTOSAVE_MS = 5000;
-  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl, MapFollow = window.WalkMapFollow, Expedition = window.WalkExpedition, ExpeditionLine = window.WalkExpeditionLine;
+  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl, MapFollow = window.WalkMapFollow, Expedition = window.WalkExpedition, ExpeditionLine = window.WalkExpeditionLine, ExpeditionMarkers = window.WalkExpeditionMarkers;
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   const startupPosition = window.WalkStartupResult?.position;
@@ -106,7 +106,7 @@
   }).addTo(map);
 
   let db, storageReady = false, draftResolved = false, starting = false, finishing = false, cancelling = false;
-  let selectedMode = "territory", activeMode = "territory", expeditionTarget = null, expeditionTargetMarker = null;
+  let selectedMode = "territory", activeMode = "territory", expeditionTarget = null;
   let targetMethod = "manual", expeditionDistanceMeters = null, expeditionCompletionPending = false;
   let recordingActive = false, warmingUp = false, points = [], distanceMetersTotal = 0, currentLines = [], savedLayers = [], stopwatchTimer = null, warmupWaitTimer = null, warmupStartedAt = null, startedAt = null;
   let walksById = new Map();
@@ -119,6 +119,7 @@
   const initialRouteBuffer = Tracking.createInitialRouteBuffer();
   let currentLocationMarker = null;
   let routeStartMarker = null;
+  const expeditionMarkers = ExpeditionMarkers.createExpeditionMarkers({ map, leaflet: L });
   let locationState = "loading", latestLocation = null, locationRequestPending = false;
   let locationPermissionMonitored = false;
   let locationPermissionState = typeof navigator.permissions?.query === "function" ? "unknown" : "unsupported";
@@ -149,19 +150,14 @@
     if (routeStartMarker) routeStartMarker.setLatLng([point.lat, point.lng]).setIcon(icon);
     else routeStartMarker = L.marker([point.lat, point.lng], { icon, title: "Старт маршрута", keyboard: false, interactive: false, zIndexOffset: 1200 }).addTo(map);
   };
+  const updateExpeditionStartMarker = (point) => expeditionMarkers.updateStart(point);
+  const clearExpeditionStartMarker = () => expeditionMarkers.clearStart();
   const clearRouteStartMarker = () => {
     if (routeStartMarker) map.removeLayer(routeStartMarker);
     routeStartMarker = null;
   };
   const updateExpeditionTargetMarker = (target) => {
-    if (!target) {
-      if (expeditionTargetMarker) map.removeLayer(expeditionTargetMarker);
-      expeditionTargetMarker = null;
-      return;
-    }
-    const icon = L.divIcon({ className: "expedition-target-icon", iconSize: [38, 38], iconAnchor: [19, 34], html: '<span aria-hidden="true">⚑</span>' });
-    if (expeditionTargetMarker) expeditionTargetMarker.setLatLng([target.lat, target.lng]).setIcon(icon);
-    else expeditionTargetMarker = L.marker([target.lat, target.lng], { icon, title: "Цель экспедиции", keyboard: false, interactive: false, zIndexOffset: 1100 }).addTo(map);
+    expeditionMarkers.updateTarget(target);
   };
   const setExpeditionTarget = (target, source = targetMethod) => {
     if (!target || !Number.isFinite(target.lat) || !Number.isFinite(target.lng)) return false;
@@ -869,9 +865,7 @@
       const layers = !Tracking.shouldDisplayWalkOnMap(walk) ? [] : walk.closed
         ? [L.polygon((walk.points || []).map((point) => [point.lat, point.lng]), { color: "#477b43", weight: 3, fillColor: "#8fbd70", fillOpacity: 0.35 })]
         : segments.filter((segment) => segment.length > 1).map((segment) => L.polyline(segment.map((point) => [point.lat, point.lng]), { color: "#e0765d", weight: 4 }));
-      if (Tracking.shouldDisplayWalkOnMap(walk) && expedition && walk.target) {
-        layers.push(L.circleMarker([walk.target.lat, walk.target.lng], { radius: 8, color: "#fff", weight: 2, fillColor: "#d89a32", fillOpacity: 1 }));
-      }
+      if (Tracking.shouldDisplayWalkOnMap(walk) && expedition) layers.push(...expeditionMarkers.createHistoryMarkers(walk));
       if (walk.id === focusWalkId && walk.closed && !retreated) focusedTerritory = layers[0] || null;
       layers.forEach((layer) => { layer.addTo(map); savedLayers.push(layer); });
       const row = document.createElement("div"); row.className = retreated ? "route retreated" : "route";
@@ -936,7 +930,10 @@
     stopWarmupWaitTimer();
     const recordedStartPoint = initialRouteBuffer.snapshot()[0];
     points = []; startedAt = recordingStartedAt; distanceMetersTotal = 0;
-    warmingUp = false; warmupStartedAt = null; updateDistance(); updateRouteStartMarker(recordedStartPoint); rememberLocation(initialPoint); updateLocationMarker(initialPoint); mapFollow.centerOn(initialPoint);
+    warmingUp = false; warmupStartedAt = null; updateDistance();
+    rememberLocation(initialPoint); updateLocationMarker(initialPoint); mapFollow.centerOn(initialPoint);
+    if (activeMode === "expedition") updateExpeditionStartMarker(recordedStartPoint);
+    else updateRouteStartMarker(recordedStartPoint);
     $("gps").textContent = `±${Math.round(initialPoint.accuracy)} м`;
     setRecording(true); startStopwatch();
     say(manual ? "Прогулка начата с предупреждением: точность GPS ниже обычной. Продолжаем проверять каждую точку." : "GPS готов. Можно идти!");
@@ -1041,6 +1038,7 @@
         persistDiagnosticEvent(gpsEvent);
         const lastValidatedPoint = result.validatedPoints.at(-1);
         if (lastValidatedPoint) {
+          if (activeMode === "expedition") updateExpeditionStartMarker(result.validatedPoints[0]);
           rememberLocation(lastValidatedPoint);
           updateLocationMarker(lastValidatedPoint);
           mapFollow.centerOn(lastValidatedPoint);
@@ -1070,6 +1068,7 @@
       initialRouteBuffer.reset(); positionFilter.reset();
       pendingDiagnosticPrevious = null;
       points = nextPoints; distanceMetersTotal = distanceForPoints(points);
+      if (activeMode === "expedition" && points[0]) updateExpeditionStartMarker(points[0]);
       const lastValidatedPoint = result.validatedPoints.at(-1);
       drawCurrent(); updateDistance();
       if (lastValidatedPoint) {
@@ -1294,6 +1293,7 @@
     activeMode = "territory"; selectedMode = "territory"; targetMethod = "manual";
     hideExpeditionCompass();
     expeditionLine.hide();
+    clearExpeditionStartMarker();
     updateExpeditionTargetMarker(null);
     $("expeditionTargetHint").textContent = "Коснитесь карты, чтобы выбрать цель.";
     $("anotherTarget").hidden = true; $("generateTarget").hidden = false;
@@ -1356,6 +1356,7 @@
       await diagnosticsQueue;
       await WalkStorage.completeWalk(db, walk);
       clearRouteStartMarker();
+      clearExpeditionStartMarker();
       stopStopwatch(finishedAt);
       points = []; distanceMetersTotal = 0; startedAt = null; draftResolved = true; updateDistance();
       initialRouteBuffer.reset();
@@ -1500,7 +1501,10 @@
           updateDistance(); drawCurrent();
           const restoredValidatedPoints = points.length ? points : initialRouteBuffer.flush().points;
           if (restoredValidatedPoints.length) {
-            if (!warmingUp) updateRouteStartMarker(restoredValidatedPoints[0]);
+            if (!warmingUp) {
+              if (activeMode === "expedition") updateExpeditionStartMarker(restoredValidatedPoints[0]);
+              else updateRouteStartMarker(restoredValidatedPoints[0]);
+            }
           }
           draftResolved = true;
           try {
