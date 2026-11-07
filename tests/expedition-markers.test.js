@@ -33,9 +33,9 @@ test("current expedition target is yellow, centered on its coordinates, and reus
   markers.updateTarget(target);
   const marker = [...layers][0];
   assert.deepEqual(marker.latlng, [target.lat, target.lng]);
-  assert.equal(marker.options.radius, 9);
+  assert.equal(2 * marker.options.radius + marker.options.weight, 12);
   assert.equal(marker.options.fillColor, "#d89a32");
-  assert.equal(marker.options.weight, 2);
+  assert.equal(marker.options.weight, 1);
   assert.equal(marker.options.color, "#fff");
   assert.equal(marker.options.pane, "markerPane");
   assert.equal(marker.options.interactive, false);
@@ -53,9 +53,9 @@ test("current start marker appears only after a valid point and reuses its layer
   markers.updateStart(start);
   const marker = [...layers][0];
   assert.deepEqual(marker.latlng, [start.lat, start.lng]);
-  assert.equal(marker.options.radius, 6);
+  assert.equal(2 * marker.options.radius + marker.options.weight, 8);
   assert.equal(marker.options.fillColor, "#111820");
-  assert.equal(marker.options.weight, 2);
+  assert.equal(marker.options.weight, 1);
   assert.equal(marker.options.pane, "markerPane");
   markers.updateStart({ lat: 48.141, lng: 17.101 });
   assert.equal(created.length, 1);
@@ -71,10 +71,12 @@ test("successful history uses saved start and target coordinates with a green fi
   assert.equal(layers.length, 2);
   assert.deepEqual(layers[0].latlng, [start.lat, start.lng]);
   assert.equal(layers[0].options.fillColor, "#111820");
-  assert.equal(layers[0].options.radius, 6);
+  assert.equal(2 * layers[0].options.radius + layers[0].options.weight, 8);
   assert.deepEqual(layers[1].latlng, [target.lat, target.lng]);
   assert.equal(layers[1].options.fillColor, "#388e3c");
-  assert.equal(layers[1].options.radius, 9);
+  assert.equal(2 * layers[1].options.radius + layers[1].options.weight, 12);
+  assert.equal(layers[0].options.weight, 1);
+  assert.equal(layers[1].options.weight, 1);
   assert.equal(created.every((marker) => marker.options.interactive === false), true);
 });
 
@@ -96,8 +98,8 @@ test("app draws expedition start only from accepted route data and restores save
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
   const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
   const bootstrap = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
-  assert.match(html, /name="app-version" content="0\.2\.5"/);
-  assert.ok(bootstrap.includes('"expedition-markers.js?v=0.2.5"'));
+  assert.match(html, /name="app-version" content="0\.2\.6"/);
+  assert.ok(bootstrap.includes('"expedition-markers.js?v=0.2.6"'));
   assert.ok(bootstrap.includes('"app.js?v=0.2.5"'));
   assert.ok(app.includes("if (activeMode === \"expedition\") updateExpeditionStartMarker(recordedStartPoint)"));
   assert.ok(app.includes("if (activeMode === \"expedition\") updateExpeditionStartMarker(restoredValidatedPoints[0])"));

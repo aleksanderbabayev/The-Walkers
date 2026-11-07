@@ -1,6 +1,9 @@
 (() => {
   "use strict";
 
+  const MARKER_STROKE_WIDTH = 1;
+  const START_MARKER_RADIUS = 3.5;
+  const GOAL_MARKER_RADIUS = 5.5;
   const hasCoordinates = (point) => Number.isFinite(point?.lat) && Number.isFinite(point?.lng);
 
   const createExpeditionMarkers = ({ map, leaflet }) => {
@@ -12,7 +15,7 @@
       {
         radius,
         color: "#fff",
-        weight: 2,
+        weight: MARKER_STROKE_WIDTH,
         fillColor,
         fillOpacity,
         pane: "markerPane",
@@ -28,13 +31,13 @@
         return;
       }
       if (targetMarker) targetMarker.setLatLng([target.lat, target.lng]);
-      else targetMarker = createMarker(target, "#d89a32", 9).addTo(map);
+      else targetMarker = createMarker(target, "#d89a32", GOAL_MARKER_RADIUS).addTo(map);
     };
 
     const updateStart = (point) => {
       if (!hasCoordinates(point)) return;
       if (startMarker) startMarker.setLatLng([point.lat, point.lng]);
-      else startMarker = createMarker(point, "#111820", 6).addTo(map);
+      else startMarker = createMarker(point, "#111820", START_MARKER_RADIUS).addTo(map);
     };
 
     const clearStart = () => {
@@ -46,9 +49,9 @@
       if (walk?.mode !== "expedition") return [];
       const layers = [];
       const savedStart = hasCoordinates(walk.startPosition) ? walk.startPosition : walk.points?.[0];
-      if (hasCoordinates(savedStart)) layers.push(createMarker(savedStart, "#111820", 6, 0.75));
+      if (hasCoordinates(savedStart)) layers.push(createMarker(savedStart, "#111820", START_MARKER_RADIUS, 0.75));
       if (walk.expeditionStatus === "reached" && hasCoordinates(walk.target)) {
-        layers.push(createMarker(walk.target, "#388e3c", 9));
+        layers.push(createMarker(walk.target, "#388e3c", GOAL_MARKER_RADIUS));
       }
       return layers;
     };
