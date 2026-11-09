@@ -4,32 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.2.6">
+  <meta name="app-version" content="0.2.7">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=0.2.6">
+  <link rel="stylesheet" href="styles.css?v=0.2.7">
   <link rel="stylesheet" href="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.css">
 </head>
-<body class="location-pending">
-  <main id="locationStartupScreen" class="location-access-screen" aria-live="polite">
+<body>
+  <main id="locationStartupScreen" class="location-access-screen" aria-live="polite" hidden>
     <section class="location-access-card">
-      <h1 id="locationStartupTitle">Запуск The Walkers. Проверяем геолокацию…</h1>
-      <p id="locationStartupMessage">Ожидаем ответ браузера.</p>
-      <button id="locationStartupRetry" type="button" hidden>Попробовать снова</button>
-    </section>
-  </main>
-  <main id="locationAccessScreen" class="location-access-screen" aria-labelledby="locationAccessTitle" hidden>
-    <section class="location-access-card">
-      <h1 id="locationAccessTitle">Включите геолокацию</h1>
-      <p id="locationAccessMessage">Разрешите доступ к геолокации в настройках устройства и браузера и перезагрузите страницу.</p>
-      <button id="locationAccessReload" type="button">Перезагрузить страницу</button>
-      <details id="locationDiagnostics" class="location-diagnostics">
-        <summary>Диагностика геолокации</summary>
-        <dl id="locationDiagnosticsFields"></dl>
-        <button id="copyLocationDiagnostics" type="button">Копировать диагностику</button>
-        <p id="locationDiagnosticsStatus" role="status" aria-live="polite"></p>
-        <textarea id="locationDiagnosticsFallback" rows="7" readonly hidden aria-label="JSON диагностики геолокации для ручного копирования"></textarea>
-      </details>
+      <h1 id="locationStartupTitle">Не удалось запустить The Walkers</h1>
+      <p id="locationStartupMessage">Проверьте подключение к интернету и перезагрузите страницу.</p>
     </section>
   </main>
   <header>
@@ -91,6 +76,13 @@
         <div class="locationNoticeCopy"><b id="locationNoticeTitle">Определяем местоположение</b><small id="locationNoticeText">Получаем свежие координаты GPS…</small></div>
         <button id="locationRetry" type="button" hidden>Разрешить геолокацию</button>
       </section>
+      <details id="locationDiagnostics" class="location-diagnostics">
+        <summary>Диагностика геолокации</summary>
+        <dl id="locationDiagnosticsFields"></dl>
+        <button id="copyLocationDiagnostics" type="button">Копировать диагностику</button>
+        <p id="locationDiagnosticsStatus" role="status" aria-live="polite"></p>
+        <textarea id="locationDiagnosticsFallback" rows="7" readonly hidden aria-label="JSON диагностики геолокации для ручного копирования"></textarea>
+      </details>
       <div class="actions single-action">
         <button id="start" class="primary" type="button" disabled>
           <img class="actionIcon" src="assets/icons/capture-map.svg" alt="" aria-hidden="true">
@@ -155,6 +147,6 @@
   </div>
   <footer>Карта © OpenStreetMap · Маршруты хранятся на этом устройстве</footer>
   <script src="location-diagnostics.js?v=0.1.72"></script>
-  <script src="location-bootstrap.js?v=0.2.6"></script>
+  <script src="location-bootstrap.js?v=0.2.7"></script>
 </body>
 </html>

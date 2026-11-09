@@ -89,7 +89,7 @@ test("shared diagnostics UI renders details and copies with a selectable fallbac
   assert.match(html, /<details id="locationDiagnostics" class="location-diagnostics">/);
   assert.match(html, /id="locationDiagnosticsFallback"[^>]*readonly hidden/);
   assert.match(app, /\$\("copyLocationDiagnostics"\)\.addEventListener\("click", \(\) => diagnosticsUi\.copy\(\)\)/);
-  assert.match(bootstrap, /\$\("copyLocationDiagnostics"\)\.addEventListener\("click", \(\) => diagnosticsUi\.copy\(\)\)/);
+  assert.doesNotMatch(bootstrap, /locationDiagnostics|copyLocationDiagnostics/);
   assert.match(app, /\$\("locationDiagnostics"\)\.addEventListener\("toggle"/);
 
   const elements = () => ({

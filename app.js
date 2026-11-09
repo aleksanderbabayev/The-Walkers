@@ -5,7 +5,6 @@
   const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl, MapFollow = window.WalkMapFollow, Expedition = window.WalkExpedition, ExpeditionLine = window.WalkExpeditionLine, ExpeditionMarkers = window.WalkExpeditionMarkers;
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
-  const startupPosition = window.WalkStartupResult?.position;
   const expeditionCompassState = Expedition.createCompassState(Tracking.distanceMeters);
   let displayedCompassRotation = null;
   $("appVersion").textContent = `Версия ${appVersion}`;
@@ -93,7 +92,9 @@
     shiftKeyRotate: true,
     rotateControl: { position: "topright", behavior: "reset", closeOnZeroBearing: false },
     preventPageGestures: true
-  }).setView([startupPosition.coords.latitude, startupPosition.coords.longitude], 15);
+  }).setView([0, 0], 2);
+  let mapInitialPositionSet = false, mapViewInteracted = false;
+  map.on("dragstart zoomstart click", () => { mapViewInteracted = true; });
   const compassButton = map.getContainer().querySelector(".leaflet-control-rotate a");
   if (compassButton) {
     compassButton.setAttribute("aria-label", "Повернуть карту на север");
@@ -106,7 +107,7 @@
   }).addTo(map);
 
   let db, storageReady = false, draftResolved = false, starting = false, finishing = false, cancelling = false;
-  let selectedMode = "territory", activeMode = "territory", expeditionTarget = null;
+  let selectedMode = "territory", activeMode = "territory", expeditionTarget = null, pendingWalkStartMode = null;
   let targetMethod = "manual", expeditionDistanceMeters = null, expeditionCompletionPending = false;
   let recordingActive = false, warmingUp = false, points = [], distanceMetersTotal = 0, currentLines = [], savedLayers = [], stopwatchTimer = null, warmupWaitTimer = null, warmupStartedAt = null, startedAt = null;
   let walksById = new Map();
@@ -184,7 +185,7 @@
     $("manualTargetMode").setAttribute("aria-pressed", String(targetMethod === "manual"));
     $("randomTargetMode").setAttribute("aria-pressed", String(targetMethod === "random"));
     $("randomTargetControls").hidden = selectedMode !== "expedition" || targetMethod !== "random";
-    $("startExpedition").disabled = !expeditionTarget || !locationIsFresh(latestLocation)
+    $("startExpedition").disabled = !expeditionTarget
       || !storageReady || !draftResolved || starting || finishing || cancelling;
   };
   const hideExpeditionCompass = () => {
@@ -299,12 +300,14 @@
   });
   $("territoryMode").addEventListener("click", () => {
     if (recordingActive || warmingUp || starting || cancelling) return;
+    pendingWalkStartMode = null;
     selectedMode = "territory";
     expeditionTarget = null; expeditionDistanceMeters = null; expeditionCompletionPending = false;
     updateExpeditionTargetMarker(null); updateModeSelection();
   });
   $("expeditionMode").addEventListener("click", () => {
     if (recordingActive || warmingUp || starting || cancelling) return;
+    pendingWalkStartMode = null;
     selectedMode = "expedition";
     targetMethod = "manual";
     expeditionTarget = null; expeditionDistanceMeters = null;
@@ -656,11 +659,11 @@
   function updateStartAvailability() {
     const inProgress = recordingActive || warmingUp || cancelling;
     $("start").disabled = !LocationUi.canStartWalk({
-      storageReady, draftResolved, locationFresh: locationIsFresh(latestLocation),
+      storageReady, draftResolved,
       busy: starting || finishing || inProgress
     });
     $("startExpedition").disabled = !expeditionTarget || !LocationUi.canStartWalk({
-      storageReady, draftResolved, locationFresh: locationIsFresh(latestLocation),
+      storageReady, draftResolved,
       busy: starting || finishing || inProgress
     });
   }
@@ -672,10 +675,20 @@
       locationTimeoutTimer = null; locationRequestPending = false;
     }
     latestLocation = point;
+    if (!mapInitialPositionSet) {
+      mapInitialPositionSet = true;
+      if (!mapViewInteracted) map.setView([point.lat, point.lng], 15);
+    }
     updateLocateButton("ready");
     showLocationState({ reason: "ready" });
     if ($("message").textContent.startsWith("📡 Определяем ваше местоположение.")) say("");
     updateStartAvailability();
+    if (pendingWalkStartMode) {
+      const mode = pendingWalkStartMode;
+      pendingWalkStartMode = null;
+      say("GPS готов. Запускаем подготовку прогулки…");
+      Promise.resolve().then(() => startWalk(mode).catch(() => {}));
+    }
     return true;
   };
   const refreshLocationReadiness = () => {
@@ -746,11 +759,7 @@
   monitorLocationPermission();
   updateLocateButton("loading");
   setInterval(refreshLocationReadiness, LOCATION_REFRESH_INTERVAL_MS);
-  const startupResult = window.WalkStartupResult;
-  delete window.WalkStartupResult;
-  if (startupResult?.state === "ready") handleCurrentLocationSuccess(startupResult.position);
-  else if (startupResult) handleCurrentLocationError(startupResult.error, startupResult.reason);
-  else requestCurrentLocation();
+  requestCurrentLocation();
   $("locationRetry").addEventListener("click", () => {
     latestLocation = null;
     updateLocateButton("loading");
@@ -1201,11 +1210,13 @@
       return;
     }
     if (!locationIsFresh(latestLocation)) {
+      pendingWalkStartMode = mode;
       showLocationState({});
       if (!locationRequestPending) requestCurrentLocation();
-      say("Сначала дождитесь определения местоположения.");
+      say("Ожидаем точную GPS-позицию. Прогулка начнётся автоматически, когда сигнал улучшится.");
       return;
     }
+    pendingWalkStartMode = null;
     selectedMode = mode;
     activeMode = mode;
     expeditionCompletionPending = false;

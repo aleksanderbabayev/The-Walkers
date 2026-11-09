@@ -24,8 +24,24 @@ test("rejects poor accuracy, stale timestamps, and future timestamps", () => {
 test("current-location fixes allow up to 50 m accuracy and expire after 30 seconds", () => {
   assert.equal(Tracking.evaluateLocationPosition(position(48.9, 21.2, now, 50), now).accepted, true);
   assert.equal(Tracking.evaluateLocationPosition(position(48.9, 21.2, now, 50.1), now).reason, "accuracy");
+  const poorFix = Tracking.evaluateLocationPosition(position(48.9, 21.2, now, 89), now);
+  assert.equal(poorFix.accepted, false);
+  assert.equal(poorFix.reason, "accuracy");
+  assert.equal(poorFix.point, undefined);
+  assert.equal(Tracking.evaluateLocationPosition(position(48.9, 21.2, now, 12), now).accepted, true);
   assert.equal(Tracking.evaluateLocationPosition(position(48.9, 21.2, now - 30001, 10), now).reason, "stale");
   assert.equal(Tracking.evaluateLocationPosition(position(48.9, 21.2, now - 30000, 10), now).accepted, true);
+});
+
+test("idle GPS recovers from an inaccurate 89 m fix without accepting it as a route point", () => {
+  const inaccurate = Tracking.evaluateLocationUpdate(position(48.9, 21.2, now, 89), null, now);
+  assert.equal(inaccurate.accepted, false);
+  assert.equal(inaccurate.reason, "accuracy");
+  assert.equal(inaccurate.point, null);
+
+  const accurate = Tracking.evaluateLocationUpdate(position(48.9001, 21.2001, now + 1000, 10), null, now + 1000);
+  assert.equal(accurate.accepted, true);
+  assert.equal(accurate.point.accuracy, 10);
 });
 
 test("idle location keeps a fresh good fix through a rejected fix, then accepts a newer good fix", () => {

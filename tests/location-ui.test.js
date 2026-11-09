@@ -10,21 +10,16 @@ test("location UI distinguishes permission denial without showing technical inst
   assert.equal(denied.action, "Разрешить геолокацию");
 });
 
-test("only an explicit permission denial opens the simplified access screen", () => {
+test("permission denial is shown in the non-blocking GPS notice", () => {
   assert.equal(LocationUi.isPermissionDenied({ code: 1 }), true);
   assert.equal(LocationUi.isPermissionDenied({ code: 2 }), false);
   assert.equal(LocationUi.isPermissionDenied({ code: 3 }), false);
 
   const fs = require("node:fs");
   const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
-  const screen = html.match(/<main id="locationAccessScreen"[\s\S]*?<\/main>/)?.[0];
-  assert.ok(screen);
-  assert.match(screen, /<h1 id="locationAccessTitle">Включите геолокацию<\/h1>/);
-  assert.match(screen, /<p id="locationAccessMessage">Разрешите доступ к геолокации в настройках устройства и браузера и перезагрузите страницу\.<\/p>/);
-  assert.doesNotMatch(screen, /locationAccessRetry|Проверить доступ/);
-  assert.match(screen, /<button id="locationAccessReload" type="button">Перезагрузить страницу<\/button>/);
-  assert.equal((screen.match(/<section class="location-access-card">[\s\S]*?(?=<details)/)?.[0].match(/<(h1|p|button)\b/g) || []).length, 3);
-  assert.match(screen, /<details id="locationDiagnostics" class="location-diagnostics">/);
+  assert.match(html, /id="locationNotice" class="location-notice/);
+  assert.match(html, /id="locationRetry"/);
+  assert.doesNotMatch(html, /locationAccessScreen|location-access-denied/);
 });
 
 test("location UI shows loading, ready, and temporary unavailable states", () => {
@@ -53,21 +48,29 @@ test("weak or stale fixes do not suggest changing location permissions", () => {
   assert.doesNotMatch(stale.message, /разреш/i);
 });
 
-test("walk start is enabled only when storage, draft, and fresh location are ready", () => {
-  const base = { storageReady: true, draftResolved: true, locationFresh: true, busy: false };
+test("walk start request stays available without GPS but requires storage and a resolved draft", () => {
+  const base = { storageReady: true, draftResolved: true, busy: false };
   assert.equal(LocationUi.canStartWalk(base), true);
-  assert.equal(LocationUi.canStartWalk({ ...base, locationFresh: false }), false);
   assert.equal(LocationUi.canStartWalk({ ...base, storageReady: false }), false);
   assert.equal(LocationUi.canStartWalk({ ...base, draftResolved: false }), false);
   assert.equal(LocationUi.canStartWalk({ ...base, busy: true }), false);
+});
+
+test("start waits for accurate GPS and resumes warm-up when a fresh fix arrives", () => {
+  const fs = require("node:fs");
+  const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
+  assert.match(app, /if \(!locationIsFresh\(latestLocation\)\) \{\s*pendingWalkStartMode = mode;/);
+  assert.match(app, /say\("Ожидаем точную GPS-позицию\. Прогулка начнётся автоматически, когда сигнал улучшится\."\)/);
+  assert.match(app, /const mode = pendingWalkStartMode;[\s\S]*?startWalk\(mode\)/);
+  assert.match(app, /await beginRecordingAt\(warmup\.point\)/);
 });
 
 test("active app keeps GPS retry behavior without using the startup access screen", () => {
   const fs = require("node:fs");
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
   assert.match(app, /\$\("locationRetry"\)\.addEventListener\("click"/);
-  assert.match(app, /locationFresh: locationIsFresh\(latestLocation\)/);
   assert.match(app, /LocationUi\.canStartWalk\(/);
+  assert.match(app, /if \(!locationIsFresh\(latestLocation\)\) \{[\s\S]*?pendingWalkStartMode = mode/);
   assert.doesNotMatch(app, /locationAccessRetry|getAccessRetryState|accessRetry|locationAccessScreen|locationAccessReload|location-denied/);
   assert.match(app, /locationPermissionDenied = false;\s*musicControl\.setLocationAllowed\(true\)/);
   assert.match(app, /locationPermissionDenied = true;\s*musicControl\.setLocationAllowed\(false\)/);

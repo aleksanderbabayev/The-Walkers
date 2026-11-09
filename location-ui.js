@@ -43,8 +43,8 @@
       message: "Получаем свежие координаты GPS…", action: ""
     };
   };
-  const canStartWalk = ({ storageReady, draftResolved, locationFresh, busy }) =>
-    Boolean(storageReady && draftResolved && locationFresh && !busy);
+  const canStartWalk = ({ storageReady, draftResolved, busy }) =>
+    Boolean(storageReady && draftResolved && !busy);
   const api = { getLocationState, canStartWalk, isPermissionDenied };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.WalkLocationUi = api;
