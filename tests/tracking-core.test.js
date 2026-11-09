@@ -41,6 +41,30 @@ test("display-only startup accepts fresh weak fixes without relaxing game locati
   assert.equal(Tracking.evaluateDisplayPosition(position(91, 21.2, now, 8), now).reason, "invalid");
 });
 
+test("a fresh 89 m preliminary fix can display before recording", () => {
+  const preliminary = Tracking.evaluateDisplayPosition(position(48.9, 21.2, now, 89), now);
+  assert.equal(preliminary.accepted, true);
+  assert.equal(Tracking.shouldUpdateGpsMarker("preliminary", false), true);
+});
+
+test("rejected active-recording fixes leave the marker in place until an accepted route point arrives", () => {
+  const acceptedStart = point(48.9, 21.2, now - 5000, true, 10);
+  const inaccurate = position(48.9001, 21.2, now - 1000, 36);
+  const rejected = Tracking.evaluatePosition(inaccurate, acceptedStart, now);
+  assert.equal(rejected.accepted, false);
+  assert.equal(Tracking.shouldUpdateGpsMarker("preliminary", true), false);
+  let displayedMarker = acceptedStart;
+  if (Tracking.shouldUpdateGpsMarker("preliminary", true)) displayedMarker = rejected.point;
+  assert.equal(displayedMarker, acceptedStart);
+
+  const nextPosition = position(48.9001, 21.2, now, 10);
+  const accepted = Tracking.evaluatePosition(nextPosition, acceptedStart, now);
+  assert.equal(accepted.accepted, true);
+  assert.equal(Tracking.shouldUpdateGpsMarker("accepted", true), true);
+  if (Tracking.shouldUpdateGpsMarker("accepted", true)) displayedMarker = accepted.point;
+  assert.equal(displayedMarker, accepted.point);
+});
+
 test("idle GPS recovers from an inaccurate 89 m fix without accepting it as a route point", () => {
   const inaccurate = Tracking.evaluateLocationUpdate(position(48.9, 21.2, now, 89), null, now);
   assert.equal(inaccurate.accepted, false);

@@ -35,7 +35,7 @@ test("GPS display uses one reusable Leaflet accuracy circle with radius in meter
   assert.match(app, /accuracyCircle\.setLatLng\(latlng\)\.setRadius\(point\.accuracy\)/);
   assert.match(app, /interactive: false/);
   assert.match(app, /const displayResult = Tracking\.evaluateDisplayPosition\(position, processedAt\)/);
-  assert.match(app, /updateAccuracyDisplay\(displayResult\.point\)/);
+  assert.match(app, /if \(Tracking\.shouldUpdateGpsMarker\("preliminary", recordingActive\)\) updateAccuracyDisplay\(displayResult\.point\);\s*else updateAccuracyCircle\(displayResult\.point\)/);
 });
 
 test("GPS accuracy circle is dismissed once the existing warm-up stability criteria pass", () => {
@@ -44,6 +44,14 @@ test("GPS accuracy circle is dismissed once the existing warm-up stability crite
   assert.match(app, /if \(accuracyCircleDismissed\) return/);
   assert.match(app, /const warmup = gpsWarmup\.add\(position, Date\.now\(\)\)/);
   assert.equal((app.match(/accuracyCircleDismissed = false/g) || []).length, 1, "the flag is initialized once and never reset");
+});
+
+test("active recording moves the GPS marker only after accepted route filtering", () => {
+  const processing = app.slice(app.indexOf("const processPosition"), app.indexOf("const receivePosition"));
+  assert.match(processing, /Tracking\.shouldUpdateGpsMarker\("preliminary", recordingActive\)/);
+  assert.match(processing, /const result = bufferingInitial\s*\?[\s\S]*?positionFilter\.evaluate\(position, points\.at\(-1\), Date\.now\(\)\)/);
+  assert.match(processing, /if \(!result\.accepted\) \{[\s\S]*?return;[\s\S]*?rememberLocation\(lastValidatedPoint\);\s*updateLocationMarker\(lastValidatedPoint\)/);
+  assert.match(processing, /rememberLocation\(result\.point\);\s*drawCurrent\(\); updateDistance\(\); updateLocationMarker\(result\.point\)/);
 });
 
 test("startup retry and permission errors produce a finite, actionable state", () => {

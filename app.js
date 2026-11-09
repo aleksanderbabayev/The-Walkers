@@ -143,22 +143,26 @@
     if (accuracyCircle) map.removeLayer(accuracyCircle);
     accuracyCircle = null;
   };
-  const updateAccuracyDisplay = (point) => {
-    const latlng = [point.lat, point.lng];
-    if (currentLocationMarker) currentLocationMarker.setLatLng(latlng);
-    else currentLocationMarker = L.circleMarker(latlng, { radius: 8, color: "#fff", weight: 3, fillColor: "#2877df", fillOpacity: 1 }).addTo(map);
+  const updateAccuracyCircle = (point) => {
     if (accuracyCircleDismissed) return;
+    const latlng = [point.lat, point.lng];
     if (accuracyCircle) accuracyCircle.setLatLng(latlng).setRadius(point.accuracy);
     else accuracyCircle = L.circle(latlng, {
       radius: point.accuracy, color: "#2877df", weight: 1, fillColor: "#2877df", fillOpacity: 0.14, interactive: false
     }).addTo(map);
-    currentLocationMarker.bringToFront();
     const stable = startupGpsStabilizer.add({ timestamp: point.timestamp, coords: { latitude: point.lat, longitude: point.lng, accuracy: point.accuracy } }, Date.now()).stable;
     if (stable) {
       accuracyCircleDismissed = true;
       map.removeLayer(accuracyCircle);
       accuracyCircle = null;
     }
+  };
+  const updateAccuracyDisplay = (point) => {
+    const latlng = [point.lat, point.lng];
+    if (currentLocationMarker) currentLocationMarker.setLatLng(latlng);
+    else currentLocationMarker = L.circleMarker(latlng, { radius: 8, color: "#fff", weight: 3, fillColor: "#2877df", fillOpacity: 1 }).addTo(map);
+    updateAccuracyCircle(point);
+    currentLocationMarker.bringToFront();
   };
   const completeLocationStartup = (point) => {
     if (startupPositionReady) return;
@@ -985,7 +989,8 @@
     const processedAt = Date.now();
     const displayResult = Tracking.evaluateDisplayPosition(position, processedAt);
     if (displayResult.accepted) {
-      updateAccuracyDisplay(displayResult.point);
+      if (Tracking.shouldUpdateGpsMarker("preliminary", recordingActive)) updateAccuracyDisplay(displayResult.point);
+      else updateAccuracyCircle(displayResult.point);
       completeLocationStartup(displayResult.point);
     } else if (!startupPositionReady) {
       const details = LocationUi.getLocationState({ reason: displayResult.reason, accuracy: position.coords?.accuracy });

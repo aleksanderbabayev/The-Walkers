@@ -80,6 +80,7 @@
   const evaluateDisplayPosition = (position, now = Date.now()) => evaluatePosition(position, null, now, {
     ...DEFAULTS, maxAccuracyMeters: Number.MAX_VALUE, maxAgeMs: LOCATION_DEFAULTS.maxAgeMs
   });
+  const shouldUpdateGpsMarker = (source, recordingActive) => source === "accepted" || (source === "preliminary" && !recordingActive);
   const isLocationFresh = (point, now = Date.now()) => Boolean(point
     && point.accuracy <= LOCATION_DEFAULTS.maxAccuracyMeters
     && now - point.timestamp >= -DEFAULTS.futureToleranceMs
@@ -274,5 +275,5 @@
     return { start, startWatch, stopAutosave, stop };
   };
 
-  return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, distanceMeters, evaluatePosition, evaluateDisplayPosition, evaluateLocationPosition, isLocationFresh, evaluateLocationUpdate, createPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, shouldDisplayWalkOnMap, createGpsServices };
+  return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, distanceMeters, evaluatePosition, evaluateDisplayPosition, shouldUpdateGpsMarker, evaluateLocationPosition, isLocationFresh, evaluateLocationUpdate, createPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, shouldDisplayWalkOnMap, createGpsServices };
 });
