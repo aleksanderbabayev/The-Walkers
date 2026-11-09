@@ -56,12 +56,12 @@ test("walk start request stays available without GPS but requires storage and a 
   assert.equal(LocationUi.canStartWalk({ ...base, busy: true }), false);
 });
 
-test("start waits for accurate GPS and resumes warm-up when a fresh fix arrives", () => {
+test("start begins GPS warm-up without a prior location and never schedules a hidden delayed start", () => {
   const fs = require("node:fs");
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
-  assert.match(app, /if \(!locationIsFresh\(latestLocation\)\) \{\s*pendingWalkStartMode = mode;/);
-  assert.match(app, /say\("Ожидаем точную GPS-позицию\. Прогулка начнётся автоматически, когда сигнал улучшится\."\)/);
-  assert.match(app, /const mode = pendingWalkStartMode;[\s\S]*?startWalk\(mode\)/);
+  assert.doesNotMatch(app, /pendingWalkStartMode/);
+  assert.match(app, /const startWalk = async \(mode = selectedMode\) => \{[\s\S]*?warmingUp = true; warmupStartedAt = startPressedAt/);
+  assert.match(app, /const warmup = gpsWarmup\.add\(position, Date\.now\(\)\)/);
   assert.match(app, /await beginRecordingAt\(warmup\.point\)/);
 });
 
@@ -70,7 +70,7 @@ test("active app keeps GPS retry behavior without using the startup access scree
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
   assert.match(app, /\$\("locationRetry"\)\.addEventListener\("click"/);
   assert.match(app, /LocationUi\.canStartWalk\(/);
-  assert.match(app, /if \(!locationIsFresh\(latestLocation\)\) \{[\s\S]*?pendingWalkStartMode = mode/);
+  assert.doesNotMatch(app, /pendingWalkStartMode/);
   assert.doesNotMatch(app, /locationAccessRetry|getAccessRetryState|accessRetry|locationAccessScreen|locationAccessReload|location-denied/);
   assert.match(app, /locationPermissionDenied = false;\s*musicControl\.setLocationAllowed\(true\)/);
   assert.match(app, /locationPermissionDenied = true;\s*musicControl\.setLocationAllowed\(false\)/);

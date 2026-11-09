@@ -33,6 +33,14 @@ test("current-location fixes allow up to 50 m accuracy and expire after 30 secon
   assert.equal(Tracking.evaluateLocationPosition(position(48.9, 21.2, now - 30000, 10), now).accepted, true);
 });
 
+test("display-only startup accepts fresh weak fixes without relaxing game location accuracy", () => {
+  const weakFix = position(48.9, 21.2, now, 89);
+  assert.equal(Tracking.evaluateDisplayPosition(weakFix, now).accepted, true);
+  assert.equal(Tracking.evaluateLocationPosition(weakFix, now).reason, "accuracy");
+  assert.equal(Tracking.evaluateDisplayPosition(position(48.9, 21.2, now - 30001, 89), now).reason, "stale");
+  assert.equal(Tracking.evaluateDisplayPosition(position(91, 21.2, now, 8), now).reason, "invalid");
+});
+
 test("idle GPS recovers from an inaccurate 89 m fix without accepting it as a route point", () => {
   const inaccurate = Tracking.evaluateLocationUpdate(position(48.9, 21.2, now, 89), null, now);
   assert.equal(inaccurate.accepted, false);

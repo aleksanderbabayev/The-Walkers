@@ -16,6 +16,7 @@ body { margin: 0; min-height: 100vh; }
 .location-access-card h1 { margin: 0 0 12px; color: #26372a; font-size: clamp(22px, 6vw, 28px); line-height: 1.2; }
 .location-access-card p { margin: 0 0 22px; color: #5e6a60; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
 .location-access-card button { width: 100%; min-height: 48px; padding: 10px 16px; border: 0; border-radius: 14px; background: linear-gradient(180deg, #4389ed, #2868c3); color: #fff; font: inherit; font-weight: 700; box-shadow: 0 3px 0 #174b9b, 0 6px 14px #18211c20; cursor: pointer; }
+.location-access-card button[hidden] { display: none; }
 .location-access-card button:active { transform: translateY(2px); filter: brightness(.94); }
 .location-diagnostics { margin-top: 18px; padding-top: 14px; border-top: 1px solid #e9ece6; color: #3e4a41; }
 .location-diagnostics summary { min-height: 44px; display: flex; align-items: center; color: #59665b; font-size: 13px; font-weight: 650; cursor: pointer; }

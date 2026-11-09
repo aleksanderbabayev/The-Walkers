@@ -107,7 +107,7 @@
   }).addTo(map);
 
   let db, storageReady = false, draftResolved = false, starting = false, finishing = false, cancelling = false;
-  let selectedMode = "territory", activeMode = "territory", expeditionTarget = null, pendingWalkStartMode = null;
+  let selectedMode = "territory", activeMode = "territory", expeditionTarget = null;
   let targetMethod = "manual", expeditionDistanceMeters = null, expeditionCompletionPending = false;
   let recordingActive = false, warmingUp = false, points = [], distanceMetersTotal = 0, currentLines = [], savedLayers = [], stopwatchTimer = null, warmupWaitTimer = null, warmupStartedAt = null, startedAt = null;
   let walksById = new Map();
@@ -117,8 +117,9 @@
   let warmupDiagnosticPrevious = null, pendingDiagnosticPrevious = null, pendingDiagnosticEvents = [];
   const positionFilter = Tracking.createPositionFilter();
   const gpsWarmup = Tracking.createGpsWarmup();
+  const startupGpsStabilizer = Tracking.createGpsWarmup();
   const initialRouteBuffer = Tracking.createInitialRouteBuffer();
-  let currentLocationMarker = null;
+  let currentLocationMarker = null, accuracyCircle = null, startupPositionReady = false, accuracyCircleDismissed = false;
   let routeStartMarker = null;
   const expeditionMarkers = ExpeditionMarkers.createExpeditionMarkers({ map, leaflet: L });
   let locationState = "loading", latestLocation = null, locationRequestPending = false;
@@ -139,6 +140,42 @@
   const clearLocationMarker = () => {
     if (currentLocationMarker) map.removeLayer(currentLocationMarker);
     currentLocationMarker = null;
+    if (accuracyCircle) map.removeLayer(accuracyCircle);
+    accuracyCircle = null;
+  };
+  const updateAccuracyDisplay = (point) => {
+    const latlng = [point.lat, point.lng];
+    if (currentLocationMarker) currentLocationMarker.setLatLng(latlng);
+    else currentLocationMarker = L.circleMarker(latlng, { radius: 8, color: "#fff", weight: 3, fillColor: "#2877df", fillOpacity: 1 }).addTo(map);
+    if (accuracyCircleDismissed) return;
+    if (accuracyCircle) accuracyCircle.setLatLng(latlng).setRadius(point.accuracy);
+    else accuracyCircle = L.circle(latlng, {
+      radius: point.accuracy, color: "#2877df", weight: 1, fillColor: "#2877df", fillOpacity: 0.14, interactive: false
+    }).addTo(map);
+    currentLocationMarker.bringToFront();
+    const stable = startupGpsStabilizer.add({ timestamp: point.timestamp, coords: { latitude: point.lat, longitude: point.lng, accuracy: point.accuracy } }, Date.now()).stable;
+    if (stable) {
+      accuracyCircleDismissed = true;
+      map.removeLayer(accuracyCircle);
+      accuracyCircle = null;
+    }
+  };
+  const completeLocationStartup = (point) => {
+    if (startupPositionReady) return;
+    startupPositionReady = true;
+    mapInitialPositionSet = true;
+    map.setView([point.lat, point.lng], 15);
+    map.invalidateSize();
+    $("locationStartupScreen").hidden = true;
+  };
+  const showLocationStartupError = (details) => {
+    if (startupPositionReady) return;
+    $("locationStartupTitle").textContent = details.title;
+    $("locationStartupMessage").textContent = details.message;
+    const retry = $("locationStartupRetry");
+    retry.hidden = !details.action;
+    retry.textContent = details.action || "Попробовать снова";
+    $("locationStartupScreen").hidden = false;
   };
   const updateRouteStartMarker = (point) => {
     if (!point) return;
@@ -300,14 +337,12 @@
   });
   $("territoryMode").addEventListener("click", () => {
     if (recordingActive || warmingUp || starting || cancelling) return;
-    pendingWalkStartMode = null;
     selectedMode = "territory";
     expeditionTarget = null; expeditionDistanceMeters = null; expeditionCompletionPending = false;
     updateExpeditionTargetMarker(null); updateModeSelection();
   });
   $("expeditionMode").addEventListener("click", () => {
     if (recordingActive || warmingUp || starting || cancelling) return;
-    pendingWalkStartMode = null;
     selectedMode = "expedition";
     targetMethod = "manual";
     expeditionTarget = null; expeditionDistanceMeters = null;
@@ -584,23 +619,7 @@
     noteLocationRequest("success");
     locationPermissionDenied = false;
     musicControl.setLocationAllowed(true);
-    const result = Tracking.evaluateLocationPosition(position, Date.now());
-    if (!result.accepted) {
-      if (locationIsFresh(latestLocation)) return;
-      latestLocation = null;
-      clearLocationMarker();
-      updateLocateButton("error");
-      showLocationState({ reason: result.reason, accuracy: position.coords.accuracy });
-      return;
-    }
-    if (recordingActive || warmingUp || starting) {
-      updateLocationNotice(LocationUi.getLocationState({ reason: "ready" }));
-      return;
-    }
-    if (rememberLocation(result.point)) {
-      updateLocationMarker(result.point);
-      mapFollow.centerOn(result.point);
-    }
+    receivePosition(position);
   };
   const handleCurrentLocationError = (error, reason) => {
     if (!LocationUi.isPermissionDenied(error) && locationIsFresh(latestLocation)) return;
@@ -683,12 +702,6 @@
     showLocationState({ reason: "ready" });
     if ($("message").textContent.startsWith("📡 Определяем ваше местоположение.")) say("");
     updateStartAvailability();
-    if (pendingWalkStartMode) {
-      const mode = pendingWalkStartMode;
-      pendingWalkStartMode = null;
-      say("GPS готов. Запускаем подготовку прогулки…");
-      Promise.resolve().then(() => startWalk(mode).catch(() => {}));
-    }
     return true;
   };
   const refreshLocationReadiness = () => {
@@ -707,6 +720,8 @@
     if (locationState === "loading" && !locationRequestPending && Date.now() - locationWaitStartedAt >= LOCATION_WAIT_TIMEOUT_MS) {
       updateLocateButton("error");
       showLocationState({ error: { code: 3 } });
+      const details = LocationUi.getLocationState({ error: { code: 3 } });
+      showLocationStartupError(details);
     }
   };
   const handleLocationResume = () => {
@@ -746,6 +761,11 @@
           latestLocation = null;
           updateLocateButton("error");
           showLocationState({ error: { code: 1 } });
+          showLocationStartupError({
+            title: "Геолокация недоступна",
+            message: "Доступ запрещён. Разрешите геолокацию для этого сайта в настройках браузера, затем попробуйте снова.",
+            action: "Проверить снова"
+          });
         } else if (locationPermissionDenied || (permission.state === "granted" && !wasAllowed) || (wasAllowed && permission.state !== "granted")) requestCurrentLocation();
       };
       if (permission.addEventListener) permission.addEventListener("change", updatePermission);
@@ -757,13 +777,20 @@
     }
   };
   monitorLocationPermission();
-  updateLocateButton("loading");
   setInterval(refreshLocationReadiness, LOCATION_REFRESH_INTERVAL_MS);
-  requestCurrentLocation();
+  updateLocateButton("loading");
   $("locationRetry").addEventListener("click", () => {
     latestLocation = null;
     updateLocateButton("loading");
     showLocationState({});
+    requestCurrentLocation();
+  });
+  $("locationStartupRetry").addEventListener("click", () => {
+    locationPermissionDenied = false;
+    latestLocation = null;
+    updateLocateButton("loading");
+    showLocationState({});
+    showLocationStartupError({ title: "Определяем местоположение…", message: "Повторно запрашиваем свежие координаты GPS.", action: "" });
     requestCurrentLocation();
   });
   const formatElapsed = (milliseconds) => {
@@ -956,13 +983,23 @@
   const processPosition = async (position) => {
     if (finishing || cancelling) return;
     const processedAt = Date.now();
+    const displayResult = Tracking.evaluateDisplayPosition(position, processedAt);
+    if (displayResult.accepted) {
+      updateAccuracyDisplay(displayResult.point);
+      completeLocationStartup(displayResult.point);
+    } else if (!startupPositionReady) {
+      const details = LocationUi.getLocationState({ reason: displayResult.reason, accuracy: position.coords?.accuracy });
+      showLocationStartupError({ ...details, action: details.action || "" });
+    }
     if (!warmingUp && !recordingActive) {
       const result = Tracking.evaluateLocationUpdate(position, latestLocation, processedAt);
       if (!result.accepted) {
-        if (result.keepPrevious) return;
-        latestLocation = null;
-        clearLocationMarker();
-        updateLocateButton("error");
+        if (result.keepPrevious) {
+          if (result.reason === "accuracy") showLocationState({ reason: "accuracy", accuracy: position.coords?.accuracy });
+          return;
+        }
+        latestLocation = result.point;
+        updateLocateButton(result.reason === "accuracy" ? "error" : "loading");
         showLocationState({ reason: result.reason, accuracy: position.coords?.accuracy });
         updateStartAvailability();
         return;
@@ -1131,6 +1168,10 @@
     if (warmingUp || recordingActive) cancelPendingLocationRequest();
     if (recordingActive && activeMode === "expedition") setExpeditionCompassStale();
     expeditionLine.hide();
+    if (accuracyCircle) {
+      map.removeLayer(accuracyCircle);
+      accuracyCircle = null;
+    }
     latestLocation = null;
     updateLocateButton("error");
     if (!warmingUp && !recordingActive) clearLocationMarker();
@@ -1140,6 +1181,10 @@
       musicControl.setLocationAllowed(false);
     }
     showLocationState({ error });
+    const startupDetails = LocationUi.getLocationState({ error });
+    showLocationStartupError({ ...startupDetails, message: LocationUi.isPermissionDenied(error)
+      ? "Доступ запрещён. Разрешите геолокацию для этого сайта в настройках браузера, затем попробуйте снова."
+      : startupDetails.message });
     if (cancelling) return;
     if (warmingUp) {
       gpsWarmup.reset();
@@ -1209,21 +1254,13 @@
       say("Сначала выберите цель экспедиции на карте или создайте случайную цель.");
       return;
     }
-    if (!locationIsFresh(latestLocation)) {
-      pendingWalkStartMode = mode;
-      showLocationState({});
-      if (!locationRequestPending) requestCurrentLocation();
-      say("Ожидаем точную GPS-позицию. Прогулка начнётся автоматически, когда сигнал улучшится.");
-      return;
-    }
-    pendingWalkStartMode = null;
     selectedMode = mode;
     activeMode = mode;
     expeditionCompletionPending = false;
-    expeditionDistanceMeters = mode === "expedition" ? Tracking.distanceMeters(latestLocation, expeditionTarget) : null;
+    expeditionDistanceMeters = mode === "expedition" && locationIsFresh(latestLocation) ? Tracking.distanceMeters(latestLocation, expeditionTarget) : null;
     positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset();
     expeditionLine.hide();
-    latestLocation = null; updateLocateButton("loading"); clearLocationMarker(); clearRouteStartMarker();
+    latestLocation = null; updateLocateButton("loading"); clearRouteStartMarker();
     showLocationState({});
     starting = true; setRecording(false);
     stopWarmupWaitTimer(); warmupStartedAt = null;

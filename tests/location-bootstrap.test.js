@@ -1,55 +1,84 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const Tracking = require("../tracking-core.js");
+const LocationUi = fs.readFileSync(require.resolve("../location-ui.js"), "utf8");
 
 const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
 const bootstrap = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
 const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
 const css = fs.readFileSync(require.resolve("../styles.css"), "utf8");
+const now = 1_800_000_000_000;
+const position = (lat, lng, timestamp = now, accuracy = 89) => ({ timestamp, coords: { latitude: lat, longitude: lng, accuracy } });
 
-test("application scripts load without waiting for a GPS result", () => {
-  assert.match(bootstrap, /const startApp = async \(\) => \{[\s\S]*?for \(const source of appScripts\) await loadScript\(source\)/);
-  assert.match(bootstrap, /startApp\(\);/);
-  assert.doesNotMatch(bootstrap, /geolocation|permissions|locationStartupRetry|createLocationStartupGate/i);
-  assert.match(bootstrap, /"app\.js\?v=0\.2\.7"/);
+test("startup screen covers the map until the first fresh usable GPS coordinate", () => {
+  assert.match(html, /id="locationStartupScreen" class="location-access-screen" aria-live="polite">/);
+  assert.match(html, /Определяем местоположение/);
+  assert.match(html, /id="locationStartupRetry"/);
+  assert.match(app, /const completeLocationStartup = \(point\) => \{[\s\S]*?map\.setView\(\[point\.lat, point\.lng\], 15\);[\s\S]*?locationStartupScreen"\)\.hidden = true/);
+  assert.match(app, /const onLocationError = \(error\) => \{[\s\S]*?showLocationStartupError/);
+  assert.match(css, /\.location-access-screen \{ position: fixed; z-index: 5000/);
 });
 
-test("map and main UI are available without GPS and GPS screens are not blocking", () => {
-  assert.match(html, /<body>/);
-  assert.match(html, /id="locationStartupScreen"[^>]+hidden/);
-  assert.doesNotMatch(html, /locationAccessScreen|location-pending|location-access-denied/);
-  assert.doesNotMatch(css, /body\.location-pending|body\.location-access-denied/);
-  assert.match(html, /id="map" aria-label="Карта"/);
+test("display validation allows a fresh 89 m fix but rejects stale, invalid, or malformed coordinates", () => {
+  const result = Tracking.evaluateDisplayPosition(position(48.9, 21.2), now);
+  assert.equal(result.accepted, true);
+  assert.equal(result.point.accuracy, 89);
+  assert.equal(Tracking.evaluateDisplayPosition(position(48.9, 21.2, now - 30001), now).reason, "stale");
+  assert.equal(Tracking.evaluateDisplayPosition(position(91, 21.2), now).reason, "invalid");
+  assert.equal(Tracking.evaluateDisplayPosition(position(48.9, 21.2, now, 0), now).reason, "accuracy");
+  assert.equal(Tracking.evaluateLocationPosition(position(48.9, 21.2), now).reason, "accuracy", "display acceptance does not relax game GPS filtering");
+});
+
+test("GPS display uses one reusable Leaflet accuracy circle with radius in meters", () => {
+  assert.match(app, /L\.circle\(latlng,\s*\{\s*radius: point\.accuracy/);
+  assert.match(app, /accuracyCircle\.setLatLng\(latlng\)\.setRadius\(point\.accuracy\)/);
+  assert.match(app, /interactive: false/);
+  assert.match(app, /const displayResult = Tracking\.evaluateDisplayPosition\(position, processedAt\)/);
+  assert.match(app, /updateAccuracyDisplay\(displayResult\.point\)/);
+});
+
+test("GPS accuracy circle is dismissed once the existing warm-up stability criteria pass", () => {
+  assert.match(app, /const startupGpsStabilizer = Tracking\.createGpsWarmup\(\)/);
+  assert.match(app, /if \(stable\) \{\s*accuracyCircleDismissed = true;\s*map\.removeLayer\(accuracyCircle\)/);
+  assert.match(app, /if \(accuracyCircleDismissed\) return/);
+  assert.match(app, /const warmup = gpsWarmup\.add\(position, Date\.now\(\)\)/);
+  assert.equal((app.match(/accuracyCircleDismissed = false/g) || []).length, 1, "the flag is initialized once and never reset");
+});
+
+test("startup retry and permission errors produce a finite, actionable state", () => {
+  assert.match(app, /\$\("locationStartupRetry"\)\.addEventListener\("click"/);
+  assert.match(app, /Доступ запрещён\. Разрешите геолокацию для этого сайта в настройках браузера/);
+  assert.match(app, /const LOCATION_WAIT_TIMEOUT_MS = 20000/);
+  assert.match(app, /showLocationStartupError\(details\);/);
+  assert.match(LocationUi, /action: "Попробовать снова"/);
+});
+
+test("initial map center comes from first usable GPS before saved history can set focus", () => {
+  assert.match(app, /const completeLocationStartup = \(point\) => \{[\s\S]*?map\.setView\(\[point\.lat, point\.lng\], 15\)/);
+  assert.match(app, /const gpsServices = Tracking\.createGpsServices\([\s\S]*?onPosition: receivePosition/);
+  assert.match(app, /try \{ gpsServices\.startWatch\(\); \}/);
+  assert.doesNotMatch(app, /pendingWalkStartMode/);
+});
+
+test("weak initial location remains display-only and Start enters existing warm-up", () => {
+  const startWalk = app.match(/const startWalk = async \(mode = selectedMode\) => \{([\s\S]*?)\n  \};/)?.[1];
+  assert.ok(startWalk);
+  assert.doesNotMatch(startWalk, /locationIsFresh\(latestLocation\)\) \{[\s\S]*?return;/);
+  assert.match(startWalk, /warmingUp = true; warmupStartedAt = startPressedAt/);
+  assert.match(startWalk, /startTrackingServices\(\)/);
+  assert.match(app, /const result = Tracking\.evaluateLocationUpdate\(position, latestLocation, processedAt\)/);
+  assert.match(app, /const warmup = gpsWarmup\.add\(position, Date\.now\(\)\)/);
+  assert.match(app, /const freshCandidate = gpsWarmup\.manualStartPoint\(Date\.now\(\), Date\.now\(\) - warmupStartedAt\)/);
+  assert.match(app, /if \(!confirm\(`Точность GPS сейчас/);
+  assert.match(app, /await beginRecordingAt\(warmup\.point\)/);
+  assert.doesNotMatch(app, /pendingWalkStartMode/);
+});
+
+test("history and expedition setup remain available after successful startup", () => {
   assert.match(html, /id="walksDrawer"/);
   assert.match(html, /id="expeditionSetup"/);
-  assert.match(html, /id="locationNotice"/);
-});
-
-test("map uses a neutral fallback without GPS and centers on the first fresh fix only if untouched", () => {
-  assert.match(app, /\.setView\(\[0, 0\], 2\)/);
-  assert.match(app, /map\.on\("dragstart zoomstart click"/);
-  assert.match(app, /if \(!mapInitialPositionSet\) \{\s*mapInitialPositionSet = true;\s*if \(!mapViewInteracted\) map\.setView\(\[point\.lat, point\.lng\], 15\);/);
-});
-
-test("history loads independently of GPS and geolocation starts only after the app loads", () => {
-  assert.match(app, /requestCurrentLocation\(\);/);
   assert.match(app, /const redrawSaved = async \(\{ focusWalkId = null \} = \{\}\)/);
   assert.match(app, /const walks = await WalkStorage\.readWalks\(db\)/);
-  assert.match(app, /try \{ gpsServices\.startWatch\(\); \}\s*catch/);
-  assert.match(app, /const requestCurrentLocation = \(\) =>/);
-});
-
-test("a start request waits for fresh GPS and resumes the existing warm-up after recovery", () => {
-  assert.match(app, /if \(!locationIsFresh\(latestLocation\)\) \{\s*pendingWalkStartMode = mode;[\s\S]*?Ожидаем точную GPS-позицию/);
-  assert.match(app, /if \(pendingWalkStartMode\) \{[\s\S]*?startWalk\(mode\)/);
-  assert.match(app, /warmingUp = true; warmupStartedAt = startPressedAt;/);
-  assert.match(app, /await beginRecordingAt\(warmup\.point\)/);
-  assert.match(app, /if \(!result\.accepted\) \{[\s\S]*?return;/);
-});
-
-test("location diagnostics remain available in the main interface", () => {
-  assert.match(html, /<details id="locationDiagnostics" class="location-diagnostics">/);
-  assert.match(html, /id="locationDiagnosticsFields"/);
-  assert.match(html, /id="copyLocationDiagnostics"/);
-  assert.match(bootstrap, /locationStartupScreen/);
+  assert.match(app, /if \(mode === "expedition" && !expeditionTarget\)/);
 });
