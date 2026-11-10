@@ -130,6 +130,40 @@ test("mobile primary actions are actually visible over a full-height map at requ
       return result.result.value;
     };
     await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+    await evaluate(`(() => {
+      const styles = document.createElement("style");
+      styles.textContent = "*,*::before,*::after{transition:none!important;animation:none!important}.leaflet-control-container{position:absolute;inset:0;z-index:800;pointer-events:none}.leaflet-top,.leaflet-bottom{position:absolute;z-index:800;pointer-events:none}.leaflet-top{top:0}.leaflet-right{right:0}.leaflet-bottom{bottom:0}.leaflet-control{float:left;clear:both;margin:10px;pointer-events:auto}.leaflet-control-zoom a{display:block;box-sizing:border-box;text-align:center;background:#fff;border:1px solid #bbb;color:#333;text-decoration:none}.leaflet-control-rotate a{display:grid;place-items:center;box-sizing:border-box;background:#fff;border:1px solid #bbb;color:#333;text-decoration:none}";
+      document.head.append(styles);
+      const container = document.createElement("div");
+      container.className = "leaflet-control-container";
+      const topRight = document.createElement("div");
+      topRight.className = "leaflet-top leaflet-right";
+      const rotate = document.createElement("div");
+      rotate.className = "leaflet-control leaflet-control-rotate";
+      const compass = document.createElement("a");
+      compass.href = "#north";
+      compass.setAttribute("aria-label", "Повернуть карту на север");
+      compass.textContent = "N";
+      rotate.append(compass);
+      topRight.append(rotate);
+      const bottomRight = document.createElement("div");
+      bottomRight.className = "leaflet-bottom leaflet-right";
+      const zoom = document.createElement("div");
+      zoom.className = "leaflet-control leaflet-control-zoom leaflet-bar";
+      for (const [direction, label] of [["in", "Увеличить масштаб"], ["out", "Уменьшить масштаб"]]) {
+        const button = document.createElement("a");
+        button.href = "#zoom-" + direction;
+        button.className = "leaflet-control-zoom-" + direction;
+        button.setAttribute("role", "button");
+        button.setAttribute("aria-label", label);
+        button.textContent = direction === "in" ? "+" : "−";
+        zoom.append(button);
+      }
+      bottomRight.append(zoom);
+      container.append(topRight, bottomRight);
+      document.getElementById("map").append(container);
+      return true;
+    })()`);
 
     const viewports = [[320, 568], [360, 640], [375, 667], [390, 844], [375, 500]];
     const stateScript = (state) => `(() => {
@@ -184,6 +218,12 @@ test("mobile primary actions are actually visible over a full-height map at requ
             return { id, hidden: element.hidden, displayed: style.display !== "none" && style.visibility !== "hidden", top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, hostTop: hostRect.top, hostBottom: hostRect.bottom };
           });
           const mapLocate = document.getElementById("locate").getBoundingClientRect();
+          const zoomButtons = [...document.querySelectorAll(".leaflet-control-zoom a")].map((element) => {
+            const rect = element.getBoundingClientRect();
+            const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            return { label: element.getAttribute("aria-label"), left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, displayed: getComputedStyle(element).display !== "none" && getComputedStyle(element).visibility !== "hidden", hit: Boolean(hit && (hit === element || element.contains(hit))), hitTarget: hit?.className || hit?.tagName };
+          });
+          const compassRect = document.querySelector(".leaflet-control-rotate a").getBoundingClientRect();
           const modeButtons = [...document.querySelectorAll(".mode-selector button, .expeditionMethods button")].map((element) => {
             const rect = element.getBoundingClientRect();
             return { id: element.id, hidden: element.hidden, displayed: getComputedStyle(element).display !== "none", top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
@@ -199,7 +239,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
             const zIndex = getComputedStyle(element).zIndex;
             return zIndex === "auto" ? 0 : Number(zIndex);
           };
-          return { mapHeight: map.height, viewportHeight: innerHeight, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height }, startup: { hidden: startupScreen.hidden, top: startupRect.top, left: startupRect.left, right: startupRect.right, bottom: startupRect.bottom, background: getComputedStyle(startupScreen).backgroundColor, stackingLevel: getStackingLevel(startupScreen), mapStackingLevel: getStackingLevel(mapElement), probeIsBlocked: Boolean(mapProbe && startupScreen.contains(mapProbe)), probeReachesMap: Boolean(mapProbe && mapElement.contains(mapProbe)), underlyingProbeReachesMap: Boolean(underlyingProbe && mapElement.contains(underlyingProbe)) } };
+          return { mapHeight: map.height, viewportHeight: innerHeight, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height, left: mapLocate.left, right: mapLocate.right }, zoomButtons, compass: { top: compassRect.top, bottom: compassRect.bottom, left: compassRect.left, right: compassRect.right }, panel: { top: panel.top, bottom: panel.bottom, left: panel.left, right: panel.right }, startup: { hidden: startupScreen.hidden, top: startupRect.top, left: startupRect.left, right: startupRect.right, bottom: startupRect.bottom, background: getComputedStyle(startupScreen).backgroundColor, stackingLevel: getStackingLevel(startupScreen), mapStackingLevel: getStackingLevel(mapElement), probeIsBlocked: Boolean(mapProbe && startupScreen.contains(mapProbe)), probeReachesMap: Boolean(mapProbe && mapElement.contains(mapProbe)), underlyingProbeReachesMap: Boolean(underlyingProbe && mapElement.contains(underlyingProbe)) } };
         })()`);
         assert.ok(Math.abs(result.mapHeight - baselineMapHeight) < 1, `${width}x${height} ${scenario.name}: controls changed map height`);
         assert.ok(result.scrollHeight <= result.viewportHeight + 1, `${width}x${height} ${scenario.name}: page gained vertical scroll`);
@@ -215,6 +255,19 @@ test("mobile primary actions are actually visible over a full-height map at requ
           assert.equal(result.startup.probeReachesMap, true, `${width}x${height} ${scenario.name}: map is visible after GPS gate closes`);
         }
         assert.ok(result.locate.top >= 0 && result.locate.bottom <= result.viewportHeight + 1 && result.locate.height >= 44, `${width}x${height} ${scenario.name}: map control is accessible`);
+        if (!scenario.state.startup) {
+          assert.equal(result.zoomButtons.length, 2, `${width}x${height} ${scenario.name}: both Leaflet zoom buttons are present`);
+          for (const zoomButton of result.zoomButtons) {
+            assert.equal(zoomButton.displayed, true, `${width}x${height} ${scenario.name}: ${zoomButton.label} is displayed`);
+            assert.equal(zoomButton.hit, true, `${width}x${height} ${scenario.name}: ${zoomButton.label} receives pointer hit-testing; target=${zoomButton.hitTarget}, rect=${zoomButton.left},${zoomButton.top},${zoomButton.width},${zoomButton.height}`);
+            assert.ok(zoomButton.width >= 44 && zoomButton.height >= 44, `${width}x${height} ${scenario.name}: ${zoomButton.label} is at least 44x44 px`);
+            assert.ok(zoomButton.left >= 0 && zoomButton.right <= width && zoomButton.top >= 0 && zoomButton.bottom <= height, `${width}x${height} ${scenario.name}: ${zoomButton.label} is inside the screen`);
+            assert.ok(zoomButton.right >= width - 60, `${width}x${height} ${scenario.name}: ${zoomButton.label} is on the right side of the map`);
+            assert.ok(zoomButton.bottom <= result.compass.top || zoomButton.top >= result.compass.bottom, `${width}x${height} ${scenario.name}: ${zoomButton.label} does not overlap the compass`);
+            assert.ok(zoomButton.bottom <= result.locate.top || zoomButton.top >= result.locate.bottom || zoomButton.right <= result.locate.left || zoomButton.left >= result.locate.right, `${width}x${height} ${scenario.name}: ${zoomButton.label} does not overlap geolocation`);
+            assert.ok(zoomButton.bottom <= result.panel.top || zoomButton.top >= result.panel.bottom || zoomButton.right <= result.panel.left || zoomButton.left >= result.panel.right, `${width}x${height} ${scenario.name}: ${zoomButton.label} does not overlap the walk panel`);
+          }
+        }
         for (const button of result.modeButtons) {
           assert.ok(button.height >= 44 && button.top >= 0 && button.bottom <= result.viewportHeight + 1, `${width}x${height} ${scenario.name}: #${button.id} mode control is visible and at least 44px high`);
         }
