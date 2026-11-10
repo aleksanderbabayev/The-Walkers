@@ -625,6 +625,24 @@ test("keeps a continuous route eligible for closure", () => {
   assert.equal(Tracking.canCloseTrack(points), true);
 });
 
+test("territory capture needs a valid closed route and a fresh accepted position within 10 meters", () => {
+  const route = [point(0, 0, now - 10000, true), point(0, 0.0001, now - 7000), point(0.0001, 0.0001, now - 4000), point(0.0001, 0, now - 1000)];
+  const atDistance = (meters, timestamp = now, accuracy = 5) => point(0, meters / 111194.9266, timestamp, false, accuracy);
+
+  assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(25), now).eligible, false);
+  assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(10), now).eligible, true);
+  assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(8), now).eligible, true);
+  assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(12), now).eligible, false);
+  assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(8, now - 30001), now).eligible, false);
+  assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(8, now, 36), now).eligible, false);
+  assert.equal(Tracking.evaluateTerritoryCapture(route.slice(0, 3), atDistance(8), now).eligible, false);
+  assert.equal(Tracking.evaluateTerritoryCapture(route, null, now).eligible, false);
+
+  const draftAfterReload = [...route];
+  assert.equal(Tracking.evaluateTerritoryCapture(draftAfterReload, atDistance(8), now).eligible, true);
+  assert.equal(Tracking.evaluateTerritoryCapture(draftAfterReload, atDistance(8, now - 30001), now).eligible, false);
+});
+
 test("hides unclosed finished walks without changing legacy or captured walk visibility", () => {
   assert.equal(Tracking.shouldDisplayWalkOnMap({ closed: false, showOnMap: false }), false);
   assert.equal(Tracking.shouldDisplayWalkOnMap({ closed: false }), true);

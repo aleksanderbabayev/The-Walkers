@@ -238,6 +238,23 @@
     return distanceMeters(points[0], points.at(-1)) <= options.closeMeters;
   };
 
+  const evaluateTerritoryCapture = (points = [], position, now = Date.now(), finishRadiusMeters = 10) => {
+    const start = points[0];
+    const validStart = Number.isFinite(start?.lat) && Number.isFinite(start?.lng)
+      && Math.abs(start.lat) <= 90 && Math.abs(start.lng) <= 180;
+    const validPosition = Number.isFinite(position?.lat) && Number.isFinite(position?.lng)
+      && Math.abs(position.lat) <= 90 && Math.abs(position.lng) <= 180;
+    const positionFresh = validPosition && position.accuracy <= DEFAULTS.maxAccuracyMeters && isLocationFresh(position, now);
+    const distanceToStartMeters = validStart && positionFresh ? distanceMeters(start, position) : null;
+    const routeValid = canCloseTrack(points);
+    return {
+      eligible: routeValid && positionFresh && distanceToStartMeters <= finishRadiusMeters + 0.001,
+      routeValid,
+      positionFresh,
+      distanceToStartMeters
+    };
+  };
+
   const shouldDisplayWalkOnMap = (walk) => walk.status !== "retreated" && (walk.closed || walk.showOnMap !== false);
 
   const createGpsServices = ({ geolocation, onPosition, onError, onAutosave, schedule = setInterval, cancel = clearInterval, intervalMs = 5000, watchOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 } }) => {
@@ -275,5 +292,5 @@
     return { start, startWatch, stopAutosave, stop };
   };
 
-  return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, distanceMeters, evaluatePosition, evaluateDisplayPosition, shouldUpdateGpsMarker, evaluateLocationPosition, isLocationFresh, evaluateLocationUpdate, createPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, shouldDisplayWalkOnMap, createGpsServices };
+  return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, distanceMeters, evaluatePosition, evaluateDisplayPosition, shouldUpdateGpsMarker, evaluateLocationPosition, isLocationFresh, evaluateLocationUpdate, createPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, evaluateTerritoryCapture, shouldDisplayWalkOnMap, createGpsServices };
 });

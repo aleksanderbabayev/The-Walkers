@@ -140,6 +140,7 @@
   const startupGpsStabilizer = Tracking.createGpsWarmup();
   const initialRouteBuffer = Tracking.createInitialRouteBuffer();
   let currentLocationMarker = null, accuracyCircle = null, startupPositionReady = false, accuracyCircleDismissed = false;
+  let capturePosition = null, captureFreshnessTimer = null;
   let routeStartMarker = null;
   const expeditionMarkers = ExpeditionMarkers.createExpeditionMarkers({ map, leaflet: L });
   let locationState = "loading", latestLocation = null, locationRequestPending = false;
@@ -699,6 +700,31 @@
   try { mapFollowStorage = window.localStorage; } catch {}
   const mapFollow = MapFollow.createMapFollow({ map, storage: mapFollowStorage, onChange: () => updateLocateButton(locationState) });
   const expeditionLine = ExpeditionLine.createExpeditionLine({ map, leaflet: L, isLocationFresh: Tracking.isLocationFresh });
+  const updateCaptureAvailability = () => {
+    const routePoints = initialRouteBuffer.pending ? [] : points;
+    const readiness = Tracking.evaluateTerritoryCapture(routePoints, capturePosition);
+    const canCapture = recordingActive && activeMode === "territory" && !finishing && !cancelling && readiness.eligible;
+    $("finish").disabled = !canCapture;
+    if (recordingActive && activeMode === "territory") {
+      $("statusText").textContent = readiness.distanceToStartMeters === null
+        ? "До финиша: ожидаем свежий GPS"
+        : `До финиша: ${Math.round(readiness.distanceToStartMeters)} м${readiness.routeValid ? "" : " · завершите маршрут"}`;
+    }
+    return readiness;
+  };
+  const setCapturePosition = (point) => {
+    clearTimeout(captureFreshnessTimer);
+    captureFreshnessTimer = null;
+    capturePosition = point;
+    updateCaptureAvailability();
+    if (point) {
+      const expiresAt = point.timestamp + Tracking.LOCATION_DEFAULTS.maxAgeMs + 1;
+      captureFreshnessTimer = setTimeout(() => {
+        captureFreshnessTimer = null;
+        updateCaptureAvailability();
+      }, Math.max(0, expiresAt - Date.now()));
+    }
+  };
   function updateStartAvailability() {
     const inProgress = recordingActive || warmingUp || cancelling;
     $("start").disabled = !LocationUi.canStartWalk({
@@ -709,6 +735,7 @@
       storageReady, draftResolved,
       busy: starting || finishing || inProgress
     });
+    updateCaptureAvailability();
   }
   const rememberLocation = (point) => {
     if (latestLocation && point.timestamp < latestLocation.timestamp) return false;
@@ -859,7 +886,7 @@
     $("abandonWalk").disabled = cancelling || finishing;
     $("manualWarmupStart").hidden = !manualStartAvailable;
     $("manualWarmupStart").disabled = !manualStartAvailable || !gpsWarmup.manualStartPoint(Date.now(), Date.now() - warmupStartedAt);
-    $("finish").disabled = !active || finishing;
+    updateCaptureAvailability();
     $("finish").hidden = !active || activeMode === "expedition";
     $("copyActiveDiagnostics").hidden = !(active || warmingUp || diagnosticSession);
   };
@@ -1006,6 +1033,7 @@
   };
   const processPosition = async (position) => {
     if (finishing || cancelling) return;
+    if (recordingActive && activeMode === "territory") setCapturePosition(null);
     const processedAt = Date.now();
     const displayResult = Tracking.evaluateDisplayPosition(position, processedAt);
     if (displayResult.accepted) {
@@ -1143,6 +1171,7 @@
       const lastValidatedPoint = result.validatedPoints.at(-1);
       drawCurrent(); updateDistance();
       if (lastValidatedPoint) {
+        if (activeMode === "territory") setCapturePosition(lastValidatedPoint);
         rememberLocation(lastValidatedPoint);
         updateLocationMarker(lastValidatedPoint);
         mapFollow.centerOn(lastValidatedPoint);
@@ -1167,6 +1196,7 @@
     if (gpsEvent) gpsEvent.includedInRoute = true;
     persistDiagnosticEvent(gpsEvent);
     persistDiagnosticUpdates(resolveDiagnosticEvents(result.points || [result.point], ["recording"], true));
+    if (activeMode === "territory") setCapturePosition(result.point);
     rememberLocation(result.point);
     drawCurrent(); updateDistance(); updateLocationMarker(result.point); mapFollow.centerOn(result.point);
     if (updateExpeditionProgress(result.point)) say("Цель достигнута. Завершаем экспедицию…");
@@ -1198,6 +1228,7 @@
       accuracyCircle = null;
     }
     latestLocation = null;
+    if (recordingActive && activeMode === "territory") setCapturePosition(null);
     updateLocateButton("error");
     if (!warmingUp && !recordingActive) clearLocationMarker();
     updateStartAvailability();
@@ -1281,6 +1312,7 @@
     }
     selectedMode = mode;
     activeMode = mode;
+    setCapturePosition(null);
     expeditionCompletionPending = false;
     expeditionDistanceMeters = mode === "expedition" && locationIsFresh(latestLocation) ? Tracking.distanceMeters(latestLocation, expeditionTarget) : null;
     positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset();
@@ -1361,6 +1393,7 @@
   };
   const clearActiveWalkView = () => {
     points = []; distanceMetersTotal = 0; startedAt = null;
+    setCapturePosition(null);
     initialRouteBuffer.reset();
     expeditionTarget = null; expeditionDistanceMeters = null; expeditionCompletionPending = false;
     activeMode = "territory"; selectedMode = "territory"; targetMethod = "manual";
@@ -1383,6 +1416,11 @@
     const walkMode = activeMode;
     const expeditionReached = walkMode === "expedition" && !retreated && expeditionCompletionPending;
     if (walkMode === "expedition" && !retreated && !expeditionReached) return;
+    if (!retreated && walkMode === "territory"
+      && !Tracking.evaluateTerritoryCapture(initialRouteBuffer.pending ? [] : points, capturePosition).eligible) {
+      updateCaptureAvailability();
+      return;
+    }
     recordDiagnosticEvent({ type: retreated ? "retreat" : expeditionReached ? "expedition-reached" : "finish", at: Date.now() });
     positionFilter.reset(); gpsWarmup.reset();
     finishing = true; expeditionLine.hide(); setRecording(true); stopTrackingServices();
@@ -1432,6 +1470,7 @@
       clearExpeditionStartMarker();
       stopStopwatch(finishedAt);
       points = []; distanceMetersTotal = 0; startedAt = null; draftResolved = true; updateDistance();
+      setCapturePosition(null);
       initialRouteBuffer.reset();
       expeditionCompletionPending = false;
       expeditionTarget = null; expeditionDistanceMeters = null;
@@ -1565,6 +1604,7 @@
           locateRequestId += 1;
           points = draftPoints;
           initialRouteBuffer.restore(draftInitialBuffer);
+          setCapturePosition(null);
           if (locationIsFresh(latestLocation)) updateLocationMarker(latestLocation);
           else { latestLocation = null; updateLocateButton("loading"); clearLocationMarker(); }
           distanceMetersTotal = distanceForPoints(points);

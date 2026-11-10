@@ -15,6 +15,18 @@ test("Finish and Retreat button dispatch call their actions without passing the 
   assert.match(appSource, /const closed = walkMode === "territory" && !retreated && Tracking\.canCloseTrack\(finishedPoints\);/);
   assert.match(appSource, /status: "retreated"/);
   assert.match(appSource, /diagnosticSession\.walkStatus = retreated \? "retreated" : "completed"/);
+  const finishImplementation = appSource.slice(appSource.indexOf("const finishWalk = async"), appSource.indexOf('$("start").addEventListener'));
+  const captureGuard = finishImplementation.indexOf("!Tracking.evaluateTerritoryCapture(initialRouteBuffer.pending ? [] : points, capturePosition).eligible");
+  assert.ok(captureGuard >= 0, "territory finish has a last-moment eligibility check");
+  assert.ok(captureGuard < finishImplementation.indexOf("recordDiagnosticEvent"), "an ineligible capture returns before recording completion or stopping GPS");
+  assert.match(finishImplementation, /if \(!retreated && walkMode === "territory"[\s\S]*?updateCaptureAvailability\(\);\s*return;/);
+  assert.match(appSource, /const updateCaptureAvailability = \(\) => \{[\s\S]*?Tracking\.evaluateTerritoryCapture\(routePoints, capturePosition\)[\s\S]*?\$\("finish"\)\.disabled = !canCapture/);
+  assert.match(appSource, /if \(recordingActive && activeMode === "territory"\) setCapturePosition\(null\);[\s\S]*?const processedAt = Date\.now\(\)/);
+  assert.match(appSource, /if \(activeMode === "territory"\) setCapturePosition\(result\.point\);\s*rememberLocation\(result\.point\)/);
+  const positionProcessing = appSource.slice(appSource.indexOf("const processPosition"), appSource.indexOf("const receivePosition"));
+  assert.ok(positionProcessing.indexOf("if (!result.accepted) {") < positionProcessing.indexOf("setCapturePosition(result.point)"), "rejected measurements cannot update the finish distance");
+  assert.match(appSource, /latestLocation = null;\s*if \(recordingActive && activeMode === "territory"\) setCapturePosition\(null\);\s*updateLocateButton\("error"\)/);
+  assert.match(appSource, /points = draftPoints;\s*initialRouteBuffer\.restore\(draftInitialBuffer\);\s*setCapturePosition\(null\)/);
 
   const finishButton = new Button(), retreatButton = new Button();
   const finishCalls = [];
