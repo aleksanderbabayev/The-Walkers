@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.2.11">
+  <meta name="app-version" content="0.2.12">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=0.2.11">
+  <link rel="stylesheet" href="styles.css?v=0.2.12">
   <link rel="stylesheet" href="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.css">
 </head>
 <body>
@@ -15,13 +15,27 @@
     <section class="location-access-card">
       <h1 id="locationStartupTitle">Определяем местоположение…</h1>
       <p id="locationStartupMessage">Получаем свежие координаты GPS для открытия карты.</p>
-      <button id="locationStartupRetry" type="button" hidden>Попробовать снова</button>
     </section>
   </main>
   <header>
-    <div class="brand"><span class="mark" aria-hidden="true">↗</span><div><div class="brandTitle"><strong>The Walkers</strong><span class="appVersion" id="appVersion"></span></div><small>Исследуй город пешком</small></div></div>
+    <div class="brand"><span class="mark" aria-hidden="true">↗</span><strong>The Walkers</strong></div>
     <div class="headerActions">
-      <button id="musicToggle" class="icon soundToggle" type="button" aria-label="Выключить фоновую музыку" aria-pressed="true" title="Выключить фоновую музыку">🔊</button>
+      <details id="utilityMenu" class="utility-menu">
+        <summary aria-label="Дополнительное меню" title="Дополнительное меню">•••</summary>
+        <div class="utility-menu-panel">
+          <span class="appVersion" id="appVersion"></span>
+          <button id="musicToggle" class="icon soundToggle" type="button" aria-label="Выключить фоновую музыку" aria-pressed="true" title="Выключить фоновую музыку">🔊 <span>Музыка</span></button>
+          <button id="walksToggle" class="walksToggle" type="button" aria-expanded="false" aria-controls="walksDrawer"><span>Мои прогулки</span><span id="walkCountToggle" class="walkCount">0</span></button>
+          <button id="copyActiveDiagnostics" class="diagnosticsCopy" type="button" hidden>Копировать диагностику прогулки</button>
+          <details id="locationDiagnostics" class="location-diagnostics">
+            <summary>Диагностика геолокации</summary>
+            <dl id="locationDiagnosticsFields"></dl>
+            <button id="copyLocationDiagnostics" type="button">Копировать диагностику</button>
+            <p id="locationDiagnosticsStatus" role="status" aria-live="polite"></p>
+            <textarea id="locationDiagnosticsFallback" rows="7" readonly hidden aria-label="JSON диагностики геолокации для ручного копирования"></textarea>
+          </details>
+        </div>
+      </details>
     </div>
   </header>
   <audio id="backgroundMusic" src="assets/audio/chest_of_adventure.mp3" preload="none" loop aria-hidden="true"></audio>
@@ -34,7 +48,7 @@
       <div class="status">
         <span id="statusDot" aria-hidden="true"></span>
         <div><b id="statusTitle">Готовы к прогулке?</b><small id="statusText">Нажмите "Начать прогулку", чтобы начать захват территории.</small></div>
-        <div class="stopwatch" aria-label="Время прогулки">
+        <div class="stopwatch" aria-label="Время и расстояние прогулки">
           <b id="elapsed">00:00:00</b>
           <small id="distance">0,00 км</small>
           <small class="gps" id="gps">GPS</small>
@@ -75,16 +89,10 @@
       <section id="locationNotice" class="location-notice is-loading" role="status" aria-live="polite" aria-atomic="true">
         <span class="locationNoticeDot" aria-hidden="true"></span>
         <div class="locationNoticeCopy"><b id="locationNoticeTitle">Определяем местоположение</b><small id="locationNoticeText">Получаем свежие координаты GPS…</small></div>
-        <button id="locationRetry" type="button" hidden>Разрешить геолокацию</button>
       </section>
-      <details id="locationDiagnostics" class="location-diagnostics">
-        <summary>Диагностика геолокации</summary>
-        <dl id="locationDiagnosticsFields"></dl>
-        <button id="copyLocationDiagnostics" type="button">Копировать диагностику</button>
-        <p id="locationDiagnosticsStatus" role="status" aria-live="polite"></p>
-        <textarea id="locationDiagnosticsFallback" rows="7" readonly hidden aria-label="JSON диагностики геолокации для ручного копирования"></textarea>
-      </details>
-      <div class="actions single-action">
+      <div class="actions">
+        <button id="locationStartupRetry" class="primary" type="button" hidden>Попробовать снова</button>
+        <button id="locationRetry" class="primary" type="button" hidden>Попробовать снова</button>
         <button id="start" class="primary" type="button" disabled>
           <img class="actionIcon" src="assets/icons/capture-map.svg" alt="" aria-hidden="true">
           <span>Начать прогулку</span>
@@ -104,9 +112,7 @@
           <span>Начать</span>
         </button>
       </div>
-      <button id="copyActiveDiagnostics" class="diagnosticsCopy" type="button" hidden>Копировать диагностику</button>
       <div id="message" role="status" aria-live="polite"></div>
-      <button id="walksToggle" class="walksToggle" type="button" aria-expanded="false" aria-controls="walksDrawer"><span>Мои прогулки</span><span id="walkCountToggle" class="walkCount">0</span><span class="walksChevron" aria-hidden="true">⌃</span></button>
       <section id="walksDrawer" class="saved" aria-hidden="false">
         <div class="drawerHandle" aria-hidden="true"></div>
         <div class="savedHead"><b>Мои прогулки</b><span id="count">0</span><button id="walksClose" class="walksClose" type="button" aria-label="Закрыть список прогулок">×</button></div>

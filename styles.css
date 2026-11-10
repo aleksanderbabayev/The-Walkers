@@ -268,6 +268,20 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
 .walksToggle, .drawerHandle, .walksClose, .drawerBackdrop { display: none; }
 .walkCount { min-width: 28px; padding: 4px 9px; border-radius: 14px; background: #fff; color: #50634e; font-size: 12px; text-align: center; }
 .walksChevron { font-size: 18px; line-height: 1; }
+.utility-menu { position: relative; }
+.utility-menu > summary { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 13px; background: #edf2e8; color: #315b39; font-size: 22px; font-weight: 700; letter-spacing: 2px; line-height: 1; list-style: none; cursor: pointer; }
+.utility-menu > summary::-webkit-details-marker { display: none; }
+.utility-menu-panel { position: absolute; z-index: 1500; top: calc(100% + 6px); right: 0; width: min(300px, calc(100vw - 24px)); max-height: min(70vh, 680px); padding: 12px; display: none; gap: 8px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid #e3e8df; border-radius: 16px; background: #fff; box-shadow: 0 12px 32px #25362424; }
+.utility-menu[open] > .utility-menu-panel { display: grid; }
+.utility-menu-panel > button { width: 100%; min-width: 0; min-height: 44px; padding: 8px 10px; border: 1px solid #d8dfd5; border-radius: 12px; background: #f7f9f5; color: #344638; font: inherit; font-size: 13px; font-weight: 650; text-align: left; cursor: pointer; }
+.utility-menu-panel > .soundToggle { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.utility-menu-panel > .walksToggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.utility-menu-panel > .diagnosticsCopy[hidden] { display: none; }
+.utility-menu-panel > .location-diagnostics { min-width: 0; margin: 0; padding: 0; border: 0; }
+.utility-menu-panel > .location-diagnostics summary { min-height: 44px; padding: 0 10px; border: 1px solid #d8dfd5; border-radius: 12px; background: #f7f9f5; }
+.utility-menu-panel > .location-diagnostics[open] summary { border-radius: 12px 12px 0 0; }
+.utility-menu-panel > .location-diagnostics #copyLocationDiagnostics { min-height: 44px; }
+.utility-menu-panel > .appVersion { width: fit-content; padding: 5px 9px; font-size: 12px; }
 .mapLocate {
   position: absolute;
   z-index: 1000;
@@ -322,7 +336,6 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
 button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
 
 @media (max-width: 760px) {
-  .location-access-screen { flex: none; grid-template: minmax(0, 1fr) / minmax(0, 1fr); }
   html, body {
     width: 100%;
     height: 100%;
@@ -344,8 +357,22 @@ button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
     flex-direction: column;
     overflow: hidden;
   }
-  header { height: 64px; flex: 0 0 64px; padding: 0 16px; }
+  header {
+    height: calc(48px + env(safe-area-inset-top));
+    flex: 0 0 calc(48px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left));
+    gap: 8px;
+  }
+  .brand { min-width: 0; gap: 7px; }
+  .brand .mark { width: 28px; height: 28px; border-radius: 9px; font-size: 18px; }
+  .brand strong { font-size: 15px; }
+  .headerActions { flex: none; gap: 4px; }
+  .utility-menu > summary { width: 44px; height: 44px; }
+  .utility-menu-panel { position: fixed; top: calc(env(safe-area-inset-top) + 48px); right: max(8px, env(safe-area-inset-right)); width: min(300px, calc(100vw - 16px)); max-height: min(70dvh, 620px); }
+  .utility-menu-panel > .walksToggle { height: 44px; min-height: 44px; margin: 0; }
+  .brand small, .brandTitle { display: none; }
   main {
+    position: relative;
     width: 100%;
     max-width: 100%;
     min-width: 0;
@@ -353,63 +380,81 @@ button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
     min-height: 0;
     flex: 1 1 auto;
     margin: 0;
-    padding: 8px 12px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 8px;
+    padding: 0;
+    display: block;
     overflow: hidden;
   }
-  body.expedition-mode main { grid-template-rows: minmax(0, .8fr) minmax(0, 1.2fr); }
-  .mapFrame { width: 100%; max-width: 100%; min-width: 0; min-height: 0; height: 100%; }
-  #map { width: 100%; max-width: 100%; min-width: 0; height: 100%; min-height: 0; border-radius: 20px; }
-  .panel { position: relative; width: 100%; max-width: 100%; min-width: 0; min-height: 0; padding: 10px 14px; overflow: hidden; }
-  .panel > .diagnosticsCopy { position: absolute; right: 14px; bottom: 8px; }
-  .brand { min-width: 0; }
-  .brandTitle { min-width: 0; gap: 6px; }
-  .headerActions { flex: none; gap: 8px; }
-  .status { padding-bottom: 6px; gap: 8px; }
-  .status small { font-size: 11px; line-height: 1.25; }
-  .expedition-compass { min-height: 42px; margin-top: 5px; padding: 2px 8px; }
-  .expeditionCompassFace { width: 36px; height: 36px; }
-  .compassReading b { font-size: 13px; }
-  .compassReading small { font-size: 10px; }
-  .location-notice { margin-top: 5px; padding: 6px 8px; gap: 7px; }
-  body.expedition-mode .location-notice.is-ready { display: none; }
-  .mode-selector { margin-top: 4px; }
-  .mode-selector, .expeditionMethods { gap: 3px; padding: 2px; }
-  .mode-selector button, .expeditionMethods button { min-height: 36px; padding: 5px; font-size: 11px; }
-  .expedition-setup { margin-top: 4px; padding: 5px; }
-  .random-target-controls { grid-template-columns: auto minmax(70px, .65fr) minmax(84px, 1.2fr); gap: 4px; }
-  .random-target-controls select { height: 36px; padding: 4px 5px; font-size: 11px; }
-  .random-target-controls button { min-height: 36px; font-size: 10px; }
-  #expeditionTargetHint { margin-top: 4px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .locationNoticeCopy b { font-size: 11px; }
-  .locationNoticeCopy small { font-size: 10px; line-height: 1.2; }
-  #locationRetry { min-height: 44px; padding: 5px 7px; font-size: 10px; }
-  .actions { padding: 6px 0 4px; }
-  .actions button { height: auto; min-height: 44px; padding: 6px 12px; line-height: 1.15; }
-  #message { min-height: 0; max-height: 1.4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .walksToggle {
-    width: 100%;
-    height: 40px;
-    min-height: 40px;
-    flex: none;
-    margin-top: 8px;
-    padding: 0 14px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    border: 0;
-    border-radius: 14px;
-    background: #edf2e8;
-    color: #26372a;
-    font: inherit;
-    font-weight: 650;
-    text-align: left;
+  .mapFrame { position: absolute; inset: 0; width: 100%; max-width: 100%; min-width: 0; min-height: 0; height: 100%; }
+  #map { width: 100%; max-width: 100%; min-width: 0; height: 100%; min-height: 0; border-radius: 0; }
+  .panel {
+    position: absolute;
+    z-index: 1100;
+    right: max(8px, env(safe-area-inset-right));
+    bottom: calc(24px + env(safe-area-inset-bottom));
+    left: max(8px, env(safe-area-inset-left));
+    width: auto;
+    max-width: none;
+    min-width: 0;
+    min-height: 0;
+    max-height: min(52vh, 360px);
+    padding: 8px 10px 10px;
+    gap: 4px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 18px;
+    background: #fffffff2;
+    box-shadow: 0 5px 24px #18211c28;
   }
-  .walksToggle > span:first-child { margin-right: auto; }
+  @supports (height: 100dvh) { .panel { max-height: min(52dvh, 360px); } }
+  .status { min-width: 0; display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 6px; padding: 0; border: 0; }
+  .status #statusDot { width: 8px; height: 8px; }
+  .status > div:not(.stopwatch) { min-width: 0; display: flex; align-items: baseline; gap: 5px; }
+  .status b { min-width: 0; font-size: 12px; white-space: nowrap; }
+  .status small { min-width: 0; margin: 0; overflow: hidden; color: #68756a; font-size: 10px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+  .stopwatch { margin-left: 0; display: flex; align-items: center; flex-direction: row; gap: 6px; }
+  .stopwatch b { font-size: 11px; }
+  .stopwatch small { font-size: 10px; }
+  .expedition-compass { min-height: 40px; margin: 3px 0; padding: 2px 6px; }
+  .expeditionCompassFace { width: 34px; height: 34px; }
+  .compassReading b { font-size: 12px; }
+  .compassReading small { font-size: 10px; }
+  .mode-selector { margin-top: 4px; gap: 2px; padding: 2px; }
+  .mode-selector button, .expeditionMethods button { min-height: 44px; padding: 5px 4px; font-size: 11px; line-height: 1.1; }
+  .location-notice { min-height: 24px; margin-top: 3px; padding: 0; gap: 6px; border: 0; background: transparent; }
+  .location-notice.is-ready { display: none; }
+  .locationNoticeDot { width: 7px; height: 7px; flex: none; }
+  .locationNoticeCopy { min-width: 0; flex: 1; display: flex; align-items: baseline; gap: 5px; }
+  .locationNoticeCopy b { flex: none; max-width: 45%; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+  .locationNoticeCopy small { min-width: 0; margin: 0; overflow: hidden; color: #68756a; font-size: 10px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+  .expedition-setup { margin-top: 3px; padding: 4px; }
+  .expeditionMethods { gap: 2px; padding: 2px; }
+  .random-target-controls { grid-template-columns: auto minmax(70px, .65fr) minmax(84px, 1.2fr); gap: 4px; }
+  .random-target-controls select, .random-target-controls button { min-height: 44px; height: 44px; font-size: 11px; }
+  #expeditionTargetHint { margin: 3px 0 0; overflow: hidden; font-size: 10px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+  .actions { position: sticky; z-index: 2; bottom: 0; margin: 4px -2px 0; padding: 5px 2px 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; background: #fffffff2; }
+  .actions button { width: auto; min-width: 0; height: auto; min-height: 44px; grid-column: auto; padding: 5px 7px; border-radius: 12px; font-size: 12px; line-height: 1.1; }
+  .actions #start, .actions #startExpedition, .actions #locationRetry, .actions #locationStartupRetry { grid-column: 1 / -1; }
+  .actions .actionIcon { display: none; }
+  .actions #manualWarmupStart { min-height: 44px; font-size: 11px; }
+  body:has(#locationStartupScreen:not([hidden])) .actions #locationRetry { display: none; }
+  #message { min-height: 0; max-height: 1.2em; overflow: hidden; color: #647165; font-size: 10px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+  .location-access-screen {
+    inset: calc(env(safe-area-inset-top) + 52px) max(8px, env(safe-area-inset-right)) auto max(8px, env(safe-area-inset-left));
+    width: auto;
+    height: auto;
+    min-height: 0;
+    padding: 6px;
+    display: grid;
+    place-items: start center;
+    background: transparent;
+    pointer-events: none;
+  }
+  .location-access-card { width: min(100%, 380px); max-height: min(30dvh, 170px); padding: 8px 12px; border-radius: 14px; pointer-events: auto; }
+  .location-access-card h1 { margin-bottom: 4px; font-size: 15px; }
+  .location-access-card p { margin: 0; font-size: 11px; line-height: 1.3; }
+  .location-access-card button { display: none; }
   .saved {
     position: fixed;
     z-index: 1301;
@@ -434,98 +479,9 @@ button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
   body.walks-open .saved { transform: translateY(0); visibility: visible; }
   .drawerHandle { width: 38px; height: 4px; flex: none; align-self: center; display: block; margin-bottom: 8px; border-radius: 4px; background: #cbd2c9; }
   .savedHead { flex: none; margin-bottom: 12px; }
-  .walksClose { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 50%; background: #edf2e8; color: #314435; font-size: 24px; line-height: 1; }
+  .walksClose { width: 44px; height: 44px; min-width: 44px; min-height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: #edf2e8; color: #314435; font-size: 24px; line-height: 1; }
   #routes { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
   .drawerBackdrop { position: fixed; z-index: 1300; inset: 0; width: 100%; height: 100%; padding: 0; display: block; border: 0; background: #18211c70; }
   .drawerBackdrop[hidden] { display: none; }
   footer { display: none; }
-}
-
-@media (max-width: 760px) and (max-height: 700px) {
-  header {
-    height: calc(56px + env(safe-area-inset-top));
-    flex-basis: calc(56px + env(safe-area-inset-top));
-    padding-top: env(safe-area-inset-top);
-    padding-right: max(12px, env(safe-area-inset-right));
-    padding-left: max(12px, env(safe-area-inset-left));
-  }
-  main {
-    padding: 6px max(10px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
-    gap: 6px;
-    grid-template-rows: minmax(100px, .48fr) minmax(0, 1.52fr);
-  }
-  body.expedition-mode main { grid-template-rows: minmax(100px, .42fr) minmax(0, 1.58fr); }
-  .panel { padding: 7px 10px; }
-  .status { flex: none; gap: 7px; padding-bottom: 4px; }
-  .status b { font-size: 14px; }
-  .status small { margin-top: 2px; font-size: 10px; line-height: 1.2; }
-  .location-notice { flex: none; margin-top: 3px; padding: 4px 6px; gap: 6px; }
-  #locationRetry { min-height: 44px; padding: 4px 6px; }
-  .mode-selector { flex: none; margin-top: 3px; }
-  .mode-selector button, .expeditionMethods button { min-height: 36px; padding: 4px; font-size: 10px; }
-  .expedition-setup { flex: none; margin-top: 3px; padding: 4px; }
-  .random-target-controls { margin-top: 4px; }
-  .random-target-controls select, .random-target-controls button { min-height: 34px; height: 34px; }
-  #expeditionTargetHint { margin-top: 3px; line-height: 1.2; }
-  #locationDiagnostics { flex: none; margin-top: 2px; padding-top: 0; }
-  #locationDiagnostics summary { min-height: 24px; font-size: 10px; }
-  .actions { flex: none; padding: 4px 0 0; gap: 4px; }
-  .actions button { min-height: 44px; padding: 5px 10px; }
-  .actions #manualWarmupStart { min-height: 44px; }
-  #message { flex: none; max-height: 1.2em; }
-  .walksToggle { flex: none; height: 34px; min-height: 34px; margin-top: auto; }
-
-  .location-access-screen {
-    inset: calc(env(safe-area-inset-top) + 62px) 10px auto;
-    width: auto;
-    height: auto;
-    min-height: 0;
-    padding: 6px 0;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    background: transparent;
-    pointer-events: none;
-  }
-  .location-access-card {
-    width: min(100%, 380px);
-    max-height: calc(var(--visible-viewport-height, 100vh) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 76px);
-    padding: 8px 12px;
-    border-radius: 14px;
-    pointer-events: auto;
-  }
-  .location-access-card h1 { margin-bottom: 4px; font-size: 16px; }
-  .location-access-card p { margin-bottom: 6px; font-size: 12px; line-height: 1.3; }
-  .location-access-card button { min-height: 44px; padding: 7px 12px; }
-}
-
-@media (max-width: 760px) and (max-height: 500px) {
-  main { grid-template-rows: minmax(88px, .34fr) minmax(0, 1.66fr); }
-  body.expedition-mode main { grid-template-rows: minmax(88px, .3fr) minmax(0, 1.7fr); }
-  .panel { padding: 5px 8px; }
-  #locationDiagnostics, .walksToggle { display: none; }
-  .status { gap: 6px; padding-bottom: 3px; }
-  .status b { font-size: 13px; }
-  .location-notice { padding: 3px 5px; }
-  .mode-selector button, .expeditionMethods button { min-height: 34px; }
-  .expedition-setup { padding: 3px; }
-  .random-target-controls select, .random-target-controls button { min-height: 32px; height: 32px; }
-  .actions { padding-top: 3px; }
-  .actions button, .actions #manualWarmupStart { min-height: 44px; }
-  .location-access-screen { inset: calc(env(safe-area-inset-top) + 60px) 8px auto; }
-  .location-access-card { padding: 6px 10px; }
-  .location-access-card h1 { font-size: 14px; }
-  .location-access-card p { margin-bottom: 4px; font-size: 11px; }
-}
-
-@media (max-width: 760px) and (max-height: 400px) {
-  header { height: calc(48px + env(safe-area-inset-top)); flex-basis: calc(48px + env(safe-area-inset-top)); }
-  main { grid-template-rows: minmax(64px, .24fr) minmax(0, 1.76fr); }
-  body.expedition-mode main { grid-template-rows: minmax(64px, .2fr) minmax(0, 1.8fr); }
-  .status small { font-size: 9px; }
-  .status > div:not(.stopwatch) small,
-  .locationNoticeCopy small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .mode-selector button, .expeditionMethods button { min-height: 32px; }
-  .actions button, .actions #manualWarmupStart { min-height: 44px; }
-  .location-access-screen { inset: calc(env(safe-area-inset-top) + 50px) 8px auto; }
 }

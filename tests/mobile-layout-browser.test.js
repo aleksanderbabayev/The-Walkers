@@ -1,0 +1,212 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const http = require("node:http");
+const os = require("node:os");
+const path = require("node:path");
+const { spawn } = require("node:child_process");
+
+const projectRoot = path.resolve(__dirname, "..");
+const browserPath = [
+  process.env.CHROME_PATH,
+  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+].find((candidate) => candidate && fs.existsSync(candidate));
+
+const waitFor = async (predicate, timeoutMs = 10000) => {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const value = await predicate();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("Timed out waiting for headless browser startup");
+};
+
+const createCdpClient = async (url) => {
+  const socket = new WebSocket(url);
+  await new Promise((resolve, reject) => {
+    socket.addEventListener("open", resolve, { once: true });
+    socket.addEventListener("error", reject, { once: true });
+  });
+  let nextId = 0;
+  const pending = new Map();
+  const listeners = new Map();
+  socket.addEventListener("message", ({ data }) => {
+    const message = JSON.parse(data);
+    if (message.id) {
+      const request = pending.get(message.id);
+      if (!request) return;
+      pending.delete(message.id);
+      if (message.error) request.reject(new Error(message.error.message));
+      else request.resolve(message.result);
+      return;
+    }
+    for (const listener of listeners.get(message.method) || []) listener(message.params);
+  });
+  return {
+    send(method, params = {}) {
+      const id = ++nextId;
+      return new Promise((resolve, reject) => {
+        pending.set(id, { resolve, reject });
+        socket.send(JSON.stringify({ id, method, params }));
+      });
+    },
+    once(method) {
+      return new Promise((resolve) => {
+        const methodListeners = listeners.get(method) || [];
+        methodListeners.push((params) => {
+          listeners.set(method, methodListeners.filter((listener) => listener !== methodListeners.at(-1)));
+          resolve(params);
+        });
+        listeners.set(method, methodListeners);
+      });
+    },
+    close() { socket.close(); }
+  };
+};
+
+const scenarios = [
+  { name: "waiting for GPS", state: { startup: true }, buttons: ["start"] },
+  { name: "startup GPS error", state: { startup: true, startupError: true }, buttons: ["locationStartupRetry"] },
+  { name: "stabilizing GPS", state: { warmup: true }, buttons: ["abandonWalk"] },
+  { name: "manual warm-up start", state: { warmup: true, manual: true }, buttons: ["manualWarmupStart", "abandonWalk"] },
+  { name: "GPS retry after startup", state: { retry: true }, buttons: ["locationRetry"] },
+  { name: "ready for territory capture", state: {}, buttons: ["start"] },
+  { name: "expedition target selection", state: { expedition: true }, buttons: ["startExpedition"] },
+  { name: "random expedition target selection", state: { expedition: true, random: true }, buttons: ["startExpedition", "generateTarget"] },
+  { name: "active territory walk", state: { active: true }, buttons: ["finish", "abandonWalk"] },
+  { name: "active expedition", state: { active: true, expedition: true }, buttons: ["abandonWalk"] },
+  { name: "walk completed", state: {}, buttons: ["start"] }
+];
+
+test("mobile primary actions are actually visible over a full-height map at requested viewport sizes", { skip: !browserPath }, async (t) => {
+  const profilePath = fs.mkdtempSync(path.join(os.tmpdir(), "walkers-headless-"));
+  const server = http.createServer((request, response) => {
+    const pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
+    const filePath = path.resolve(projectRoot, `.${pathname}`);
+    if (!filePath.startsWith(`${projectRoot}${path.sep}`) || !fs.existsSync(filePath)) {
+      response.writeHead(404).end();
+      return;
+    }
+    const contentType = filePath.endsWith(".css") ? "text/css; charset=utf-8"
+      : filePath.endsWith(".js") ? "text/javascript; charset=utf-8"
+        : filePath.endsWith(".html") ? "text/html; charset=utf-8" : "application/octet-stream";
+    response.writeHead(200, { "content-type": contentType });
+    fs.createReadStream(filePath).pipe(response);
+  });
+  let chrome;
+  let cdp;
+  try {
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const localPort = server.address().port;
+    chrome = spawn(browserPath, [
+      "--headless=new", "--disable-gpu", "--no-sandbox", "--no-first-run", "--no-default-browser-check",
+      "--remote-debugging-port=0", "--remote-allow-origins=*", `--user-data-dir=${profilePath}`, "about:blank"
+    ], { stdio: "ignore", windowsHide: true });
+    const activePortPath = path.join(profilePath, "DevToolsActivePort");
+    const debugPort = await waitFor(() => fs.existsSync(activePortPath) && fs.readFileSync(activePortPath, "utf8").split(/\r?\n/)[0]);
+    const targetResponse = await fetch(`http://127.0.0.1:${debugPort}/json/new?about:blank`, { method: "PUT" });
+    const target = await targetResponse.json();
+    cdp = await createCdpClient(target.webSocketDebuggerUrl);
+    await cdp.send("Page.enable");
+    await cdp.send("Runtime.enable");
+    await cdp.send("Network.enable");
+    await cdp.send("Network.setBlockedURLs", { urls: ["https://*"] });
+    const loadComplete = cdp.once("Page.loadEventFired");
+    await cdp.send("Page.navigate", { url: `http://127.0.0.1:${localPort}/index.html` });
+    await loadComplete;
+
+    const setViewport = async (width, height) => {
+      await cdp.send("Emulation.setDeviceMetricsOverride", {
+        width, height, screenWidth: width, screenHeight: height, deviceScaleFactor: 1, mobile: true
+      });
+      return evaluate(`({ width: innerWidth, height: innerHeight, mapHeight: document.querySelector(".mapFrame").getBoundingClientRect().height, tileMapHeight: document.getElementById("map").getBoundingClientRect().height, headerHeight: document.querySelector("header").getBoundingClientRect().height })`);
+    };
+    const evaluate = async (expression) => {
+      const result = await cdp.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
+      if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || "Browser evaluation failed");
+      return result.result.value;
+    };
+    await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+
+    const viewports = [[320, 568], [360, 640], [375, 667], [390, 844], [375, 500]];
+    const stateScript = (state) => `(() => {
+      const s = ${JSON.stringify(state)};
+      const hide = (id, value) => { document.getElementById(id).hidden = value; };
+      document.body.classList.toggle("expedition-mode", Boolean(s.expedition));
+      document.querySelector(".status").classList.toggle("recording", Boolean(s.active));
+      document.getElementById("statusTitle").textContent = s.warmup ? "Стабилизация GPS" : s.active ? (s.expedition ? "Идёт экспедиция" : "Идёт захват территории") : "Готовы к прогулке?";
+      document.getElementById("locationStartupTitle").textContent = s.startupError ? "Геолокация недоступна" : "Определяем местоположение…";
+      document.getElementById("locationStartupMessage").textContent = s.startupError ? "Проверьте GPS и повторите попытку." : "Получаем координаты GPS.";
+      hide("locationStartupScreen", !s.startup);
+      hide("locationStartupRetry", !s.startupError);
+      hide("locationRetry", !s.retry || Boolean(s.startup));
+      hide("modeSelector", Boolean(s.active || s.warmup));
+      hide("expeditionSetup", !s.expedition || Boolean(s.active || s.warmup));
+      hide("start", Boolean(s.expedition || s.active || s.warmup));
+      hide("startExpedition", !s.expedition || Boolean(s.active || s.warmup));
+      hide("finish", !s.active || Boolean(s.expedition));
+      hide("abandonWalk", !s.active && !s.warmup);
+      hide("manualWarmupStart", !s.manual);
+      hide("randomTargetControls", !s.random);
+      hide("generateTarget", !s.random);
+      const notice = document.getElementById("locationNotice");
+      notice.className = "location-notice is-" + (s.retry || s.startupError ? "unavailable" : s.startup || s.warmup ? "loading" : "ready");
+      document.getElementById("locationNoticeTitle").textContent = s.retry || s.startupError ? "Геолокация недоступна" : s.startup || s.warmup ? "Определяем местоположение" : "Местоположение определено";
+      document.getElementById("locationNoticeText").textContent = s.retry || s.startupError ? "GPS недоступен. Попробуйте снова." : "Ожидаем свежие координаты GPS.";
+      for (const id of ["start", "startExpedition", "finish", "abandonWalk", "manualWarmupStart", "locationRetry", "locationStartupRetry"]) document.getElementById(id).disabled = false;
+      return true;
+    })()`;
+
+    for (const [width, height] of viewports) {
+      const initial = await setViewport(width, height);
+      assert.equal(initial.width, width, `viewport width ${width}`);
+      assert.equal(initial.height, height, `viewport height ${height}`);
+      assert.ok(initial.mapHeight > 0, `${width}x${height}: map has a visible box`);
+      assert.ok(Math.abs(initial.mapHeight - initial.tileMapHeight) < 1, `${width}x${height}: map tiles fill the full map container`);
+      const baselineMapHeight = initial.mapHeight;
+      for (const scenario of scenarios) {
+        await evaluate(stateScript(scenario.state));
+        const result = await evaluate(`(() => {
+          const panel = document.querySelector(".panel").getBoundingClientRect();
+          const map = document.querySelector(".mapFrame").getBoundingClientRect();
+          const buttons = ${JSON.stringify(scenario.buttons)}.map((id) => {
+            const element = document.getElementById(id);
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return { id, hidden: element.hidden, displayed: style.display !== "none" && style.visibility !== "hidden", top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, panelTop: panel.top, panelBottom: panel.bottom };
+          });
+          const mapLocate = document.getElementById("locate").getBoundingClientRect();
+          const modeButtons = [...document.querySelectorAll(".mode-selector button, .expeditionMethods button")].map((element) => {
+            const rect = element.getBoundingClientRect();
+            return { id: element.id, hidden: element.hidden, displayed: getComputedStyle(element).display !== "none", top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
+          }).filter((button) => !button.hidden && button.displayed && button.width > 0 && button.height > 0);
+          return { mapHeight: map.height, viewportHeight: innerHeight, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height } };
+        })()`);
+        assert.ok(Math.abs(result.mapHeight - baselineMapHeight) < 1, `${width}x${height} ${scenario.name}: controls changed map height`);
+        assert.ok(result.scrollHeight <= result.viewportHeight + 1, `${width}x${height} ${scenario.name}: page gained vertical scroll`);
+        assert.ok(result.locate.top >= 0 && result.locate.bottom <= result.viewportHeight + 1 && result.locate.height >= 44, `${width}x${height} ${scenario.name}: map control is accessible`);
+        for (const button of result.modeButtons) {
+          assert.ok(button.height >= 44 && button.top >= 0 && button.bottom <= result.viewportHeight + 1, `${width}x${height} ${scenario.name}: #${button.id} mode control is visible and at least 44px high`);
+        }
+        for (const button of result.buttons) {
+          assert.equal(button.hidden, false, `${width}x${height} ${scenario.name}: #${button.id} hidden attribute`);
+          assert.equal(button.displayed, true, `${width}x${height} ${scenario.name}: #${button.id} display`);
+          assert.ok(button.width > 0 && button.height >= 44, `${width}x${height} ${scenario.name}: #${button.id} touch target is ${button.width}x${button.height}`);
+          assert.ok(button.top >= 0 && button.bottom <= result.viewportHeight + 1, `${width}x${height} ${scenario.name}: #${button.id} is outside the viewport`);
+          assert.ok(button.top >= button.panelTop - 1 && button.bottom <= button.panelBottom + 1, `${width}x${height} ${scenario.name}: #${button.id} is clipped by the action panel`);
+        }
+      }
+      t.diagnostic(`${width}x${height}: map ${baselineMapHeight}px; ${scenarios.length} UI states; primary actions stayed visible`);
+    }
+  } finally {
+    cdp?.close();
+    if (chrome && chrome.exitCode === null) {
+      chrome.kill();
+      await new Promise((resolve) => chrome.once("exit", resolve));
+    }
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(profilePath, { recursive: true, force: true });
+  }
+});
