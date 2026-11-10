@@ -101,6 +101,26 @@
     compassButton.title = "Повернуть карту на север";
   }
   L.control.zoom({ position: "bottomright" }).addTo(map);
+  const zoomControlCorner = map.getContainer().querySelector(".leaflet-bottom.leaflet-right");
+  const zoomControl = map.getContainer().querySelector(".leaflet-control-zoom");
+  const walkPanel = document.querySelector(".panel");
+  const updateMobileZoomPosition = () => {
+    if (!zoomControlCorner || !zoomControl || !isMobileViewport()) {
+      zoomControlCorner?.style.removeProperty("--mobile-zoom-control-bottom");
+      return;
+    }
+    const panelTop = walkPanel.getBoundingClientRect().top;
+    const zoomBottom = zoomControl.getBoundingClientRect().bottom;
+    const currentOffset = Number.parseFloat(getComputedStyle(zoomControlCorner).bottom) || 0;
+    const targetBottom = panelTop - 8;
+    const offset = Math.max(0, currentOffset + zoomBottom - targetBottom);
+    zoomControlCorner.style.setProperty("--mobile-zoom-control-bottom", `${offset}px`);
+  };
+  updateMobileZoomPosition();
+  if (typeof ResizeObserver === "function") new ResizeObserver(updateMobileZoomPosition).observe(walkPanel);
+  window.visualViewport?.addEventListener("resize", updateMobileZoomPosition);
+  window.visualViewport?.addEventListener("scroll", updateMobileZoomPosition);
+  window.addEventListener("resize", updateMobileZoomPosition);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'

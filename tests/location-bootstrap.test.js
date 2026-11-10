@@ -88,6 +88,10 @@ test("mobile controls overlay the full-height map and live in compact action and
   assert.match(mobileLayout, /\.mode-selector button, \.expeditionMethods button \{ min-height: 44px/);
   assert.match(mobileLayout, /\.actions button \{[\s\S]*?min-height: 44px/);
   assert.match(mobileLayout, /\.random-target-controls select, \.random-target-controls button \{ min-height: 44px/);
+  assert.match(mobileLayout, /\.leaflet-control-zoom a \{ width: 44px; height: 44px/);
+  assert.match(mobileLayout, /\.leaflet-bottom\.leaflet-right \{[\s\S]*?bottom: var\(--mobile-zoom-control-bottom, 10px\)/);
+  assert.match(app, /const updateMobileZoomPosition = \(\) => \{[\s\S]*?const panelTop = walkPanel\.getBoundingClientRect\(\)\.top;[\s\S]*?const targetBottom = panelTop - 8;[\s\S]*?zoomControlCorner\.style\.setProperty\("--mobile-zoom-control-bottom"/);
+  assert.match(app, /new ResizeObserver\(updateMobileZoomPosition\)\.observe\(walkPanel\)/);
   for (const id of ["locationRetry", "start", "startExpedition", "manualWarmupStart", "finish", "abandonWalk"]) {
     assert.match(actions, new RegExp(`id="${id}"`));
   }

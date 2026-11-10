@@ -388,9 +388,9 @@ button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
   #map { width: 100%; max-width: 100%; min-width: 0; height: 100%; min-height: 0; border-radius: 0; }
   .leaflet-control-zoom a { width: 44px; height: 44px; line-height: 44px; }
   .leaflet-bottom.leaflet-right {
-    top: calc(54px + env(safe-area-inset-top));
+    top: auto;
     right: max(10px, env(safe-area-inset-right));
-    bottom: auto;
+    bottom: var(--mobile-zoom-control-bottom, 10px);
   }
   .panel {
     position: absolute;

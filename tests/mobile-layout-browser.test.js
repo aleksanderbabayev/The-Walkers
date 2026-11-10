@@ -162,6 +162,20 @@ test("mobile primary actions are actually visible over a full-height map at requ
       bottomRight.append(zoom);
       container.append(topRight, bottomRight);
       document.getElementById("map").append(container);
+      const zoomCorner = document.querySelector(".leaflet-bottom.leaflet-right");
+      const zoomControl = document.querySelector(".leaflet-control-zoom");
+      const walkPanel = document.querySelector(".panel");
+      const updateZoomPosition = () => {
+        const panelTop = walkPanel.getBoundingClientRect().top;
+        const zoomBottom = zoomControl.getBoundingClientRect().bottom;
+        const currentOffset = Number.parseFloat(getComputedStyle(zoomCorner).bottom) || 0;
+        const targetBottom = panelTop - 8;
+        zoomCorner.style.setProperty("--mobile-zoom-control-bottom", Math.max(0, currentOffset + zoomBottom - targetBottom) + "px");
+      };
+      new ResizeObserver(updateZoomPosition).observe(walkPanel);
+      window.addEventListener("resize", updateZoomPosition);
+      window.visualViewport?.addEventListener("resize", updateZoomPosition);
+      updateZoomPosition();
       return true;
     })()`);
 
@@ -203,6 +217,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
       const baselineMapHeight = initial.mapHeight;
       for (const scenario of scenarios) {
         await evaluate(stateScript(scenario.state));
+        await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
         const result = await evaluate(`(() => {
           const panel = document.querySelector(".panel").getBoundingClientRect();
           const startupScreen = document.getElementById("locationStartupScreen");
@@ -221,7 +236,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
           const zoomButtons = [...document.querySelectorAll(".leaflet-control-zoom a")].map((element) => {
             const rect = element.getBoundingClientRect();
             const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-            return { label: element.getAttribute("aria-label"), left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, displayed: getComputedStyle(element).display !== "none" && getComputedStyle(element).visibility !== "hidden", hit: Boolean(hit && (hit === element || element.contains(hit))), hitTarget: hit?.className || hit?.tagName };
+            return { label: element.getAttribute("aria-label"), text: element.textContent, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, displayed: getComputedStyle(element).display !== "none" && getComputedStyle(element).visibility !== "hidden", hit: Boolean(hit && (hit === element || element.contains(hit))), hitTarget: hit?.className || hit?.tagName };
           });
           const compassRect = document.querySelector(".leaflet-control-rotate a").getBoundingClientRect();
           const modeButtons = [...document.querySelectorAll(".mode-selector button, .expeditionMethods button")].map((element) => {
@@ -257,6 +272,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
         assert.ok(result.locate.top >= 0 && result.locate.bottom <= result.viewportHeight + 1 && result.locate.height >= 44, `${width}x${height} ${scenario.name}: map control is accessible`);
         if (!scenario.state.startup) {
           assert.equal(result.zoomButtons.length, 2, `${width}x${height} ${scenario.name}: both Leaflet zoom buttons are present`);
+          assert.ok(Math.abs(result.zoomButtons.at(-1).bottom - (result.panel.top - 8)) < 1, `${width}x${height} ${scenario.name}: the zoom stack sits 8px above the current panel edge`);
           for (const zoomButton of result.zoomButtons) {
             assert.equal(zoomButton.displayed, true, `${width}x${height} ${scenario.name}: ${zoomButton.label} is displayed`);
             assert.equal(zoomButton.hit, true, `${width}x${height} ${scenario.name}: ${zoomButton.label} receives pointer hit-testing; target=${zoomButton.hitTarget}, rect=${zoomButton.left},${zoomButton.top},${zoomButton.width},${zoomButton.height}`);
