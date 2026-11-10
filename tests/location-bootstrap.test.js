@@ -62,6 +62,27 @@ test("startup retry and permission errors produce a finite, actionable state", (
   assert.match(LocationUi, /action: "Попробовать снова"/);
 });
 
+test("small-height mobile layout keeps startup, mode, status, and primary actions in view", () => {
+  const compactLayout = css.match(/@media \(max-width: 760px\) and \(max-height: 700px\) \{([\s\S]*?)\n\}/)?.[1];
+  const veryShortLayout = css.match(/@media \(max-width: 760px\) and \(max-height: 500px\) \{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(compactLayout);
+  assert.ok(veryShortLayout);
+  assert.match(compactLayout, /grid-template-rows: minmax\(100px, \.48fr\) minmax\(0, 1\.52fr\)/);
+  assert.match(compactLayout, /body\.expedition-mode main \{ grid-template-rows:/);
+  assert.match(compactLayout, /env\(safe-area-inset-bottom\)/);
+  assert.match(compactLayout, /\.location-access-screen \{[\s\S]*?background: transparent;[\s\S]*?pointer-events: none;/);
+  assert.match(compactLayout, /\.location-access-card \{[\s\S]*?pointer-events: auto;/);
+  assert.match(compactLayout, /#locationRetry \{ min-height: 44px/);
+  assert.match(compactLayout, /\.location-access-card button \{ min-height: 44px/);
+  assert.match(compactLayout, /\.actions button \{ min-height: 44px/);
+  assert.match(compactLayout, /#locationDiagnostics summary \{ min-height: 24px/);
+  assert.match(veryShortLayout, /#locationDiagnostics, \.walksToggle \{ display: none; \}/);
+  assert.match(css, /@media \(max-width: 760px\) and \(max-height: 400px\)/);
+  assert.match(html, /id="modeSelector"/);
+  assert.match(html, /id="startExpedition"/);
+  assert.match(html, /id="manualWarmupStart"/);
+});
+
 test("initial map center comes from first usable GPS before saved history can set focus", () => {
   assert.match(app, /const completeLocationStartup = \(point\) => \{[\s\S]*?map\.setView\(\[point\.lat, point\.lng\], 15\)/);
   assert.match(app, /const gpsServices = Tracking\.createGpsServices\([\s\S]*?onPosition: receivePosition/);

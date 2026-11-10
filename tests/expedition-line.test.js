@@ -121,7 +121,7 @@ test("app wires line updates only through accepted expedition progress and hides
   assert.ok(app.includes("ExpeditionLine.createExpeditionLine"));
   assert.ok(app.includes('activeMode = draft.mode === "expedition" ? "expedition" : "territory"'));
   assert.ok(app.includes("startTrackingServices();"));
-  assert.match(html, /name="app-version" content="0\.2\.10"/);
+  assert.match(html, /name="app-version" content="0\.2\.11"/);
   assert.ok(bootstrap.includes('"expedition-line.js?v=0.2.3"'));
   assert.ok(bootstrap.includes('"app.js?v=0.2.9"'));
   assert.doesNotMatch(processing, /result\.reason === "stale"[^\n]*expeditionLine\.hide/);
