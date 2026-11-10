@@ -12,6 +12,7 @@ const browserPath = [
   "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
   "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
 ].find((candidate) => candidate && fs.existsSync(candidate));
+assert.ok(browserPath, "Headless Chrome or Edge is required for mobile-layout-browser.test.js; set CHROME_PATH or install a supported browser.");
 
 const waitFor = async (predicate, timeoutMs = 10000) => {
   const startedAt = Date.now();
@@ -80,7 +81,7 @@ const scenarios = [
   { name: "walk completed", state: {}, buttons: ["start"] }
 ];
 
-test("mobile primary actions are actually visible over a full-height map at requested viewport sizes", { skip: !browserPath }, async (t) => {
+test("mobile primary actions are actually visible over a full-height map at requested viewport sizes", async (t) => {
   const profilePath = fs.mkdtempSync(path.join(os.tmpdir(), "walkers-headless-"));
   const server = http.createServer((request, response) => {
     const pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
@@ -187,8 +188,18 @@ test("mobile primary actions are actually visible over a full-height map at requ
             const rect = element.getBoundingClientRect();
             return { id: element.id, hidden: element.hidden, displayed: getComputedStyle(element).display !== "none", top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
           }).filter((button) => !button.hidden && button.displayed && button.width > 0 && button.height > 0);
-          const mapProbe = document.elementFromPoint(10, document.querySelector("header").getBoundingClientRect().bottom + 10);
-          return { mapHeight: map.height, viewportHeight: innerHeight, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height }, startup: { hidden: startupScreen.hidden, top: startupRect.top, left: startupRect.left, right: startupRect.right, bottom: startupRect.bottom, background: getComputedStyle(startupScreen).backgroundColor, zIndex: Number(getComputedStyle(startupScreen).zIndex), mapZIndex: Number(getComputedStyle(mapElement).zIndex), probeIsBlocked: Boolean(mapProbe && startupScreen.contains(mapProbe)), probeReachesMap: Boolean(mapProbe && mapElement.contains(mapProbe)) } };
+          const probeX = 10;
+          const probeY = document.querySelector("header").getBoundingClientRect().bottom + 10;
+          const mapProbe = document.elementFromPoint(probeX, probeY);
+          const startupWasHidden = startupScreen.hidden;
+          startupScreen.hidden = true;
+          const underlyingProbe = document.elementFromPoint(probeX, probeY);
+          startupScreen.hidden = startupWasHidden;
+          const getStackingLevel = (element) => {
+            const zIndex = getComputedStyle(element).zIndex;
+            return zIndex === "auto" ? 0 : Number(zIndex);
+          };
+          return { mapHeight: map.height, viewportHeight: innerHeight, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height }, startup: { hidden: startupScreen.hidden, top: startupRect.top, left: startupRect.left, right: startupRect.right, bottom: startupRect.bottom, background: getComputedStyle(startupScreen).backgroundColor, stackingLevel: getStackingLevel(startupScreen), mapStackingLevel: getStackingLevel(mapElement), probeIsBlocked: Boolean(mapProbe && startupScreen.contains(mapProbe)), probeReachesMap: Boolean(mapProbe && mapElement.contains(mapProbe)), underlyingProbeReachesMap: Boolean(underlyingProbe && mapElement.contains(underlyingProbe)) } };
         })()`);
         assert.ok(Math.abs(result.mapHeight - baselineMapHeight) < 1, `${width}x${height} ${scenario.name}: controls changed map height`);
         assert.ok(result.scrollHeight <= result.viewportHeight + 1, `${width}x${height} ${scenario.name}: page gained vertical scroll`);
@@ -196,8 +207,9 @@ test("mobile primary actions are actually visible over a full-height map at requ
           assert.equal(result.startup.hidden, false, `${width}x${height} ${scenario.name}: startup gate is open`);
           assert.ok(result.startup.top <= 0 && result.startup.left <= 0 && result.startup.right >= width && result.startup.bottom >= height, `${width}x${height} ${scenario.name}: GPS gate covers the full screen`);
           assert.equal(result.startup.background, "rgb(247, 247, 242)", `${width}x${height} ${scenario.name}: GPS gate is opaque`);
-          assert.ok(result.startup.zIndex > result.startup.mapZIndex, `${width}x${height} ${scenario.name}: GPS gate is above the map`);
-          assert.equal(result.startup.probeIsBlocked, true, `${width}x${height} ${scenario.name}: map cannot be seen or interacted with before GPS`);
+          assert.ok(result.startup.stackingLevel > result.startup.mapStackingLevel, `${width}x${height} ${scenario.name}: GPS gate stacks above the map`);
+          assert.equal(result.startup.probeIsBlocked, true, `${width}x${height} ${scenario.name}: hit-test lands on the GPS gate`);
+          assert.equal(result.startup.underlyingProbeReachesMap, true, `${width}x${height} ${scenario.name}: the covered layer is the map`);
         } else {
           assert.equal(result.startup.hidden, true, `${width}x${height} ${scenario.name}: GPS gate closes after the first usable location`);
           assert.equal(result.startup.probeReachesMap, true, `${width}x${height} ${scenario.name}: map is visible after GPS gate closes`);
