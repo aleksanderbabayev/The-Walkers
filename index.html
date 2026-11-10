@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.2.12">
+  <meta name="app-version" content="0.2.13">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=0.2.12">
+  <link rel="stylesheet" href="styles.css?v=0.2.13">
   <link rel="stylesheet" href="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.css">
 </head>
 <body>
@@ -15,6 +15,7 @@
     <section class="location-access-card">
       <h1 id="locationStartupTitle">Определяем местоположение…</h1>
       <p id="locationStartupMessage">Получаем свежие координаты GPS для открытия карты.</p>
+      <button id="locationStartupRetry" type="button" hidden>Попробовать снова</button>
     </section>
   </main>
   <header>
@@ -91,7 +92,6 @@
         <div class="locationNoticeCopy"><b id="locationNoticeTitle">Определяем местоположение</b><small id="locationNoticeText">Получаем свежие координаты GPS…</small></div>
       </section>
       <div class="actions">
-        <button id="locationStartupRetry" class="primary" type="button" hidden>Попробовать снова</button>
         <button id="locationRetry" class="primary" type="button" hidden>Попробовать снова</button>
         <button id="start" class="primary" type="button" disabled>
           <img class="actionIcon" src="assets/icons/capture-map.svg" alt="" aria-hidden="true">

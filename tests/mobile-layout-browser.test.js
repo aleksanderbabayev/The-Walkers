@@ -67,7 +67,7 @@ const createCdpClient = async (url) => {
 };
 
 const scenarios = [
-  { name: "waiting for GPS", state: { startup: true }, buttons: ["start"] },
+  { name: "waiting for GPS", state: { startup: true }, buttons: [] },
   { name: "startup GPS error", state: { startup: true, startupError: true }, buttons: ["locationStartupRetry"] },
   { name: "stabilizing GPS", state: { warmup: true }, buttons: ["abandonWalk"] },
   { name: "manual warm-up start", state: { warmup: true, manual: true }, buttons: ["manualWarmupStart", "abandonWalk"] },
@@ -170,22 +170,38 @@ test("mobile primary actions are actually visible over a full-height map at requ
         await evaluate(stateScript(scenario.state));
         const result = await evaluate(`(() => {
           const panel = document.querySelector(".panel").getBoundingClientRect();
-          const map = document.querySelector(".mapFrame").getBoundingClientRect();
+          const startupScreen = document.getElementById("locationStartupScreen");
+          const startupRect = startupScreen.getBoundingClientRect();
+          const mapElement = document.querySelector(".mapFrame");
+          const map = mapElement.getBoundingClientRect();
           const buttons = ${JSON.stringify(scenario.buttons)}.map((id) => {
             const element = document.getElementById(id);
             const rect = element.getBoundingClientRect();
             const style = getComputedStyle(element);
-            return { id, hidden: element.hidden, displayed: style.display !== "none" && style.visibility !== "hidden", top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, panelTop: panel.top, panelBottom: panel.bottom };
+            const host = element.closest(".location-access-card") || document.querySelector(".panel");
+            const hostRect = host.getBoundingClientRect();
+            return { id, hidden: element.hidden, displayed: style.display !== "none" && style.visibility !== "hidden", top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, hostTop: hostRect.top, hostBottom: hostRect.bottom };
           });
           const mapLocate = document.getElementById("locate").getBoundingClientRect();
           const modeButtons = [...document.querySelectorAll(".mode-selector button, .expeditionMethods button")].map((element) => {
             const rect = element.getBoundingClientRect();
             return { id: element.id, hidden: element.hidden, displayed: getComputedStyle(element).display !== "none", top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
           }).filter((button) => !button.hidden && button.displayed && button.width > 0 && button.height > 0);
-          return { mapHeight: map.height, viewportHeight: innerHeight, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height } };
+          const mapProbe = document.elementFromPoint(10, document.querySelector("header").getBoundingClientRect().bottom + 10);
+          return { mapHeight: map.height, viewportHeight: innerHeight, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height }, startup: { hidden: startupScreen.hidden, top: startupRect.top, left: startupRect.left, right: startupRect.right, bottom: startupRect.bottom, background: getComputedStyle(startupScreen).backgroundColor, zIndex: Number(getComputedStyle(startupScreen).zIndex), mapZIndex: Number(getComputedStyle(mapElement).zIndex), probeIsBlocked: Boolean(mapProbe && startupScreen.contains(mapProbe)), probeReachesMap: Boolean(mapProbe && mapElement.contains(mapProbe)) } };
         })()`);
         assert.ok(Math.abs(result.mapHeight - baselineMapHeight) < 1, `${width}x${height} ${scenario.name}: controls changed map height`);
         assert.ok(result.scrollHeight <= result.viewportHeight + 1, `${width}x${height} ${scenario.name}: page gained vertical scroll`);
+        if (scenario.state.startup) {
+          assert.equal(result.startup.hidden, false, `${width}x${height} ${scenario.name}: startup gate is open`);
+          assert.ok(result.startup.top <= 0 && result.startup.left <= 0 && result.startup.right >= width && result.startup.bottom >= height, `${width}x${height} ${scenario.name}: GPS gate covers the full screen`);
+          assert.equal(result.startup.background, "rgb(247, 247, 242)", `${width}x${height} ${scenario.name}: GPS gate is opaque`);
+          assert.ok(result.startup.zIndex > result.startup.mapZIndex, `${width}x${height} ${scenario.name}: GPS gate is above the map`);
+          assert.equal(result.startup.probeIsBlocked, true, `${width}x${height} ${scenario.name}: map cannot be seen or interacted with before GPS`);
+        } else {
+          assert.equal(result.startup.hidden, true, `${width}x${height} ${scenario.name}: GPS gate closes after the first usable location`);
+          assert.equal(result.startup.probeReachesMap, true, `${width}x${height} ${scenario.name}: map is visible after GPS gate closes`);
+        }
         assert.ok(result.locate.top >= 0 && result.locate.bottom <= result.viewportHeight + 1 && result.locate.height >= 44, `${width}x${height} ${scenario.name}: map control is accessible`);
         for (const button of result.modeButtons) {
           assert.ok(button.height >= 44 && button.top >= 0 && button.bottom <= result.viewportHeight + 1, `${width}x${height} ${scenario.name}: #${button.id} mode control is visible and at least 44px high`);
@@ -195,7 +211,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
           assert.equal(button.displayed, true, `${width}x${height} ${scenario.name}: #${button.id} display`);
           assert.ok(button.width > 0 && button.height >= 44, `${width}x${height} ${scenario.name}: #${button.id} touch target is ${button.width}x${button.height}`);
           assert.ok(button.top >= 0 && button.bottom <= result.viewportHeight + 1, `${width}x${height} ${scenario.name}: #${button.id} is outside the viewport`);
-          assert.ok(button.top >= button.panelTop - 1 && button.bottom <= button.panelBottom + 1, `${width}x${height} ${scenario.name}: #${button.id} is clipped by the action panel`);
+          assert.ok(button.top >= button.hostTop - 1 && button.bottom <= button.hostBottom + 1, `${width}x${height} ${scenario.name}: #${button.id} is clipped by its action container`);
         }
       }
       t.diagnostic(`${width}x${height}: map ${baselineMapHeight}px; ${scenarios.length} UI states; primary actions stayed visible`);

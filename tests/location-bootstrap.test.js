@@ -14,10 +14,17 @@ const position = (lat, lng, timestamp = now, accuracy = 89) => ({ timestamp, coo
 test("startup screen covers the map until the first fresh usable GPS coordinate", () => {
   assert.match(html, /id="locationStartupScreen" class="location-access-screen" aria-live="polite">/);
   assert.match(html, /Определяем местоположение/);
-  assert.match(html, /id="locationStartupRetry"/);
+  assert.match(html, /<section class="location-access-card">[\s\S]*?id="locationStartupRetry"/);
   assert.match(app, /const completeLocationStartup = \(point\) => \{[\s\S]*?map\.setView\(\[point\.lat, point\.lng\], 15\);[\s\S]*?locationStartupScreen"\)\.hidden = true/);
   assert.match(app, /const onLocationError = \(error\) => \{[\s\S]*?showLocationStartupError/);
   assert.match(css, /\.location-access-screen \{ position: fixed; z-index: 5000/);
+  const mobileStyles = css.slice(css.lastIndexOf("@media (max-width: 760px)"));
+  const mobileGate = mobileStyles.match(/\.location-access-screen \{([^}]*)\}/)?.[1];
+  assert.ok(mobileGate);
+  assert.match(mobileGate, /background: #f7f7f2/);
+  assert.match(mobileGate, /pointer-events: auto/);
+  assert.doesNotMatch(mobileGate, /background: transparent|pointer-events: none/);
+  assert.match(css, /\.location-access-card button \{ display: block; min-height: 48px/);
 });
 
 test("display validation allows a fresh 89 m fix but rejects stale, invalid, or malformed coordinates", () => {
@@ -81,9 +88,10 @@ test("mobile controls overlay the full-height map and live in compact action and
   assert.match(mobileLayout, /\.mode-selector button, \.expeditionMethods button \{ min-height: 44px/);
   assert.match(mobileLayout, /\.actions button \{[\s\S]*?min-height: 44px/);
   assert.match(mobileLayout, /\.random-target-controls select, \.random-target-controls button \{ min-height: 44px/);
-  for (const id of ["locationStartupRetry", "locationRetry", "start", "startExpedition", "manualWarmupStart", "finish", "abandonWalk"]) {
+  for (const id of ["locationRetry", "start", "startExpedition", "manualWarmupStart", "finish", "abandonWalk"]) {
     assert.match(actions, new RegExp(`id="${id}"`));
   }
+  assert.match(html.match(/<section class="location-access-card">([\s\S]*?)<\/section>/)?.[1] || "", /id="locationStartupRetry"/);
   for (const id of ["appVersion", "musicToggle", "walksToggle", "locationDiagnostics", "copyActiveDiagnostics"]) {
     assert.match(utilityMenu, new RegExp(`id="${id}"`));
   }

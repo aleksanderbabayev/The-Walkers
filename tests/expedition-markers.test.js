@@ -98,7 +98,7 @@ test("app draws expedition start only from accepted route data and restores save
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
   const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
   const bootstrap = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
-  assert.match(html, /name="app-version" content="0\.2\.12"/);
+  assert.match(html, /name="app-version" content="0\.2\.13"/);
   assert.ok(bootstrap.includes('"expedition-markers.js?v=0.2.6"'));
   assert.ok(bootstrap.includes('"app.js?v=0.2.9"'));
   assert.ok(app.includes("if (activeMode === \"expedition\") updateExpeditionStartMarker(recordedStartPoint)"));
