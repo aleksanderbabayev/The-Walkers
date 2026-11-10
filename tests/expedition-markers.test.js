@@ -98,9 +98,9 @@ test("app draws expedition start only from accepted route data and restores save
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
   const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
   const bootstrap = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
-  assert.match(html, /name="app-version" content="0\.2\.17"/);
+  assert.match(html, /name="app-version" content="0\.2.18"/);
   assert.ok(bootstrap.includes('"expedition-markers.js?v=0.2.6"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.17"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.18"'));
   assert.ok(app.includes("if (activeMode === \"expedition\") updateExpeditionStartMarker(recordedStartPoint)"));
   assert.ok(app.includes("if (activeMode === \"expedition\") updateExpeditionStartMarker(restoredValidatedPoints[0])"));
   assert.ok(app.includes("if (activeMode === \"expedition\" && points[0]) updateExpeditionStartMarker(points[0])"));
@@ -109,4 +109,22 @@ test("app draws expedition start only from accepted route data and restores save
   assert.ok(app.includes("expeditionMarkers.updateTarget(target)"));
   const markerSource = fs.readFileSync(require.resolve("../expedition-markers.js"), "utf8");
   assert.ok(markerSource.includes('walk.expeditionStatus === "reached"'));
+});
+
+test("territory finish zone is created, centered, hidden, and restored with an active draft", () => {
+  const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
+  const core = fs.readFileSync(require.resolve("../tracking-core.js"), "utf8");
+  assert.match(core, /const FINISH_ZONE_RADIUS_METERS = 25/);
+  assert.match(app, /const updateTerritoryFinishZone = \(point\) => \{[\s\S]*?if \(!recordingActive \|\| activeMode !== "territory" \|\| !point\) \{\s*clearTerritoryFinishZone\(\)/);
+  assert.match(app, /territoryFinishZone = L\.circle\(latlng, \{\s*radius: Tracking\.FINISH_ZONE_RADIUS_METERS,[\s\S]*?fillOpacity: 0\.14,[\s\S]*?interactive: false/);
+  assert.match(app, /const clearTerritoryFinishZone = \(\) => \{\s*if \(territoryFinishZone\) map\.removeLayer\(territoryFinishZone\);\s*territoryFinishZone = null/);
+  assert.match(app, /const clearRouteStartMarker = \(\) => \{[\s\S]*?clearTerritoryFinishZone\(\)/);
+
+  const beginRecording = app.slice(app.indexOf("const beginRecordingAt"), app.indexOf("const processPosition"));
+  assert.match(beginRecording, /setRecording\(true\); startStopwatch\(\);\s*updateTerritoryFinishZone\(recordedStartPoint\)/);
+  assert.match(app, /updateRouteStartMarker\(points\[0\]\);\s*updateTerritoryFinishZone\(points\[0\]\)/);
+  const restoreDraft = app.slice(app.indexOf("const restoredValidatedPoints"), app.indexOf("} else {\n          try { await WalkStorage.deleteDraft"));
+  assert.match(restoreDraft, /setRecording\(!warmingUp\);\s*if \(!warmingUp && activeMode === "territory" && restoredValidatedPoints\.length\)\s*\{\s*updateTerritoryFinishZone\(restoredValidatedPoints\[0\]\)/);
+  assert.match(app, /await WalkStorage\.completeWalk\(db, walk\);\s*clearRouteStartMarker\(\)/);
+  assert.match(app, /const clearActiveWalkView = \(\) => \{[\s\S]*?clearRouteStartMarker\(\)/);
 });

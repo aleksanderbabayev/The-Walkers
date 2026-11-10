@@ -141,7 +141,7 @@
   const initialRouteBuffer = Tracking.createInitialRouteBuffer();
   let currentLocationMarker = null, accuracyCircle = null, startupPositionReady = false, accuracyCircleDismissed = false;
   let capturePosition = null, captureFreshnessTimer = null;
-  let routeStartMarker = null;
+  let routeStartMarker = null, territoryFinishZone = null;
   const expeditionMarkers = ExpeditionMarkers.createExpeditionMarkers({ map, leaflet: L });
   let locationState = "loading", latestLocation = null, locationRequestPending = false;
   let locationPermissionMonitored = false;
@@ -202,6 +202,27 @@
     retry.textContent = details.action || "Попробовать снова";
     $("locationStartupScreen").hidden = false;
   };
+  const clearTerritoryFinishZone = () => {
+    if (territoryFinishZone) map.removeLayer(territoryFinishZone);
+    territoryFinishZone = null;
+  };
+  const updateTerritoryFinishZone = (point) => {
+    if (!recordingActive || activeMode !== "territory" || !point) {
+      clearTerritoryFinishZone();
+      return;
+    }
+    const latlng = [point.lat, point.lng];
+    if (territoryFinishZone) territoryFinishZone.setLatLng(latlng).setRadius(Tracking.FINISH_ZONE_RADIUS_METERS);
+    else territoryFinishZone = L.circle(latlng, {
+      radius: Tracking.FINISH_ZONE_RADIUS_METERS,
+      color: "#24754a",
+      weight: 2,
+      opacity: 0.85,
+      fillColor: "#59a978",
+      fillOpacity: 0.14,
+      interactive: false
+    }).addTo(map);
+  };
   const updateRouteStartMarker = (point) => {
     if (!point) return;
     const icon = L.divIcon({
@@ -218,6 +239,7 @@
   const clearRouteStartMarker = () => {
     if (routeStartMarker) map.removeLayer(routeStartMarker);
     routeStartMarker = null;
+    clearTerritoryFinishZone();
   };
   const updateExpeditionTargetMarker = (target) => {
     expeditionMarkers.updateTarget(target);
@@ -1023,6 +1045,7 @@
     else updateRouteStartMarker(recordedStartPoint);
     $("gps").textContent = `±${Math.round(initialPoint.accuracy)} м`;
     setRecording(true); startStopwatch();
+    updateTerritoryFinishZone(recordedStartPoint);
     say(manual ? "Прогулка начата с предупреждением: точность GPS ниже обычной. Продолжаем проверять каждую точку." : "GPS готов. Можно идти!");
     if (updateExpeditionProgress(initialPoint)) say("Цель достигнута. Завершаем экспедицию…");
     warmupDiagnosticPrevious = null;
@@ -1168,6 +1191,10 @@
       pendingDiagnosticPrevious = null;
       points = nextPoints; distanceMetersTotal = distanceForPoints(points);
       if (activeMode === "expedition" && points[0]) updateExpeditionStartMarker(points[0]);
+      if (activeMode === "territory" && points[0]) {
+        updateRouteStartMarker(points[0]);
+        updateTerritoryFinishZone(points[0]);
+      }
       const lastValidatedPoint = result.validatedPoints.at(-1);
       drawCurrent(); updateDistance();
       if (lastValidatedPoint) {
@@ -1624,6 +1651,9 @@
             startTrackingServices();
             starting = false;
             setRecording(!warmingUp);
+            if (!warmingUp && activeMode === "territory" && restoredValidatedPoints.length) {
+              updateTerritoryFinishZone(restoredValidatedPoints[0]);
+            }
             if (warmingUp) { say(""); warmupWaitTimer = setInterval(refreshManualWarmupStart, 1000); }
             else { startStopwatch(); say("Прогулка восстановлена. Ожидаем свежую GPS-точку…"); }
           } catch {

@@ -24,6 +24,7 @@
     maxGapMs: 8000,
     manualStartAfterMs: 15000
   });
+  const FINISH_ZONE_RADIUS_METERS = 25;
 
   const distanceMeters = (a, b) => {
     const radius = 6371000, rad = (value) => value * Math.PI / 180;
@@ -238,7 +239,7 @@
     return distanceMeters(points[0], points.at(-1)) <= options.closeMeters;
   };
 
-  const evaluateTerritoryCapture = (points = [], position, now = Date.now(), finishRadiusMeters = 10) => {
+  const evaluateTerritoryCapture = (points = [], position, now = Date.now(), finishRadiusMeters = FINISH_ZONE_RADIUS_METERS) => {
     const start = points[0];
     const validStart = Number.isFinite(start?.lat) && Number.isFinite(start?.lng)
       && Math.abs(start.lat) <= 90 && Math.abs(start.lng) <= 180;
@@ -292,5 +293,5 @@
     return { start, startWatch, stopAutosave, stop };
   };
 
-  return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, distanceMeters, evaluatePosition, evaluateDisplayPosition, shouldUpdateGpsMarker, evaluateLocationPosition, isLocationFresh, evaluateLocationUpdate, createPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, evaluateTerritoryCapture, shouldDisplayWalkOnMap, createGpsServices };
+  return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, FINISH_ZONE_RADIUS_METERS, distanceMeters, evaluatePosition, evaluateDisplayPosition, shouldUpdateGpsMarker, evaluateLocationPosition, isLocationFresh, evaluateLocationUpdate, createPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, evaluateTerritoryCapture, shouldDisplayWalkOnMap, createGpsServices };
 });
