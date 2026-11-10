@@ -82,7 +82,7 @@ test("active app keeps GPS retry behavior without using the startup access scree
 
 test("idle GPS watch updates its marker and follow mode is an explicit user choice", () => {
   const fs = require("node:fs");
-  const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
+  const app = fs.readFileSync(require.resolve("../app.js"), "utf8").replace(/\r\n/g, "\n");
   const idlePositionBranch = app.match(/if \(!warmingUp && !recordingActive\) \{([\s\S]*?)\n    \}\n    if \(warmingUp\)/)?.[1];
   assert.ok(idlePositionBranch);
   assert.match(idlePositionBranch, /Tracking\.evaluateLocationUpdate\(position, latestLocation, processedAt\)/);
