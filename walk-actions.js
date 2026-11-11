@@ -7,6 +7,23 @@
 
   const bindClick = (button, action) => button.addEventListener("click", () => action());
 
+  const createSerialQueue = (onError = () => {}) => {
+    let tail = Promise.resolve();
+    return {
+      enqueue(task) {
+        const pending = tail.then(task);
+        tail = pending.catch(onError);
+        return pending;
+      },
+      drain() { return tail; }
+    };
+  };
+
+  const createPositionReceiver = ({ enqueue, processPosition, isFinishing }) => (position) => {
+    if (isFinishing()) return Promise.resolve();
+    return enqueue(() => processPosition(position));
+  };
+
   const commitIfReady = async ({ prepare, evaluate, commit, onReject }) => {
     const context = await prepare();
     const evaluation = evaluate(context);
@@ -18,5 +35,5 @@
     return { committed: true, context, evaluation };
   };
 
-  return { bindClick, commitIfReady };
+  return { bindClick, createSerialQueue, createPositionReceiver, commitIfReady };
 });

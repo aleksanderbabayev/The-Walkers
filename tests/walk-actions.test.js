@@ -39,8 +39,8 @@ test("Finish and Retreat button dispatch call their actions without passing the 
   assert.match(appSource, /diagnosticSession\.walkStatus = retreated \? "retreated" : "completed"/);
   const finishImplementation = appSource.slice(appSource.indexOf("const finishWalk = async"), appSource.indexOf('$("start").addEventListener'));
   const prepareWalk = finishImplementation.slice(finishImplementation.indexOf("const prepareWalk"), finishImplementation.indexOf("let walkContext"));
-  assert.ok(prepareWalk.indexOf("await trackingQueue") >= 0);
-  assert.ok(prepareWalk.indexOf("await trackingQueue") < prepareWalk.indexOf("const finishedPoints"), "the final route is built after pending GPS work");
+  assert.ok(prepareWalk.indexOf("await trackingTasks.drain()") >= 0);
+  assert.ok(prepareWalk.indexOf("await trackingTasks.drain()") < prepareWalk.indexOf("const finishedPoints"), "the final route is built after pending GPS work");
   assert.match(finishImplementation, /Actions\.commitIfReady\(\{\s*prepare: prepareWalk,[\s\S]*?evaluate: \(\{ finishedPoints \}\) => evaluateCaptureReadiness\(finishedPoints, true\)[\s\S]*?WalkStorage\.completeWalk\(db, walk\)/);
   const filterReset = finishImplementation.indexOf("positionFilter.reset(); gpsWarmup.reset();");
   assert.ok(finishImplementation.indexOf("WalkStorage.completeWalk(db, walk)") < filterReset, "territory filters reset after its successful save");
@@ -48,14 +48,17 @@ test("Finish and Retreat button dispatch call their actions without passing the 
   assert.match(prepareWalk, /points: finishedPoints[\s\S]*diagnosticSession\.finalRoute = finishedPoints\.map/);
   const resumeFailure = appSource.slice(appSource.indexOf("const resumeAfterFinishFailure"), appSource.indexOf("const showExpeditionResult"));
   assert.doesNotMatch(resumeFailure, /positionFilter\.reset|gpsWarmup\.reset/);
-  assert.match(appSource, /const receivePosition = \(position\) => finishing \? Promise\.resolve\(\) : enqueueTrackingTask/);
-  assert.ok(bootstrapSource.includes('"walk-actions.js?v=0.1.47"'));
-  assert.ok(bootstrapSource.includes('"app.js?v=0.2.22"'));
+  assert.match(appSource, /const receivePosition = Actions\.createPositionReceiver\(/);
+  assert.ok(bootstrapSource.includes('"walk-actions.js?v=0.1.48"'));
+  assert.ok(bootstrapSource.includes('"app.js?v=0.2.23"'));
   assert.match(appSource, /const evaluateCaptureReadiness = \(routePoints = initialRouteBuffer\.pending \? \[\] : points, allowFinishing = false\) => \{[\s\S]*?Tracking\.evaluateTerritoryCapture\(routePoints, capturePosition\)[\s\S]*?\(allowFinishing \|\| !finishing\).*?readiness\.eligible/);
   assert.match(appSource, /const updateCaptureAvailability = \(readiness = evaluateCaptureReadiness\(\)\) => \{\s*\$\("finish"\)\.disabled = !readiness\.eligible/);
   assert.match(appSource, /const finishPositionFilter = Tracking\.createFinishPositionFilter\(\)/);
   assert.match(appSource, /const processedAt = Date\.now\(\);\s*if \(recordingActive && activeMode === "territory"\) \{\s*const finishPosition = finishPositionFilter\.evaluate\(position, processedAt\);\s*if \(finishPosition\.accepted\) setCapturePosition\(finishPosition\.point\)/);
   const positionProcessing = appSource.slice(appSource.indexOf("const processPosition"), appSource.indexOf("const receivePosition"));
+  assert.match(positionProcessing, /^const processPosition = async \(position\) => \{\s*if \(cancelling\) return;/);
+  assert.doesNotMatch(positionProcessing.slice(0, 90), /finishing/);
+  assert.match(appSource, /const trackingTasks = Actions\.createSerialQueue/);
   assert.doesNotMatch(positionProcessing.slice(0, positionProcessing.indexOf("const displayResult")), /setCapturePosition\(null\)/, "incoming measurements do not clear the previous finish fix");
   assert.doesNotMatch(positionProcessing, /setCapturePosition\(result\.point\)|setCapturePosition\(lastValidatedPoint\)/, "route writes do not control the separate finish position");
   assert.match(positionProcessing, /result\.reason === "speed"\) say\("GPS скачок отброшен/);
@@ -154,6 +157,85 @@ test("capture completion waits for GPS work and rejects a newly unsuitable route
   assert.equal(recording, true);
   assert.equal(resumed, true);
   assert.equal(filterReset, false, "a rejected capture does not reset the route filter");
+});
+
+test("GPS task B runs after task A's pending save and is included in the finish snapshot", async () => {
+  const Storage = require("../walk-storage.js");
+  const queue = Actions.createSerialQueue();
+  const now = Date.now();
+  const db = new MemoryDatabase();
+  const route = [
+    { lat: 0, lng: 0, accuracy: 5, timestamp: now - 24000, segmentStart: true },
+    { lat: 0, lng: 0.0001, accuracy: 5, timestamp: now - 18000 },
+    { lat: 0.0001, lng: 0.0001, accuracy: 5, timestamp: now - 12000 }
+  ];
+  db.records.drafts.set("active", { id: "active", points: route, startedAt: now - 10000 });
+  const filter = Tracking.createPositionFilter();
+  let filterReset = false;
+  const steps = [];
+  let points = route;
+  let finishing = false;
+  let cancelling = false;
+  let releaseASave, markAStarted;
+  const aSave = new Promise((resolve) => { releaseASave = resolve; });
+  const aStarted = new Promise((resolve) => { markAStarted = resolve; });
+  const processPosition = async (position) => {
+    if (cancelling) return;
+    steps.push(`process-${position.id}`);
+    assert.equal(filterReset, false, "queued handlers retain their GPS filter state");
+    if (position.id === "B") assert.equal(finishing, true, "an already queued GPS task runs after finish starts");
+    if (position.id === "A") markAStarted();
+    const result = filter.evaluate(position, points.at(-1), Date.now());
+    assert.equal(result.accepted, true, `GPS ${position.id} passes the route filter`);
+    const nextPoints = [...points, ...(result.points || [result.point])];
+    if (position.id === "A") {
+      await aSave;
+    }
+    db.records.drafts.set("active", { id: "active", points: nextPoints, startedAt: now - 10000 });
+    points = nextPoints;
+    steps.push(`saved-${position.id}`);
+  };
+  const receivePosition = Actions.createPositionReceiver({
+    enqueue: (task) => queue.enqueue(task),
+    processPosition,
+    isFinishing: () => finishing
+  });
+  const fix = (id, lat, lng, timestamp) => ({ id, timestamp, coords: { latitude: lat, longitude: lng, accuracy: 5 } });
+  const taskA = receivePosition(fix("A", 0.0001, 0, now - 6000));
+  await aStarted;
+  const taskB = receivePosition(fix("B", 0.00004, 0, now - 1000));
+  const finishButton = new Button();
+  let finish;
+  Actions.bindClick(finishButton, () => {
+    finishing = true;
+    finish = Actions.commitIfReady({
+      prepare: async () => {
+        await queue.drain();
+        steps.push("snapshot");
+        return { points: [...points] };
+      },
+      evaluate: ({ points: finalPoints }) => Tracking.evaluateTerritoryCapture(finalPoints, { lat: 0, lng: 0, accuracy: 5, timestamp: now }, now),
+      commit: async ({ points: finalPoints }) => {
+        steps.push("save-territory");
+        assert.equal(filterReset, false, "GPS filters remain intact while IndexedDB is saving");
+        await Storage.completeWalk(db, { id: "captured", mode: "territory", points: finalPoints, closed: true });
+        filter.reset();
+        filterReset = true;
+      }
+    });
+  });
+  finishButton.click();
+  assert.equal(await receivePosition(fix("late", 0, 0, now)), undefined, "new GPS fixes are rejected once finishing starts");
+  releaseASave();
+  await Promise.all([taskA, taskB, finish]);
+
+  assert.deepEqual(steps, ["process-A", "saved-A", "process-B", "saved-B", "snapshot", "save-territory"]);
+  const savedWalk = db.records.walks.get("captured");
+  assert.equal(savedWalk.points.length, 5);
+  assert.equal(savedWalk.points.at(-1).lat, 0.00004);
+  assert.equal(filterReset, true, "the successful IndexedDB transaction precedes the filter reset");
+  assert.equal(Tracking.evaluateTrackClosure(savedWalk.points).eligible, true);
+  assert.equal(db.records.drafts.has("active"), false);
 });
 
 test("queued GPS confirmation keeps a safe segment break through territory save", async () => {

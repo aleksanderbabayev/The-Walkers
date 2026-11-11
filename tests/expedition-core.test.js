@@ -175,7 +175,7 @@ test("expedition UI, accepted GPS completion, persistence and territory isolatio
   assert.match(html, /id="expeditionCompass"[^>]+hidden/);
   assert.doesNotMatch(html, /compassNorth|>N</);
   assert.doesNotMatch(app + html, /DeviceOrientation|deviceorientation/);
-  assert.ok(app.includes("const receivePosition = (position) => finishing ? Promise.resolve() : enqueueTrackingTask(() => processPosition(position)"));
+  assert.ok(app.includes("const receivePosition = Actions.createPositionReceiver({"));
   const processingStart = app.indexOf("const processPosition");
   const processingEnd = app.indexOf('$("manualWarmupStart").addEventListener', processingStart);
   const processing = app.slice(processingStart, processingEnd);
@@ -189,6 +189,6 @@ test("expedition UI, accepted GPS completion, persistence and territory isolatio
   assert.ok(app.includes('if (walk.expeditionStatus === "reached") showExpeditionResult(walk)'));
   assert.match(html, /Экспедиция завершена/);
   assert.ok(bootstrap.includes('"expedition-core.js?v=0.2.3"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.22"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.23"'));
   assert.doesNotMatch(app, /router|routing service|OSRM|GraphHopper/i);
 });

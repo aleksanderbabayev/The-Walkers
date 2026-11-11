@@ -137,7 +137,7 @@
   let targetMethod = "manual", expeditionDistanceMeters = null, expeditionCompletionPending = false;
   let recordingActive = false, warmingUp = false, points = [], distanceMetersTotal = 0, currentLines = [], savedLayers = [], stopwatchTimer = null, warmupWaitTimer = null, warmupStartedAt = null, startedAt = null;
   let walksById = new Map();
-  let trackingQueue = Promise.resolve();
+  const trackingTasks = Actions.createSerialQueue((error) => say(`Не удалось сохранить прогулку: ${error.message || "ошибка IndexedDB"}.`));
   let diagnosticSession = null, diagnosticsQueue = Promise.resolve(), diagnosticsPersistenceFailed = false;
   let diagnosticsByWalkId = new Map();
   let warmupDiagnosticPrevious = null, pendingDiagnosticPrevious = null, pendingDiagnosticEvents = [];
@@ -968,8 +968,7 @@
   });
   const saveDraftSnapshot = (nextPoints = points, nextStartedAt = startedAt, nextInitialBuffer = initialRouteBuffer.snapshot()) => WalkStorage.writeDraft(db, draftSnapshot(nextPoints, nextStartedAt, nextInitialBuffer));
   const enqueueTrackingTask = (task) => {
-    const pending = trackingQueue.then(task);
-    trackingQueue = pending.catch((error) => say(`Не удалось сохранить прогулку: ${error.message || "ошибка IndexedDB"}.`));
+    const pending = trackingTasks.enqueue(task);
     pending.then(() => {
       if (expeditionCompletionPending && recordingActive && activeMode === "expedition") finishWalk(false).catch(() => {});
     }, () => {});
@@ -1089,7 +1088,7 @@
     return true;
   };
   const processPosition = async (position) => {
-    if (finishing || cancelling) return;
+    if (cancelling) return;
     const processedAt = Date.now();
     if (recordingActive && activeMode === "territory") {
       const finishPosition = finishPositionFilter.evaluate(position, processedAt);
@@ -1278,7 +1277,11 @@
       await beginRecordingAt(freshCandidate, true);
     }).catch(() => {});
   });
-  const receivePosition = (position) => finishing ? Promise.resolve() : enqueueTrackingTask(() => processPosition(position));
+  const receivePosition = Actions.createPositionReceiver({
+    enqueue: enqueueTrackingTask,
+    processPosition,
+    isFinishing: () => finishing
+  });
   const onLocationError = (error) => {
     recordDiagnosticEvent({ type: "gps-error", at: Date.now(), phase: warmingUp ? "warm-up" : recordingActive ? (initialRouteBuffer.pending ? "initial-buffer" : "recording") : "location", code: Number.isFinite(error?.code) ? error.code : null });
     noteLocationRequest(error?.code === 1 ? "PERMISSION_DENIED" : error?.code === 3 ? "TIMEOUT" : "POSITION_UNAVAILABLE");
@@ -1435,7 +1438,7 @@
     locateRequestId += 1;
     setRecording(false); clearActiveWalkView(); say("");
     try {
-      await trackingQueue;
+      await trackingTasks.drain();
       await diagnosticsQueue;
       await WalkStorage.deleteDraft(db);
       clearActiveWalkView();
@@ -1481,7 +1484,7 @@
     finishing = true; expeditionLine.hide(); setRecording(true); stopTrackingServices();
     try {
       const prepareWalk = async () => {
-        await trackingQueue;
+        await trackingTasks.drain();
         const bufferedPoints = initialRouteBuffer.pending ? initialRouteBuffer.flush().points : [];
         const finishedPoints = [...points, ...bufferedPoints];
         const finishedAt = Date.now();
