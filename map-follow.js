@@ -20,6 +20,23 @@
     return createPoint(mapWidth / 2, visibleHeight / 2);
   };
 
+  const getVisibleMapFitPadding = ({ mapElement, panelElement, mobile = false, padding = 16 }) => {
+    const symmetricPadding = { paddingTopLeft: [padding, padding], paddingBottomRight: [padding, padding] };
+    if (!mobile || !panelElement) return symmetricPadding;
+
+    const mapRect = mapElement.getBoundingClientRect();
+    const panelTop = panelElement.getBoundingClientRect().top;
+    const visibleBottom = Math.min(mapRect.bottom, Math.max(mapRect.top, panelTop));
+    const visibleHeight = visibleBottom - mapRect.top;
+    if (visibleHeight <= padding * 2) return symmetricPadding;
+
+    const coveredBottom = mapRect.bottom - visibleBottom;
+    return {
+      paddingTopLeft: [padding, padding],
+      paddingBottomRight: [padding, coveredBottom + padding]
+    };
+  };
+
   const createMapFollow = ({ map, storage, onChange = () => {}, getTargetPoint = () => map.getSize().divideBy(2) }) => {
     let enabled = false;
     let programmaticMove = false;
@@ -59,5 +76,5 @@
     };
   };
 
-  return { getVisibleMapCenter, createMapFollow };
+  return { getVisibleMapCenter, getVisibleMapFitPadding, createMapFollow };
 });

@@ -67,6 +67,21 @@ test("visual center uses the free map area above the panel and falls back on des
   assert.deepEqual(MapFollow.getVisibleMapCenter({ mapElement, panelElement, mobile: true, createPoint }), new FakePoint(187.5, 175));
 });
 
+test("territory fit padding centers bounds above the mobile panel and stays symmetric on desktop", () => {
+  const mapElement = { getBoundingClientRect: () => ({ top: 50, bottom: 850 }) };
+  const panelElement = { getBoundingClientRect: () => ({ top: 550 }) };
+  assert.deepEqual(MapFollow.getVisibleMapFitPadding({ mapElement, panelElement, mobile: true }), {
+    paddingTopLeft: [16, 16], paddingBottomRight: [16, 316]
+  });
+  panelElement.getBoundingClientRect = () => ({ top: 400 });
+  assert.deepEqual(MapFollow.getVisibleMapFitPadding({ mapElement, panelElement, mobile: true }), {
+    paddingTopLeft: [16, 16], paddingBottomRight: [16, 466]
+  });
+  assert.deepEqual(MapFollow.getVisibleMapFitPadding({ mapElement, panelElement, mobile: false }), {
+    paddingTopLeft: [16, 16], paddingBottomRight: [16, 16]
+  });
+});
+
 test("the initial GPS view can center visually even before the follow preference is enabled", () => {
   const map = new FakeMap(), follow = MapFollow.createMapFollow({ map, storage: makeStorage(), getTargetPoint: () => new FakePoint(200, 180) });
   assert.equal(follow.centerOn({ lat: 48.9, lng: 21.2 }, { force: true }), true);
@@ -103,8 +118,8 @@ test("capture completion disables follow and GPS following reuses the shared wat
   assert.match(app, /button\.classList\.toggle\("is-following", mapFollow\?\.enabled === true\)/);
   assert.match(app, /button\.setAttribute\("aria-pressed", String\(mapFollow\?\.enabled === true\)\)/);
   assert.match(app, /Отключить следование за вашим местоположением/);
-  assert.ok(bootstrap.includes('"map-follow.js?v=0.1.73"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.23"'));
+  assert.ok(bootstrap.includes('"map-follow.js?v=0.1.74"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.24"'));
   assert.doesNotMatch(fs.readFileSync(require.resolve("../map-follow.js"), "utf8"), /watchPosition/);
 });
 
@@ -117,6 +132,8 @@ test("startup, locate, follow and layout changes share the measured visual cente
   assert.ok(app.includes("getTargetPoint: getMapVisualCenter"));
   assert.ok(app.includes("mapFollow.centerOn(point, { force: true })"));
   assert.ok(app.includes("mapFollow.centerOn(point);"));
+  assert.match(app, /MapFollow\.getVisibleMapFitPadding\(\{[\s\S]*?mapElement: map\.getContainer\(\),[\s\S]*?panelElement: walkPanel,[\s\S]*?mobile: isMobileViewport\(\)/);
+  assert.match(app, /map\.fitBounds\(focusedTerritory\.getBounds\(\), \{[\s\S]*?maxZoom: 16/);
   assert.ok(app.includes("if (!mapFollow.enabled || !locationIsFresh(latestLocation) || followLayoutFrame) return"));
   assert.ok(app.includes("new ResizeObserver(recenterFollowingLocation).observe(walkPanel)"));
 });

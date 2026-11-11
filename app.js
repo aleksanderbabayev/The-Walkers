@@ -1030,7 +1030,15 @@
       row.append(icon, details, actions); list.append(row);
     });
     if (focusedTerritory) {
-      map.fitBounds(focusedTerritory.getBounds(), { padding: [16, 16], maxZoom: 16 });
+      map.fitBounds(focusedTerritory.getBounds(), {
+        ...MapFollow.getVisibleMapFitPadding({
+          mapElement: map.getContainer(),
+          panelElement: walkPanel,
+          mobile: isMobileViewport(),
+          padding: 16
+        }),
+        maxZoom: 16
+      });
     }
     if (!isMobileViewport()) preloadWalkDiagnostics();
   };

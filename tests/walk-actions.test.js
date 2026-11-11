@@ -50,7 +50,7 @@ test("Finish and Retreat button dispatch call their actions without passing the 
   assert.doesNotMatch(resumeFailure, /positionFilter\.reset|gpsWarmup\.reset/);
   assert.match(appSource, /const receivePosition = Actions\.createPositionReceiver\(/);
   assert.ok(bootstrapSource.includes('"walk-actions.js?v=0.1.48"'));
-  assert.ok(bootstrapSource.includes('"app.js?v=0.2.23"'));
+  assert.ok(bootstrapSource.includes('"app.js?v=0.2.24"'));
   assert.match(appSource, /const evaluateCaptureReadiness = \(routePoints = initialRouteBuffer\.pending \? \[\] : points, allowFinishing = false\) => \{[\s\S]*?Tracking\.evaluateTerritoryCapture\(routePoints, capturePosition\)[\s\S]*?\(allowFinishing \|\| !finishing\).*?readiness\.eligible/);
   assert.match(appSource, /const updateCaptureAvailability = \(readiness = evaluateCaptureReadiness\(\)\) => \{\s*\$\("finish"\)\.disabled = !readiness\.eligible/);
   assert.match(appSource, /const finishPositionFilter = Tracking\.createFinishPositionFilter\(\)/);
@@ -325,7 +325,7 @@ test("a successful capture focuses only its new polygon and caps the zoom", () =
   const appSource = fs.readFileSync(require.resolve("../app.js"), "utf8");
   assert.match(appSource, /const redrawSaved = async \(\{ focusWalkId = null \} = \{\}\)/);
   assert.match(appSource, /if \(walk\.id === focusWalkId && walk\.closed && !retreated\) focusedTerritory = layers\[0\] \|\| null;/);
-  assert.match(appSource, /map\.fitBounds\(focusedTerritory\.getBounds\(\), \{ padding: \[16, 16\], maxZoom: 16 \}\);/);
+  assert.match(appSource, /map\.fitBounds\(focusedTerritory\.getBounds\(\), \{[\s\S]*?MapFollow\.getVisibleMapFitPadding\([\s\S]*?maxZoom: 16/);
   assert.match(appSource, /redrawSaved\(\{ focusWalkId: closed \? walk\.id : null \}\)/);
   assert.doesNotMatch(appSource, /fitAll|featureGroup\(savedLayers\)/);
   assert.match(appSource, /await redrawSaved\(\);/);

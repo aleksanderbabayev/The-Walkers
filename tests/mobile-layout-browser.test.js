@@ -364,7 +364,57 @@ test("mobile primary actions are actually visible over a full-height map at requ
         assert.equal(check.zoom, 15, `${width}x${height} ${check.mode}: zoom is preserved`);
         assert.equal(check.bearing, 37, `${width}x${height} ${check.mode}: bearing is preserved`);
       }
-      t.diagnostic(`${width}x${height}: map ${baselineMapHeight}px; ${scenarios.length} UI states; GPS marker centered above panel in both modes (${markerChecks.map((check) => `${check.actual.x.toFixed(1)},${check.actual.y.toFixed(1)}→${check.expected.x.toFixed(1)},${check.expected.y.toFixed(1)}`).join("; ")})`);
+      await evaluate(stateScript({ active: true }));
+      const territoryFitChecks = await evaluate(`(() => {
+        const mapElement = document.getElementById("map");
+        const panel = document.querySelector(".panel");
+        const checks = [];
+        for (const fraction of [.28, .4]) {
+          panel.style.height = Math.round(innerHeight * fraction) + "px";
+          const mapRect = mapElement.getBoundingClientRect();
+          const panelRect = panel.getBoundingClientRect();
+          const options = window.WalkMapFollow.getVisibleMapFitPadding({
+            mapElement,
+            panelElement: panel,
+            mobile: matchMedia("(max-width: 760px)").matches,
+            padding: 16
+          });
+          const width = mapElement.clientWidth, height = mapElement.clientHeight;
+          const [leftPad, topPad] = options.paddingTopLeft;
+          const [rightPad, bottomPad] = options.paddingBottomRight;
+          const availableWidth = width - leftPad - rightPad;
+          const availableHeight = height - topPad - bottomPad;
+          const bounds = { width: 420, height: 240 };
+          const scale = Math.min(availableWidth / bounds.width, availableHeight / bounds.height);
+          const center = { x: (leftPad + width - rightPad) / 2, y: (topPad + height - bottomPad) / 2 };
+          const polygon = {
+            left: mapRect.left + center.x - bounds.width * scale / 2,
+            right: mapRect.left + center.x + bounds.width * scale / 2,
+            top: mapRect.top + center.y - bounds.height * scale / 2,
+            bottom: mapRect.top + center.y + bounds.height * scale / 2
+          };
+          checks.push({
+            panelHeight: panelRect.height,
+            polygon,
+            target: { x: mapRect.left + width / 2, y: mapRect.top + (Math.min(mapRect.bottom, panelRect.top) - mapRect.top) / 2 },
+            visible: { left: mapRect.left + 16, right: mapRect.right - 16, top: mapRect.top + 16, bottom: panelRect.top - 16 },
+            scale,
+            maxZoom: 16
+          });
+        }
+        panel.style.removeProperty("height");
+        return checks;
+      })()`);
+      for (const check of territoryFitChecks) {
+        const center = { x: (check.polygon.left + check.polygon.right) / 2, y: (check.polygon.top + check.polygon.bottom) / 2 };
+        assert.ok(Math.abs(center.x - check.target.x) <= 1, `${width}x${height} territory x center ${center.x.toFixed(1)} matches available-area center ${check.target.x.toFixed(1)}`);
+        assert.ok(Math.abs(center.y - check.target.y) <= 1, `${width}x${height} territory y center ${center.y.toFixed(1)} matches above-panel center ${check.target.y.toFixed(1)}`);
+        assert.ok(check.polygon.left >= check.visible.left - 1 && check.polygon.right <= check.visible.right + 1, `${width}x${height} territory remains horizontally visible`);
+        assert.ok(check.polygon.top >= check.visible.top - 1 && check.polygon.bottom <= check.visible.bottom + 1, `${width}x${height} territory remains above the panel`);
+        assert.ok(check.scale > 0, `${width}x${height} territory receives a useful fit scale`);
+        assert.equal(check.maxZoom, 16, `${width}x${height} existing maximum zoom is preserved`);
+      }
+      t.diagnostic(`${width}x${height}: map ${baselineMapHeight}px; ${scenarios.length} UI states; GPS marker centered above panel; captured territory fits and centers above two measured panel heights`);
     }
   } finally {
     cdp?.close();
