@@ -625,20 +625,85 @@ test("keeps a continuous route eligible for closure", () => {
   assert.equal(Tracking.canCloseTrack(points), true);
 });
 
+test("territory closure allows short accuracy-bounded gaps but rejects large gaps", () => {
+  const lng = (meters) => meters / 111194.9266;
+  const routeWithGaps = [
+    point(0, 0, now - 30000, true),
+    point(0, 0.001, now - 25000),
+    point(0.001, 0.001, now - 20000),
+    point(0.001, 0.001 + lng(4), now - 15000, true),
+    point(0.001, 0, now - 10000),
+    point(0.001, lng(4), now - 5000, true),
+    point(0, lng(4), now - 1000)
+  ];
+  const originalDistance = Tracking.distanceForPoints(routeWithGaps);
+  assert.deepEqual(Tracking.evaluateTrackClosure(routeWithGaps), { eligible: true, reason: "closed" });
+  assert.equal(Tracking.canCloseTrack(routeWithGaps), true);
+  assert.ok(originalDistance < routeWithGaps.slice(1).reduce((sum, current, index) => sum + Tracking.distanceMeters(routeWithGaps[index], current), 0));
+
+  const unsafeGap = routeWithGaps.map((item) => ({ ...item }));
+  unsafeGap[3].lng = unsafeGap[2].lng + lng(30);
+  assert.deepEqual(Tracking.evaluateTrackClosure(unsafeGap), { eligible: false, reason: "unsafe-gap" });
+
+  const accuracyBoundedGap = routeWithGaps.map((item) => ({ ...item }));
+  accuracyBoundedGap[2].accuracy = 30;
+  accuracyBoundedGap[3].accuracy = 30;
+  accuracyBoundedGap[3].lng = accuracyBoundedGap[2].lng + lng(11);
+  assert.equal(Tracking.canCloseTrack(accuracyBoundedGap), true);
+  accuracyBoundedGap[3].lng = accuracyBoundedGap[2].lng + lng(13);
+  assert.equal(Tracking.evaluateTrackClosure(accuracyBoundedGap).reason, "unsafe-gap");
+});
+
+test("finish-position filter accepts trustworthy drift without changing the recorded route", () => {
+  const filter = Tracking.createFinishPositionFilter();
+  const route = [point(0, 0, now - 10000, true), point(0, 0.0001, now - 7000), point(0.0001, 0.0001, now - 4000), point(0.0001, 0, now - 1000)];
+  const routeSnapshot = route.map((item) => ({ ...item }));
+  const toFix = (lat, lng, timestamp, accuracy = 5) => ({ timestamp, coords: { latitude: lat, longitude: lng, accuracy } });
+
+  const first = filter.evaluate(toFix(0, 0, now - 5000), now - 5000);
+  const stoppedNearby = filter.evaluate(toFix(0, 0.00001, now), now);
+  assert.equal(first.accepted, true);
+  assert.equal(stoppedNearby.accepted, true);
+  assert.equal(stoppedNearby.reason, "drift");
+  assert.equal(Tracking.evaluateTerritoryCapture(route, stoppedNearby.point, now).eligible, true);
+  assert.deepEqual(route, routeSnapshot);
+  assert.equal(Tracking.distanceForPoints(route), Tracking.distanceForPoints(routeSnapshot));
+});
+
+test("finish-position filter rejects inaccurate, stale and implausible GPS jumps", () => {
+  const filter = Tracking.createFinishPositionFilter();
+  const toFix = (lng, timestamp, accuracy = 5) => ({ timestamp, coords: { latitude: 0, longitude: lng, accuracy } });
+  assert.equal(filter.evaluate(toFix(0, now - 5000), now - 5000).accepted, true);
+  assert.equal(filter.evaluate(toFix(0.00001, now, 5), now).accepted, true);
+  assert.equal(filter.evaluate(toFix(0.00002, now + 1000, 40), now + 1000).reason, "accuracy");
+  assert.equal(filter.evaluate(toFix(0.00002, now - 31000, 5), now).reason, "stale");
+  assert.equal(filter.evaluate(toFix(0.002, now + 1000, 5), now + 1000).reason, "speed");
+  const validRoute = [point(0, 0, now - 10000, true), point(0, 0.0001, now - 7000), point(0.0001, 0.0001, now - 4000), point(0.0001, 0, now - 1000)];
+  assert.equal(Tracking.evaluateTerritoryCapture(validRoute, { lat: 0, lng: 0, accuracy: 5, timestamp: now }, now + 30001).reason, "waiting-for-gps");
+});
+
 test("territory capture needs a valid closed route and a fresh accepted position within 25 meters", () => {
   const route = [point(0, 0, now - 10000, true), point(0, 0.0001, now - 7000), point(0.0001, 0.0001, now - 4000), point(0.0001, 0, now - 1000)];
   const atDistance = (meters, timestamp = now, accuracy = 5) => point(0, meters / 111194.9266, timestamp, false, accuracy);
 
   assert.equal(Tracking.FINISH_ZONE_RADIUS_METERS, 25);
   assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(26), now).eligible, false);
+  assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(26), now).reason, "too-far");
   assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(25), now).eligible, true);
+  assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(25), now).reason, "finish-reached");
   assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(10), now).eligible, true);
   assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(8), now).eligible, true);
   assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(12), now).eligible, true);
   assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(8, now - 30001), now).eligible, false);
+  assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(8, now - 30001), now).reason, "waiting-for-gps");
   assert.equal(Tracking.evaluateTerritoryCapture(route, atDistance(8, now, 36), now).eligible, false);
   assert.equal(Tracking.evaluateTerritoryCapture(route.slice(0, 3), atDistance(8), now).eligible, false);
   assert.equal(Tracking.evaluateTerritoryCapture(route, null, now).eligible, false);
+  assert.equal(Tracking.evaluateTerritoryCapture(route, null, now).reason, "waiting-for-gps");
+
+  const openRoute = [...route];
+  openRoute[3] = { ...openRoute[3], lng: 0.0005 };
+  assert.equal(Tracking.evaluateTerritoryCapture(openRoute, atDistance(8), now).reason, "not-closed");
 
   const draftAfterReload = [...route];
   assert.equal(Tracking.evaluateTerritoryCapture(draftAfterReload, atDistance(8), now).eligible, true);

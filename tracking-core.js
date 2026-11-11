@@ -25,6 +25,7 @@
     manualStartAfterMs: 15000
   });
   const FINISH_ZONE_RADIUS_METERS = 25;
+  const MAX_SAFE_SEGMENT_GAP_METERS = 12;
 
   const distanceMeters = (a, b) => {
     const radius = 6371000, rad = (value) => value * Math.PI / 180;
@@ -233,10 +234,61 @@
     return point.segmentStart ? total : total + distanceMeters(points[index], point);
   }, 0);
 
-  const canCloseTrack = (points = [], options = DEFAULTS) => {
-    const segments = splitSegments(points);
-    if (segments.length !== 1 || points.length < options.minPolygonPoints) return false;
-    return distanceMeters(points[0], points.at(-1)) <= options.closeMeters;
+  const evaluateTrackClosure = (points = [], options = DEFAULTS) => {
+    if (points.length < options.minPolygonPoints) return { eligible: false, reason: "too-few-points" };
+    if (points.some((point) => !Number.isFinite(point?.lat) || !Number.isFinite(point?.lng)
+      || Math.abs(point.lat) > 90 || Math.abs(point.lng) > 180)) {
+      return { eligible: false, reason: "invalid-route-point" };
+    }
+    const distinctGeometryPoints = [];
+    for (const point of points) {
+      if (distinctGeometryPoints.every((known) => distanceMeters(known, point) >= 1)) distinctGeometryPoints.push(point);
+      if (distinctGeometryPoints.length === 3) break;
+    }
+    if (distinctGeometryPoints.length < 3) return { eligible: false, reason: "invalid-geometry" };
+    for (let index = 1; index < points.length; index += 1) {
+      if (!points[index].segmentStart) continue;
+      const previous = points[index - 1], current = points[index];
+      if (![previous.accuracy, current.accuracy].every((accuracy) => Number.isFinite(accuracy) && accuracy > 0 && accuracy <= options.maxAccuracyMeters)) {
+        return { eligible: false, reason: "unsafe-gap" };
+      }
+      const accuracyLimit = Math.max(options.minMovementMeters, (previous.accuracy + current.accuracy) / 2);
+      const safeGapMeters = Math.min(MAX_SAFE_SEGMENT_GAP_METERS, accuracyLimit);
+      if (distanceMeters(previous, current) > safeGapMeters) return { eligible: false, reason: "unsafe-gap" };
+    }
+    if (distanceMeters(points[0], points.at(-1)) > options.closeMeters) return { eligible: false, reason: "not-closed" };
+    return { eligible: true, reason: "closed" };
+  };
+
+  const canCloseTrack = (points = [], options = DEFAULTS) => evaluateTrackClosure(points, options).eligible;
+
+  const createFinishPositionFilter = () => {
+    const options = { ...DEFAULTS, maxAgeMs: LOCATION_DEFAULTS.maxAgeMs };
+    let previousPoint = null, pendingGapPoint = null;
+    return {
+      evaluate(position, now = Date.now()) {
+        const result = evaluatePosition(position, previousPoint, now, options, pendingGapPoint);
+        if (result.accepted) {
+          previousPoint = result.point;
+          pendingGapPoint = null;
+          return result;
+        }
+        if (result.candidate) pendingGapPoint = result.candidate;
+        if (result.reason === "drift") {
+          const freshPoint = evaluatePosition(position, null, now, options);
+          if (freshPoint.accepted) {
+            previousPoint = freshPoint.point;
+            pendingGapPoint = null;
+            return { ...freshPoint, reason: "drift", distanceMeters: result.distanceMeters, newSegment: false };
+          }
+        }
+        return result;
+      },
+      reset(point = null) {
+        previousPoint = point;
+        pendingGapPoint = null;
+      }
+    };
   };
 
   const evaluateTerritoryCapture = (points = [], position, now = Date.now(), finishRadiusMeters = FINISH_ZONE_RADIUS_METERS) => {
@@ -245,14 +297,22 @@
       && Math.abs(start.lat) <= 90 && Math.abs(start.lng) <= 180;
     const validPosition = Number.isFinite(position?.lat) && Number.isFinite(position?.lng)
       && Math.abs(position.lat) <= 90 && Math.abs(position.lng) <= 180;
-    const positionFresh = validPosition && position.accuracy <= DEFAULTS.maxAccuracyMeters && isLocationFresh(position, now);
+    const positionFresh = validPosition && Number.isFinite(position.accuracy) && position.accuracy > 0
+      && position.accuracy <= DEFAULTS.maxAccuracyMeters && isLocationFresh(position, now);
     const distanceToStartMeters = validStart && positionFresh ? distanceMeters(start, position) : null;
-    const routeValid = canCloseTrack(points);
+    const routeClosure = evaluateTrackClosure(points);
+    const routeValid = routeClosure.eligible;
+    const reason = !validStart ? "missing-start"
+      : routeClosure.reason === "unsafe-gap" ? "unsafe-gap"
+        : !positionFresh ? "waiting-for-gps"
+          : distanceToStartMeters > finishRadiusMeters + 0.001 ? "too-far"
+            : !routeValid ? routeClosure.reason : "finish-reached";
     return {
       eligible: routeValid && positionFresh && distanceToStartMeters <= finishRadiusMeters + 0.001,
       routeValid,
       positionFresh,
-      distanceToStartMeters
+      distanceToStartMeters,
+      reason
     };
   };
 
@@ -293,5 +353,5 @@
     return { start, startWatch, stopAutosave, stop };
   };
 
-  return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, FINISH_ZONE_RADIUS_METERS, distanceMeters, evaluatePosition, evaluateDisplayPosition, shouldUpdateGpsMarker, evaluateLocationPosition, isLocationFresh, evaluateLocationUpdate, createPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, canCloseTrack, evaluateTerritoryCapture, shouldDisplayWalkOnMap, createGpsServices };
+  return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, FINISH_ZONE_RADIUS_METERS, distanceMeters, evaluatePosition, evaluateDisplayPosition, shouldUpdateGpsMarker, evaluateLocationPosition, isLocationFresh, evaluateLocationUpdate, createPositionFilter, createFinishPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, evaluateTrackClosure, canCloseTrack, evaluateTerritoryCapture, shouldDisplayWalkOnMap, createGpsServices };
 });

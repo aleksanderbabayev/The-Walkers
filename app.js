@@ -142,6 +142,7 @@
   let diagnosticsByWalkId = new Map();
   let warmupDiagnosticPrevious = null, pendingDiagnosticPrevious = null, pendingDiagnosticEvents = [];
   const positionFilter = Tracking.createPositionFilter();
+  const finishPositionFilter = Tracking.createFinishPositionFilter();
   const gpsWarmup = Tracking.createGpsWarmup();
   const startupGpsStabilizer = Tracking.createGpsWarmup();
   const initialRouteBuffer = Tracking.createInitialRouteBuffer();
@@ -447,6 +448,7 @@
     syncMobileViewportHeight();
     requestAnimationFrame(() => {
       map.invalidateSize({ pan: false });
+      updateCaptureAvailability();
       recenterFollowingLocation();
       reportMapDiagnostics("layout-refresh", null);
     });
@@ -745,15 +747,26 @@
   };
   if (typeof ResizeObserver === "function") new ResizeObserver(recenterFollowingLocation).observe(walkPanel);
   const expeditionLine = ExpeditionLine.createExpeditionLine({ map, leaflet: L, isLocationFresh: Tracking.isLocationFresh });
-  const updateCaptureAvailability = () => {
+  const evaluateCaptureReadiness = () => {
     const routePoints = initialRouteBuffer.pending ? [] : points;
     const readiness = Tracking.evaluateTerritoryCapture(routePoints, capturePosition);
-    const canCapture = recordingActive && activeMode === "territory" && !finishing && !cancelling && readiness.eligible;
-    $("finish").disabled = !canCapture;
+    return {
+      ...readiness,
+      eligible: recordingActive && activeMode === "territory" && !finishing && !cancelling && readiness.eligible
+    };
+  };
+  const updateCaptureAvailability = () => {
+    const readiness = evaluateCaptureReadiness();
+    $("finish").disabled = !readiness.eligible;
     if (recordingActive && activeMode === "territory") {
-      $("statusText").textContent = readiness.distanceToStartMeters === null
-        ? "До финиша: ожидаем свежий GPS"
-        : `До финиша: ${Math.round(readiness.distanceToStartMeters)} м${readiness.routeValid ? "" : " · завершите маршрут"}`;
+      const status = readiness.reason === "unsafe-gap" ? "Разрыв маршрута: захват недоступен"
+        : readiness.reason === "waiting-for-gps" ? "Ожидаем точный GPS"
+          : readiness.reason === "too-far" ? `До финиша: ${Math.round(readiness.distanceToStartMeters)} м`
+            : readiness.reason === "finish-reached" ? "Финиш достигнут!"
+              : readiness.reason === "too-few-points" ? "Запишите больше точек маршрута"
+                : readiness.reason === "not-closed" || readiness.reason === "invalid-geometry" ? "Маршрут не образует контур"
+                  : "Ожидаем начальную точку";
+      $("statusText").textContent = status;
     }
     return readiness;
   };
@@ -766,6 +779,7 @@
       const expiresAt = point.timestamp + Tracking.LOCATION_DEFAULTS.maxAgeMs + 1;
       captureFreshnessTimer = setTimeout(() => {
         captureFreshnessTimer = null;
+        capturePosition = null;
         updateCaptureAvailability();
       }, Math.max(0, expiresAt - Date.now()));
     }
@@ -1049,6 +1063,7 @@
   const beginRecordingAt = async (startPoint, manual = false) => {
     const initialPoint = { ...startPoint, segmentStart: true };
     gpsWarmup.reset();
+    if (activeMode === "territory") finishPositionFilter.reset(initialPoint);
     const recordingStartedAt = Date.now();
     initialRouteBuffer.begin(initialPoint);
     try { await saveDraftSnapshot([], recordingStartedAt, initialRouteBuffer.snapshot()); }
@@ -1079,8 +1094,11 @@
   };
   const processPosition = async (position) => {
     if (finishing || cancelling) return;
-    if (recordingActive && activeMode === "territory") setCapturePosition(null);
     const processedAt = Date.now();
+    if (recordingActive && activeMode === "territory") {
+      const finishPosition = finishPositionFilter.evaluate(position, processedAt);
+      if (finishPosition.accepted) setCapturePosition(finishPosition.point);
+    }
     const displayResult = Tracking.evaluateDisplayPosition(position, processedAt);
     if (displayResult.accepted) {
       if (Tracking.shouldUpdateGpsMarker("preliminary", recordingActive)) updateAccuracyDisplay(displayResult.point);
@@ -1221,7 +1239,6 @@
       const lastValidatedPoint = result.validatedPoints.at(-1);
       drawCurrent(); updateDistance();
       if (lastValidatedPoint) {
-        if (activeMode === "territory") setCapturePosition(lastValidatedPoint);
         rememberLocation(lastValidatedPoint);
         updateLocationMarker(lastValidatedPoint);
         mapFollow.centerOn(lastValidatedPoint);
@@ -1246,7 +1263,6 @@
     if (gpsEvent) gpsEvent.includedInRoute = true;
     persistDiagnosticEvent(gpsEvent);
     persistDiagnosticUpdates(resolveDiagnosticEvents(result.points || [result.point], ["recording"], true));
-    if (activeMode === "territory") setCapturePosition(result.point);
     rememberLocation(result.point);
     drawCurrent(); updateDistance(); updateLocationMarker(result.point); mapFollow.centerOn(result.point);
     if (updateExpeditionProgress(result.point)) say("Цель достигнута. Завершаем экспедицию…");
@@ -1363,6 +1379,7 @@
     selectedMode = mode;
     activeMode = mode;
     setCapturePosition(null);
+    finishPositionFilter.reset();
     expeditionCompletionPending = false;
     expeditionDistanceMeters = mode === "expedition" && locationIsFresh(latestLocation) ? Tracking.distanceMeters(latestLocation, expeditionTarget) : null;
     positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset();
@@ -1466,8 +1483,7 @@
     const walkMode = activeMode;
     const expeditionReached = walkMode === "expedition" && !retreated && expeditionCompletionPending;
     if (walkMode === "expedition" && !retreated && !expeditionReached) return;
-    if (!retreated && walkMode === "territory"
-      && !Tracking.evaluateTerritoryCapture(initialRouteBuffer.pending ? [] : points, capturePosition).eligible) {
+    if (!retreated && walkMode === "territory" && !evaluateCaptureReadiness().eligible) {
       updateCaptureAvailability();
       return;
     }
@@ -1653,6 +1669,7 @@
         recordDiagnosticEvent({ type: "draft-restored", at: Date.now(), pointCount: (draft.points || []).length, bufferedPointCount: (draft.initialBuffer || []).length });
           locateRequestId += 1;
           points = draftPoints;
+          finishPositionFilter.reset(points.at(-1) || null);
           initialRouteBuffer.restore(draftInitialBuffer);
           setCapturePosition(null);
           if (locationIsFresh(latestLocation)) updateLocationMarker(latestLocation);
