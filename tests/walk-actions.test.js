@@ -31,18 +31,26 @@ class MemoryDatabase {
 
 test("Finish and Retreat button dispatch call their actions without passing the event", () => {
   const appSource = fs.readFileSync(require.resolve("../app.js"), "utf8");
+  const bootstrapSource = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
   assert.match(appSource, /Actions\.bindClick\(\$\("finish"\), \(\) => finishWalk\(\)\);/);
   assert.match(appSource, /await finishWalk\(true\);/);
   assert.match(appSource, /walk\.closed = true;/);
   assert.match(appSource, /status: "retreated"/);
   assert.match(appSource, /diagnosticSession\.walkStatus = retreated \? "retreated" : "completed"/);
   const finishImplementation = appSource.slice(appSource.indexOf("const finishWalk = async"), appSource.indexOf('$("start").addEventListener'));
-  const captureGuard = finishImplementation.indexOf("!evaluateCaptureReadiness().eligible");
-  assert.ok(captureGuard >= 0, "territory finish has a last-moment eligibility check");
-  assert.ok(captureGuard < finishImplementation.indexOf("recordDiagnosticEvent"), "an ineligible capture returns before recording completion or stopping GPS");
-  assert.match(finishImplementation, /if \(!retreated && walkMode === "territory"[\s\S]*?updateCaptureAvailability\(\);\s*return;/);
-  assert.match(finishImplementation, /Actions\.commitIfReady\([\s\S]*?waitForPending: \(\) => trackingQueue[\s\S]*?evaluateCaptureReadiness\(finishedPoints, true\)[\s\S]*?WalkStorage\.completeWalk\(db, walk\)/);
+  const prepareWalk = finishImplementation.slice(finishImplementation.indexOf("const prepareWalk"), finishImplementation.indexOf("let walkContext"));
+  assert.ok(prepareWalk.indexOf("await trackingQueue") >= 0);
+  assert.ok(prepareWalk.indexOf("await trackingQueue") < prepareWalk.indexOf("const finishedPoints"), "the final route is built after pending GPS work");
+  assert.match(finishImplementation, /Actions\.commitIfReady\(\{\s*prepare: prepareWalk,[\s\S]*?evaluate: \(\{ finishedPoints \}\) => evaluateCaptureReadiness\(finishedPoints, true\)[\s\S]*?WalkStorage\.completeWalk\(db, walk\)/);
+  const filterReset = finishImplementation.indexOf("positionFilter.reset(); gpsWarmup.reset();");
+  assert.ok(finishImplementation.indexOf("WalkStorage.completeWalk(db, walk)") < filterReset, "territory filters reset after its successful save");
+  assert.ok(finishImplementation.indexOf("WalkStorage.completeWalk(db, walkContext.walk)") < filterReset, "retreat and expedition filters reset after their successful save");
+  assert.match(prepareWalk, /points: finishedPoints[\s\S]*diagnosticSession\.finalRoute = finishedPoints\.map/);
+  const resumeFailure = appSource.slice(appSource.indexOf("const resumeAfterFinishFailure"), appSource.indexOf("const showExpeditionResult"));
+  assert.doesNotMatch(resumeFailure, /positionFilter\.reset|gpsWarmup\.reset/);
   assert.match(appSource, /const receivePosition = \(position\) => finishing \? Promise\.resolve\(\) : enqueueTrackingTask/);
+  assert.ok(bootstrapSource.includes('"walk-actions.js?v=0.1.47"'));
+  assert.ok(bootstrapSource.includes('"app.js?v=0.2.22"'));
   assert.match(appSource, /const evaluateCaptureReadiness = \(routePoints = initialRouteBuffer\.pending \? \[\] : points, allowFinishing = false\) => \{[\s\S]*?Tracking\.evaluateTerritoryCapture\(routePoints, capturePosition\)[\s\S]*?\(allowFinishing \|\| !finishing\).*?readiness\.eligible/);
   assert.match(appSource, /const updateCaptureAvailability = \(readiness = evaluateCaptureReadiness\(\)\) => \{\s*\$\("finish"\)\.disabled = !readiness\.eligible/);
   assert.match(appSource, /const finishPositionFilter = Tracking\.createFinishPositionFilter\(\)/);
@@ -120,14 +128,17 @@ test("capture completion waits for GPS work and rejects a newly unsuitable route
   const readiness = () => Tracking.evaluateTerritoryCapture(pendingRoute, fix, now);
   assert.equal(readiness().eligible, true, "capture button was ready before queued GPS work");
 
+  let filterReset = false;
   const completion = Actions.commitIfReady({
-    waitForPending: async () => {
+    prepare: async () => {
       await gpsQueue;
+      assert.equal(filterReset, false, "filter state remains intact while queued GPS work is handled");
       pendingRoute = [...route, { lat: 0, lng: 0.001, timestamp: now }];
       pendingDraft = { ...draft, points: pendingRoute };
       db.records.drafts.set("active", pendingDraft);
+      return { route: pendingRoute };
     },
-    evaluate: readiness,
+    evaluate: ({ route: finalRoute }) => Tracking.evaluateTerritoryCapture(finalRoute, fix, now),
     commit: async () => { commits += 1; },
     onReject: () => { recording = true; resumed = true; }
   });
@@ -142,6 +153,48 @@ test("capture completion waits for GPS work and rejects a newly unsuitable route
   assert.equal(pendingRoute.length, route.length + 1, "queued GPS route changes are retained for continued recording");
   assert.equal(recording, true);
   assert.equal(resumed, true);
+  assert.equal(filterReset, false, "a rejected capture does not reset the route filter");
+});
+
+test("queued GPS confirmation keeps a safe segment break through territory save", async () => {
+  const Storage = require("../walk-storage.js");
+  const now = Date.now();
+  const meters = (value) => value / 111194.9266;
+  const db = new MemoryDatabase();
+  db.records.drafts.set("active", { id: "active", points: [] });
+  let filterReset = false;
+  let queuedRoute = [];
+  let releaseGps;
+  const gpsTask = new Promise((resolve) => { releaseGps = resolve; });
+  const completion = Actions.commitIfReady({
+    prepare: async () => {
+      await gpsTask;
+      assert.equal(filterReset, false, "pending gap confirmation sees the existing filter state");
+      queuedRoute = [
+        { lat: 0, lng: 0, accuracy: 5, timestamp: now - 30000, segmentStart: true },
+        { lat: 0, lng: 0.001, accuracy: 5, timestamp: now - 25000 },
+        { lat: 0.001, lng: 0.001, accuracy: 5, timestamp: now - 20000 },
+        { lat: 0.001, lng: 0.001 + meters(4), accuracy: 5, timestamp: now - 15000, segmentStart: true },
+        { lat: 0.001, lng: 0, accuracy: 5, timestamp: now - 10000 },
+        { lat: 0.001, lng: meters(4), accuracy: 5, timestamp: now - 5000, segmentStart: true },
+        { lat: 0, lng: meters(4), accuracy: 5, timestamp: now }
+      ];
+      return { route: queuedRoute };
+    },
+    evaluate: ({ route }) => Tracking.evaluateTerritoryCapture(route, { lat: 0, lng: 0, accuracy: 5, timestamp: now }, now),
+    commit: async ({ route }) => Storage.completeWalk(db, { id: "captured-gap", mode: "territory", points: route, closed: true }),
+    onReject: () => assert.fail("a confirmed 4 m GPS gap remains safe")
+  });
+  releaseGps();
+  const result = await completion;
+  filterReset = true; // the application resets its filters only after completeWalk succeeds.
+
+  assert.equal(result.committed, true);
+  assert.equal(filterReset, true);
+  const savedRoute = db.records.walks.get("captured-gap").points;
+  assert.equal(savedRoute[3].segmentStart, true);
+  assert.equal(Tracking.evaluateTrackClosure(savedRoute).eligible, true);
+  assert.equal(db.records.drafts.has("active"), false);
 });
 
 test("ready capture is saved as a closed territory and removes its draft atomically", async () => {
@@ -153,9 +206,9 @@ test("ready capture is saved as a closed territory and removes its draft atomica
     { lat: 0.0001, lng: 0.0001 }, { lat: 0.0001, lng: 0 }
   ];
   const result = await Actions.commitIfReady({
-    waitForPending: async () => {},
-    evaluate: () => Tracking.evaluateTerritoryCapture(route, { lat: 0, lng: 0, accuracy: 5, timestamp: Date.now() }),
-    commit: async () => Storage.completeWalk(db, { id: "captured", mode: "territory", points: route, closed: true, showOnMap: true })
+    prepare: async () => ({ route }),
+    evaluate: ({ route: preparedRoute }) => Tracking.evaluateTerritoryCapture(preparedRoute, { lat: 0, lng: 0, accuracy: 5, timestamp: Date.now() }),
+    commit: async ({ route: preparedRoute }) => Storage.completeWalk(db, { id: "captured", mode: "territory", points: preparedRoute, closed: true, showOnMap: true })
   });
   assert.equal(result.committed, true);
   assert.equal(db.records.walks.get("captured").closed, true);
@@ -170,18 +223,20 @@ test("a storage failure during eligible capture leaves the draft and recording r
   db.records.drafts.set("active", draft);
   db.failNext = true;
   let recording = true;
+  let filterReset = false;
   const route = [
     { lat: 0, lng: 0 }, { lat: 0, lng: 0.0001 },
     { lat: 0.0001, lng: 0.0001 }, { lat: 0.0001, lng: 0 }
   ];
   await assert.rejects(Actions.commitIfReady({
-    waitForPending: async () => {},
-    evaluate: () => Tracking.evaluateTerritoryCapture(route, { lat: 0, lng: 0, accuracy: 5, timestamp: Date.now() }),
-    commit: async () => Storage.completeWalk(db, { id: "captured", mode: "territory", points: route, closed: true })
+    prepare: async () => ({ route }),
+    evaluate: ({ route: preparedRoute }) => Tracking.evaluateTerritoryCapture(preparedRoute, { lat: 0, lng: 0, accuracy: 5, timestamp: Date.now() }),
+    commit: async ({ route: preparedRoute }) => Storage.completeWalk(db, { id: "captured", mode: "territory", points: preparedRoute, closed: true })
   }));
   assert.equal(db.records.drafts.get("active"), draft);
   assert.equal(db.records.walks.size, 0);
   assert.equal(recording, true);
+  assert.equal(filterReset, false, "a rejected IndexedDB transaction leaves the GPS filter untouched");
 });
 
 test("a successful capture focuses only its new polygon and caps the zoom", () => {

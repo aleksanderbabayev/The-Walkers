@@ -7,9 +7,9 @@
   const appScripts = [
     "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
     "https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.umd.min.js",
-    "walk-diagnostics.js?v=0.1.44", "walk-actions.js?v=0.1.46", "tracking-core.js?v=0.2.11",
+    "walk-diagnostics.js?v=0.1.44", "walk-actions.js?v=0.1.47", "tracking-core.js?v=0.2.11",
     "walk-storage.js?v=0.1.44", "location-ui.js?v=0.2.8", "music-control.js?v=0.1.62", "map-follow.js?v=0.1.73",
-    "expedition-core.js?v=0.2.3", "expedition-line.js?v=0.2.3", "expedition-markers.js?v=0.2.6", "app.js?v=0.2.21"
+    "expedition-core.js?v=0.2.3", "expedition-line.js?v=0.2.3", "expedition-markers.js?v=0.2.6", "app.js?v=0.2.22"
   ];
 
   const loadScript = (source) => new Promise((resolve, reject) => {

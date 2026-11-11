@@ -1326,8 +1326,6 @@
   try { gpsServices.startWatch(); }
   catch { onLocationError({ code: 2 }); }
   const resumeAfterFinishFailure = (message) => {
-    positionFilter.reset();
-    gpsWarmup.reset();
     warmingUp = false;
     finishing = false;
     try {
@@ -1479,94 +1477,80 @@
     const walkMode = activeMode;
     const expeditionReached = walkMode === "expedition" && !retreated && expeditionCompletionPending;
     if (walkMode === "expedition" && !retreated && !expeditionReached) return;
-    if (!retreated && walkMode === "territory" && !evaluateCaptureReadiness().eligible) {
-      updateCaptureAvailability();
-      return;
-    }
     recordDiagnosticEvent({ type: retreated ? "retreat" : expeditionReached ? "expedition-reached" : "finish", at: Date.now() });
-    positionFilter.reset(); gpsWarmup.reset();
     finishing = true; expeditionLine.hide(); setRecording(true); stopTrackingServices();
     try {
-      await trackingQueue;
-      const bufferedPoints = initialRouteBuffer.pending ? initialRouteBuffer.flush().points : [];
-      let finishedPoints = [...points, ...bufferedPoints];
-      const finishedDistance = distanceForPoints(finishedPoints);
-      if (!retreated && walkMode === "territory") {
-        const readiness = evaluateCaptureReadiness(finishedPoints, true);
-        if (!readiness.eligible) {
-          recordDiagnosticEvent({ type: "finish-rejected", at: Date.now(), reason: readiness.reason, pointCount: finishedPoints.length });
-          resumeAfterFinishFailure(captureReadinessMessage(readiness));
-          updateCaptureAvailability(readiness);
-          return;
+      const prepareWalk = async () => {
+        await trackingQueue;
+        const bufferedPoints = initialRouteBuffer.pending ? initialRouteBuffer.flush().points : [];
+        const finishedPoints = [...points, ...bufferedPoints];
+        const finishedAt = Date.now();
+        const closed = walkMode === "territory" && !retreated;
+        const walk = {
+          id: crypto.randomUUID(), points: finishedPoints, startedAt, finishedAt,
+          durationMs: finishedAt - startedAt, distanceMeters: distanceForPoints(finishedPoints),
+          ...(finishedPoints[0] ? { startPosition: { ...finishedPoints[0] } } : {}),
+          mode: walkMode, closed, showOnMap: !retreated && (closed || walkMode === "expedition"),
+          ...(walkMode === "expedition" ? {
+            target: expeditionTarget ? { ...expeditionTarget } : null,
+            expeditionStatus: retreated ? "incomplete" : "reached"
+          } : {}),
+          ...(retreated ? { status: "retreated" } : {})
+        };
+        if (initialRouteBuffer.pending) recordDiagnosticEvent({
+          type: "initial-buffer-validation", at: finishedAt, result: "flushed-on-finish",
+          bufferedPointCount: initialRouteBuffer.snapshot().length, acceptedPointCount: bufferedPoints.length,
+          discardedPointCount: initialRouteBuffer.snapshot().length - bufferedPoints.length,
+          distanceMeters: distanceForPoints(bufferedPoints), acceptedTimestamps: bufferedPoints.map((point) => point.timestamp)
+        });
+        persistDiagnosticUpdates(resolveDiagnosticEvents(finishedPoints));
+        if (diagnosticSession) {
+          diagnosticSession.finalRoute = finishedPoints.map((point) => ({ ...point }));
+          diagnosticSession.finishedAt = finishedAt;
+          diagnosticSession.territoryCaptured = closed;
+          diagnosticSession.walkStatus = retreated ? "retreated" : "completed";
+          diagnosticSession.state = "finalizing";
+          diagnosticSession.walkId = walk.id;
         }
-      }
-      const finishedAt = Date.now();
-      const closed = walkMode === "territory" && !retreated;
-      const walk = {
-        id: crypto.randomUUID(), points: finishedPoints, startedAt, finishedAt,
-        durationMs: finishedAt - startedAt, distanceMeters: finishedDistance,
-        ...(finishedPoints[0] ? { startPosition: { ...finishedPoints[0] } } : {}),
-        mode: walkMode, closed, showOnMap: !retreated && (closed || walkMode === "expedition"),
-        ...(walkMode === "expedition" ? {
-          target: expeditionTarget ? { ...expeditionTarget } : null,
-          expeditionStatus: retreated ? "incomplete" : "reached"
-        } : {}),
-        ...(retreated ? { status: "retreated" } : {})
+        await diagnosticsQueue;
+        if (diagnosticSession) await persistDiagnosticSession();
+        await diagnosticsQueue;
+        return { walk, finishedPoints, finishedAt, closed };
       };
-      if (initialRouteBuffer.pending) recordDiagnosticEvent({
-        type: "initial-buffer-validation", at: finishedAt, result: "flushed-on-finish",
-        bufferedPointCount: initialRouteBuffer.snapshot().length, acceptedPointCount: bufferedPoints.length,
-        discardedPointCount: initialRouteBuffer.snapshot().length - bufferedPoints.length,
-        distanceMeters: distanceForPoints(bufferedPoints), acceptedTimestamps: bufferedPoints.map((point) => point.timestamp)
-      });
-      persistDiagnosticUpdates(resolveDiagnosticEvents(finishedPoints));
-      if (diagnosticSession) {
-        diagnosticSession.finalRoute = finishedPoints.map((point) => ({ ...point }));
-        diagnosticSession.finishedAt = finishedAt;
-        diagnosticSession.territoryCaptured = closed;
-        diagnosticSession.walkStatus = retreated ? "retreated" : "completed";
-        diagnosticSession.state = "finalizing";
-        diagnosticSession.walkId = walk.id;
-      }
-      await diagnosticsQueue;
-      if (diagnosticSession) await persistDiagnosticSession();
-      await diagnosticsQueue;
+      let walkContext;
       if (!retreated && walkMode === "territory") {
         const result = await Actions.commitIfReady({
-          waitForPending: () => trackingQueue,
-          evaluate: () => {
-            const finalBufferedPoints = initialRouteBuffer.pending ? initialRouteBuffer.flush().points : [];
-            finishedPoints = [...points, ...finalBufferedPoints];
-            const readiness = evaluateCaptureReadiness(finishedPoints, true);
-            return { ...readiness, readiness, finishedPoints, finishedDistance: distanceForPoints(finishedPoints) };
-          },
-          commit: async (finalRoute) => {
-            walk.points = finalRoute.finishedPoints;
-            walk.distanceMeters = finalRoute.finishedDistance;
+          prepare: prepareWalk,
+          evaluate: ({ finishedPoints }) => evaluateCaptureReadiness(finishedPoints, true),
+          commit: ({ walk }) => {
             walk.closed = true;
             walk.showOnMap = true;
-            await WalkStorage.completeWalk(db, walk);
+            return WalkStorage.completeWalk(db, walk);
+          },
+          onReject: async ({ finishedPoints }, readiness) => {
+            if (diagnosticSession?.state === "finalizing") {
+              diagnosticSession.state = "active";
+              delete diagnosticSession.walkId;
+              delete diagnosticSession.walkStatus;
+              delete diagnosticSession.finalRoute;
+              delete diagnosticSession.finishedAt;
+              delete diagnosticSession.territoryCaptured;
+              persistDiagnosticSession();
+              await diagnosticsQueue;
+            }
+            recordDiagnosticEvent({ type: "finish-rejected", at: Date.now(), reason: readiness.reason, pointCount: finishedPoints.length });
+            resumeAfterFinishFailure(captureReadinessMessage(readiness));
+            updateCaptureAvailability(readiness);
           }
         });
-        if (!result.committed) {
-          if (diagnosticSession?.state === "finalizing") {
-            diagnosticSession.state = "active";
-            delete diagnosticSession.walkId;
-            delete diagnosticSession.walkStatus;
-            delete diagnosticSession.finalRoute;
-            delete diagnosticSession.finishedAt;
-            delete diagnosticSession.territoryCaptured;
-            persistDiagnosticSession();
-            await diagnosticsQueue;
-          }
-          recordDiagnosticEvent({ type: "finish-rejected", at: Date.now(), reason: result.evaluation.reason, pointCount: finishedPoints.length });
-          resumeAfterFinishFailure(captureReadinessMessage(result.evaluation.readiness));
-          updateCaptureAvailability(result.evaluation.readiness);
-          return;
-        }
+        if (!result.committed) return;
+        walkContext = result.context;
       } else {
-        await WalkStorage.completeWalk(db, walk);
+        walkContext = await prepareWalk();
+        await WalkStorage.completeWalk(db, walkContext.walk);
       }
+      const { walk, finishedAt, closed } = walkContext;
+      positionFilter.reset(); gpsWarmup.reset();
       clearRouteStartMarker();
       clearExpeditionStartMarker();
       stopStopwatch(finishedAt);
