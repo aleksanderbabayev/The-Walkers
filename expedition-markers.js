@@ -1,10 +1,24 @@
 (() => {
   "use strict";
+  const COLORS = typeof module === "object" && module.exports ? require("./walk-colors.js") : window.WalkColors;
 
   const MARKER_STROKE_WIDTH = 1;
   const START_MARKER_RADIUS = 3.5;
   const GOAL_MARKER_RADIUS = 5.5;
   const hasCoordinates = (point) => Number.isFinite(point?.lat) && Number.isFinite(point?.lng);
+  const isCompletedExpedition = (walk) => walk?.mode === "expedition"
+    && walk.expeditionStatus === "reached" && walk.status !== "retreated";
+  const getActiveRouteColor = (mode) => mode === "expedition" ? COLORS.activeExpeditionRoute : COLORS.activeTerritoryRoute;
+  const getHistoryRouteColor = (walk) => walk?.mode !== "expedition" ? COLORS.activeTerritoryRoute
+    : isCompletedExpedition(walk) ? COLORS.completedExpeditionRoute : COLORS.retreatedExpeditionRoute;
+  const getHistoryRouteStyle = (walk) => {
+    const retreatedExpedition = walk?.mode === "expedition" && !isCompletedExpedition(walk);
+    return {
+      color: getHistoryRouteColor(walk),
+      weight: 4,
+      ...(retreatedExpedition ? { outlineColor: COLORS.retreatedExpeditionOutline, outlineWeight: 6 } : {})
+    };
+  };
 
   const createExpeditionMarkers = ({ map, leaflet }) => {
     let targetMarker = null;
@@ -31,13 +45,13 @@
         return;
       }
       if (targetMarker) targetMarker.setLatLng([target.lat, target.lng]);
-      else targetMarker = createMarker(target, "#d89a32", GOAL_MARKER_RADIUS).addTo(map);
+      else targetMarker = createMarker(target, COLORS.expeditionGoal, GOAL_MARKER_RADIUS).addTo(map);
     };
 
     const updateStart = (point) => {
       if (!hasCoordinates(point)) return;
       if (startMarker) startMarker.setLatLng([point.lat, point.lng]);
-      else startMarker = createMarker(point, "#111820", START_MARKER_RADIUS).addTo(map);
+      else startMarker = createMarker(point, COLORS.startMarker, START_MARKER_RADIUS).addTo(map);
     };
 
     const clearStart = () => {
@@ -49,9 +63,9 @@
       if (walk?.mode !== "expedition") return [];
       const layers = [];
       const savedStart = hasCoordinates(walk.startPosition) ? walk.startPosition : walk.points?.[0];
-      if (hasCoordinates(savedStart)) layers.push(createMarker(savedStart, "#111820", START_MARKER_RADIUS, 0.75));
-      if (walk.expeditionStatus === "reached" && hasCoordinates(walk.target)) {
-        layers.push(createMarker(walk.target, "#388e3c", GOAL_MARKER_RADIUS));
+      if (hasCoordinates(savedStart)) layers.push(createMarker(savedStart, COLORS.startMarker, START_MARKER_RADIUS, 0.75));
+      if (isCompletedExpedition(walk) && hasCoordinates(walk.target)) {
+        layers.push(createMarker(walk.target, COLORS.completedExpeditionGoal, GOAL_MARKER_RADIUS));
       }
       return layers;
     };
@@ -59,6 +73,7 @@
     return { updateTarget, updateStart, clearStart, createHistoryMarkers };
   };
 
-  if (typeof module === "object" && module.exports) module.exports = { createExpeditionMarkers };
-  else window.WalkExpeditionMarkers = { createExpeditionMarkers };
+  const ExpeditionMarkers = { createExpeditionMarkers, isCompletedExpedition, getActiveRouteColor, getHistoryRouteColor, getHistoryRouteStyle };
+  if (typeof module === "object" && module.exports) module.exports = ExpeditionMarkers;
+  else window.WalkExpeditionMarkers = ExpeditionMarkers;
 })();

@@ -189,6 +189,6 @@ test("expedition UI, accepted GPS completion, persistence and territory isolatio
   assert.ok(app.includes('if (walk.expeditionStatus === "reached") showExpeditionResult(walk)'));
   assert.match(html, /Экспедиция завершена/);
   assert.ok(bootstrap.includes('"expedition-core.js?v=0.2.3"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.24"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.25"'));
   assert.doesNotMatch(app, /router|routing service|OSRM|GraphHopper/i);
 });

@@ -2,6 +2,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const ExpeditionLine = require("../expedition-line.js");
+const ExpeditionMarkers = require("../expedition-markers.js");
+const Colors = require("../walk-colors.js");
 
 const createHarness = () => {
   const layers = new Set();
@@ -105,6 +107,13 @@ test("line uses a visible cyan dashed non-interactive style", () => {
   assert.equal(calls.options.bubblingMouseEvents, false);
 });
 
+test("active route palette distinguishes expedition from territory without changing GPS line styling", () => {
+  assert.equal(ExpeditionMarkers.getActiveRouteColor("expedition"), "#2877DF");
+  assert.equal(ExpeditionMarkers.getActiveRouteColor("territory"), Colors.activeTerritoryRoute);
+  const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
+  assert.match(app, /ExpeditionMarkers\.getActiveRouteColor\(activeMode\)/);
+});
+
 test("app wires line updates only through accepted expedition progress and hides it on lifecycle changes", () => {
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
   const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
@@ -121,9 +130,9 @@ test("app wires line updates only through accepted expedition progress and hides
   assert.ok(app.includes("ExpeditionLine.createExpeditionLine"));
   assert.ok(app.includes('activeMode = draft.mode === "expedition" ? "expedition" : "territory"'));
   assert.ok(app.includes("startTrackingServices();"));
-  assert.match(html, /name="app-version" content="0\.2\.24"/);
-  assert.ok(bootstrap.includes('"expedition-line.js?v=0.2.3"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.24"'));
+  assert.match(html, /name="app-version" content="0\.2\.25"/);
+  assert.ok(bootstrap.includes('"expedition-line.js?v=0.2.4"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.25"'));
   assert.doesNotMatch(processing, /result\.reason === "stale"[^\n]*expeditionLine\.hide/);
   assert.match(app, /if \(recordingActive && activeMode === "expedition" && !locationIsFresh\(latestLocation\)\)[\s\S]*?expeditionLine\.hide\(\)/);
 });

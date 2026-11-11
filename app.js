@@ -2,7 +2,7 @@
   "use strict";
   const DB_NAME = "the-walkers", DB_VERSION = 2;
   const AUTOSAVE_MS = 5000;
-  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl, MapFollow = window.WalkMapFollow, Expedition = window.WalkExpedition, ExpeditionLine = window.WalkExpeditionLine, ExpeditionMarkers = window.WalkExpeditionMarkers;
+  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl, MapFollow = window.WalkMapFollow, Expedition = window.WalkExpedition, ExpeditionLine = window.WalkExpeditionLine, ExpeditionMarkers = window.WalkExpeditionMarkers, WALK_COLORS = window.WalkColors;
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   const expeditionCompassState = Expedition.createCompassState(Tracking.distanceMeters);
@@ -163,7 +163,7 @@
   const updateLocationMarker = (point) => {
     const latlng = [point.lat, point.lng];
     if (currentLocationMarker) currentLocationMarker.setLatLng(latlng);
-    else currentLocationMarker = L.circleMarker(latlng, { radius: 8, color: "#fff", weight: 3, fillColor: "#2877df", fillOpacity: 1 }).addTo(map);
+    else currentLocationMarker = L.circleMarker(latlng, { radius: 8, color: "#fff", weight: 3, fillColor: WALK_COLORS.currentLocation, fillOpacity: 1 }).addTo(map);
   };
   const clearLocationMarker = () => {
     if (currentLocationMarker) map.removeLayer(currentLocationMarker);
@@ -176,7 +176,7 @@
     const latlng = [point.lat, point.lng];
     if (accuracyCircle) accuracyCircle.setLatLng(latlng).setRadius(point.accuracy);
     else accuracyCircle = L.circle(latlng, {
-      radius: point.accuracy, color: "#2877df", weight: 1, fillColor: "#2877df", fillOpacity: 0.14, interactive: false
+      radius: point.accuracy, color: WALK_COLORS.currentLocation, weight: 1, fillColor: WALK_COLORS.currentLocation, fillOpacity: 0.14, interactive: false
     }).addTo(map);
     const stable = startupGpsStabilizer.add({ timestamp: point.timestamp, coords: { latitude: point.lat, longitude: point.lng, accuracy: point.accuracy } }, Date.now()).stable;
     if (stable) {
@@ -188,7 +188,7 @@
   const updateAccuracyDisplay = (point) => {
     const latlng = [point.lat, point.lng];
     if (currentLocationMarker) currentLocationMarker.setLatLng(latlng);
-    else currentLocationMarker = L.circleMarker(latlng, { radius: 8, color: "#fff", weight: 3, fillColor: "#2877df", fillOpacity: 1 }).addTo(map);
+    else currentLocationMarker = L.circleMarker(latlng, { radius: 8, color: "#fff", weight: 3, fillColor: WALK_COLORS.currentLocation, fillOpacity: 1 }).addTo(map);
     updateAccuracyCircle(point);
     currentLocationMarker.bringToFront();
   };
@@ -977,7 +977,8 @@
   const drawCurrent = () => {
     currentLines.forEach((line) => map.removeLayer(line));
     currentLines = Tracking.splitSegments(points).filter((segment) => segment.length > 1).map((segment) => {
-      return L.polyline(segment.map((point) => [point.lat, point.lng]), { color: "#e0765d", weight: 4 }).addTo(map);
+      const color = ExpeditionMarkers.getActiveRouteColor(activeMode);
+      return L.polyline(segment.map((point) => [point.lat, point.lng]), { color, weight: 4 }).addTo(map);
     });
   };
   const redrawSaved = async ({ focusWalkId = null } = {}) => {
@@ -1003,10 +1004,19 @@
       const retreated = walk.status === "retreated";
       const expedition = walk.mode === "expedition";
       const segments = Tracking.splitSegments(walk.points || []);
-      const layers = !Tracking.shouldDisplayWalkOnMap(walk) ? [] : walk.closed
-        ? [L.polygon((walk.points || []).map((point) => [point.lat, point.lng]), { color: "#477b43", weight: 3, fillColor: "#8fbd70", fillOpacity: 0.35 })]
-        : segments.filter((segment) => segment.length > 1).map((segment) => L.polyline(segment.map((point) => [point.lat, point.lng]), { color: "#e0765d", weight: 4 }));
-      if (Tracking.shouldDisplayWalkOnMap(walk) && expedition) layers.push(...expeditionMarkers.createHistoryMarkers(walk));
+      const displayWalk = (expedition && retreated) || Tracking.shouldDisplayWalkOnMap(walk);
+      const historyRouteStyle = ExpeditionMarkers.getHistoryRouteStyle(walk);
+      const layers = !displayWalk ? [] : walk.closed && !expedition
+        ? [L.polygon((walk.points || []).map((point) => [point.lat, point.lng]), { color: WALK_COLORS.capturedTerritoryOutline, weight: 3, fillColor: WALK_COLORS.capturedTerritoryFill, fillOpacity: 0.35 })]
+        : segments.filter((segment) => segment.length > 1).flatMap((segment) => {
+          const coordinates = segment.map((point) => [point.lat, point.lng]);
+          const routeLayers = historyRouteStyle.outlineColor
+            ? [L.polyline(coordinates, { color: historyRouteStyle.outlineColor, weight: historyRouteStyle.outlineWeight })]
+            : [];
+          routeLayers.push(L.polyline(coordinates, { color: historyRouteStyle.color, weight: historyRouteStyle.weight }));
+          return routeLayers;
+        });
+      if (displayWalk && expedition) layers.push(...expeditionMarkers.createHistoryMarkers(walk));
       if (walk.id === focusWalkId && walk.closed && !retreated) focusedTerritory = layers[0] || null;
       layers.forEach((layer) => { layer.addTo(map); savedLayers.push(layer); });
       const row = document.createElement("div"); row.className = retreated ? "route retreated" : "route";

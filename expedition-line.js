@@ -1,5 +1,6 @@
 (() => {
   "use strict";
+  const COLORS = typeof module === "object" && module.exports ? require("./walk-colors.js") : window.WalkColors;
 
   const createExpeditionLine = ({ map, leaflet, isLocationFresh }) => {
     let line = null;
@@ -19,7 +20,7 @@
 
       if (!line) {
         line = leaflet.polyline([], {
-          color: "#29b6e6",
+          color: COLORS.expeditionTargetLine,
           weight: 5,
           opacity: 0.95,
           dashArray: "8 10",
