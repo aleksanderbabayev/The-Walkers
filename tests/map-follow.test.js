@@ -3,15 +3,24 @@ const assert = require("node:assert/strict");
 const MapFollow = require("../map-follow.js");
 
 class FakeMap {
-  constructor() { this.handlers = new Map(); this.center = [0, 0]; this.zoom = 14; this.bearing = 32; }
+  constructor() { this.handlers = new Map(); this.center = [0, 0]; this.zoom = 14; this.bearing = 32; this.markerPoint = new FakePoint(200, 300); }
   on(name, handler) { this.handlers.set(name, handler); }
   off(name) { this.handlers.delete(name); }
   fire(name) { this.handlers.get(name)?.(); }
-  panTo(center, options) {
-    this.center = center;
+  getSize() { return new FakePoint(400, 600); }
+  latLngToContainerPoint(center) { this.center = center; return this.markerPoint; }
+  containerPointToLayerPoint(point) { return point; }
+  panBy(offset, options) {
+    this.markerPoint = this.markerPoint.subtract(offset);
     this.panOptions = options;
     this.fire("dragstart");
   }
+}
+
+class FakePoint {
+  constructor(x, y) { this.x = x; this.y = y; }
+  subtract(other) { return new FakePoint(this.x - other.x, this.y - other.y); }
+  divideBy(value) { return new FakePoint(this.x / value, this.y / value); }
 }
 
 const makeStorage = () => {
@@ -30,13 +39,14 @@ test("follow mode toggles and persists the user's preference", () => {
   assert.deepEqual(changes, [true, false]);
 });
 
-test("GPS updates pan the map center while preserving zoom and bearing", () => {
+test("GPS marker is panned into its target point while preserving zoom and bearing", () => {
   const map = new FakeMap();
   const follow = MapFollow.createMapFollow({ map, storage: makeStorage() });
   follow.setEnabled(true);
   assert.equal(follow.centerOn({ lat: 48.9, lng: 21.2 }), true);
   assert.deepEqual(map.center, [48.9, 21.2]);
   assert.deepEqual(map.panOptions, { animate: false });
+  assert.deepEqual(map.markerPoint, new FakePoint(200, 300));
   assert.equal(map.zoom, 14);
   assert.equal(map.bearing, 32);
 });
@@ -45,6 +55,23 @@ test("GPS movement cannot recenter the map when follow mode is off", () => {
   const map = new FakeMap(), follow = MapFollow.createMapFollow({ map, storage: makeStorage() });
   assert.equal(follow.centerOn({ lat: 48.9, lng: 21.2 }), false);
   assert.deepEqual(map.center, [0, 0]);
+});
+
+test("visual center uses the free map area above the panel and falls back on desktop", () => {
+  const mapElement = { clientWidth: 375, clientHeight: 800, getBoundingClientRect: () => ({ top: 50, bottom: 850 }) };
+  const panelElement = { getBoundingClientRect: () => ({ top: 550, bottom: 850 }) };
+  const createPoint = (x, y) => new FakePoint(x, y);
+  assert.deepEqual(MapFollow.getVisibleMapCenter({ mapElement, panelElement, mobile: true, createPoint }), new FakePoint(187.5, 250));
+  assert.deepEqual(MapFollow.getVisibleMapCenter({ mapElement, panelElement, mobile: false, createPoint }), new FakePoint(187.5, 400));
+  panelElement.getBoundingClientRect = () => ({ top: 400, bottom: 850 });
+  assert.deepEqual(MapFollow.getVisibleMapCenter({ mapElement, panelElement, mobile: true, createPoint }), new FakePoint(187.5, 175));
+});
+
+test("the initial GPS view can center visually even before the follow preference is enabled", () => {
+  const map = new FakeMap(), follow = MapFollow.createMapFollow({ map, storage: makeStorage(), getTargetPoint: () => new FakePoint(200, 180) });
+  assert.equal(follow.centerOn({ lat: 48.9, lng: 21.2 }, { force: true }), true);
+  assert.deepEqual(map.markerPoint, new FakePoint(200, 180));
+  assert.equal(follow.enabled, false);
 });
 
 test("manual drag disables following, while a programmatic pan does not", () => {
@@ -76,7 +103,20 @@ test("capture completion disables follow and GPS following reuses the shared wat
   assert.match(app, /button\.classList\.toggle\("is-following", mapFollow\?\.enabled === true\)/);
   assert.match(app, /button\.setAttribute\("aria-pressed", String\(mapFollow\?\.enabled === true\)\)/);
   assert.match(app, /Отключить следование за вашим местоположением/);
-  assert.ok(bootstrap.includes('"map-follow.js?v=0.1.72"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.18"'));
+  assert.ok(bootstrap.includes('"map-follow.js?v=0.1.73"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.19"'));
   assert.doesNotMatch(fs.readFileSync(require.resolve("../map-follow.js"), "utf8"), /watchPosition/);
+});
+
+test("startup, locate, follow and layout changes share the measured visual center", () => {
+  const fs = require("node:fs");
+  const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
+  assert.ok(app.includes("const getMapVisualCenter = () => MapFollow.getVisibleMapCenter({"));
+  assert.ok(app.includes("mapElement: map.getContainer()"));
+  assert.ok(app.includes("panelElement: walkPanel"));
+  assert.ok(app.includes("getTargetPoint: getMapVisualCenter"));
+  assert.ok(app.includes("mapFollow.centerOn(point, { force: true })"));
+  assert.ok(app.includes("mapFollow.centerOn(point);"));
+  assert.ok(app.includes("if (!mapFollow.enabled || !locationIsFresh(latestLocation) || followLayoutFrame) return"));
+  assert.ok(app.includes("new ResizeObserver(recenterFollowingLocation).observe(walkPanel)"));
 });

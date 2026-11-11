@@ -117,7 +117,6 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const loadComplete = cdp.once("Page.loadEventFired");
     await cdp.send("Page.navigate", { url: `http://127.0.0.1:${localPort}/index.html` });
     await loadComplete;
-
     const setViewport = async (width, height) => {
       await cdp.send("Emulation.setDeviceMetricsOverride", {
         width, height, screenWidth: width, screenHeight: height, deviceScaleFactor: 1, mobile: true
@@ -129,6 +128,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
       if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || "Browser evaluation failed");
       return result.result.value;
     };
+    await evaluate(fs.readFileSync(path.join(projectRoot, "map-follow.js"), "utf8"));
     await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
     await evaluate(`(() => {
       const styles = document.createElement("style");
@@ -295,7 +295,76 @@ test("mobile primary actions are actually visible over a full-height map at requ
           assert.ok(button.top >= button.hostTop - 1 && button.bottom <= button.hostBottom + 1, `${width}x${height} ${scenario.name}: #${button.id} is clipped by its action container`);
         }
       }
-      t.diagnostic(`${width}x${height}: map ${baselineMapHeight}px; ${scenarios.length} UI states; primary actions stayed visible`);
+      const markerChecks = await evaluate(`(() => {
+        const mapElement = document.getElementById("map");
+        const panel = document.querySelector(".panel");
+        const marker = document.createElement("div");
+        marker.setAttribute("aria-label", "Browser GPS marker position probe");
+        marker.style.cssText = "position:absolute;width:16px;height:16px;border:3px solid white;border-radius:50%;background:#2877df;transform:translate(-50%,-50%);z-index:900;pointer-events:none";
+        mapElement.append(marker);
+        let markerX = mapElement.clientWidth / 2, markerY = mapElement.clientHeight / 2;
+        const setMarkerPoint = () => { marker.style.left = markerX + "px"; marker.style.top = markerY + "px"; };
+        setMarkerPoint();
+        class Point {
+          constructor(x, y) { this.x = x; this.y = y; }
+          subtract(other) { return new Point(this.x - other.x, this.y - other.y); }
+          divideBy(value) { return new Point(this.x / value, this.y / value); }
+        }
+        const map = {
+          zoom: 15,
+          bearing: 37,
+          on() {}, off() {},
+          getSize: () => new Point(mapElement.clientWidth, mapElement.clientHeight),
+          latLngToContainerPoint: () => new Point(markerX, markerY),
+          containerPointToLayerPoint(point) {
+            const radians = -map.bearing * Math.PI / 180;
+            const dx = point.x - mapElement.clientWidth / 2, dy = point.y - mapElement.clientHeight / 2;
+            return new Point(dx * Math.cos(radians) - dy * Math.sin(radians), dx * Math.sin(radians) + dy * Math.cos(radians));
+          },
+          panBy(offset) {
+            const radians = map.bearing * Math.PI / 180;
+            const dx = offset.x * Math.cos(radians) - offset.y * Math.sin(radians);
+            const dy = offset.x * Math.sin(radians) + offset.y * Math.cos(radians);
+            markerX -= dx; markerY -= dy; setMarkerPoint();
+          }
+        };
+        const follow = window.WalkMapFollow.createMapFollow({
+          map,
+          storage: null,
+          getTargetPoint: () => window.WalkMapFollow.getVisibleMapCenter({
+            mapElement,
+            panelElement: panel,
+            mobile: matchMedia("(max-width: 760px)").matches,
+            createPoint: (x, y) => new Point(x, y)
+          })
+        });
+        follow.setEnabled(true);
+        const checks = [];
+        for (const expedition of [false, true]) {
+          document.body.classList.toggle("expedition-mode", expedition);
+          for (const panelHeight of [Math.max(140, Math.round(innerHeight * .28)), Math.max(170, Math.round(innerHeight * .4))]) {
+            panel.style.height = panelHeight + "px";
+            follow.centerOn({ lat: 48.9, lng: 21.2 });
+            const mapRect = mapElement.getBoundingClientRect();
+            const panelRect = panel.getBoundingClientRect();
+            const markerRect = marker.getBoundingClientRect();
+            const expected = { x: mapRect.left + mapRect.width / 2, y: (mapRect.top + Math.min(mapRect.bottom, Math.max(mapRect.top, panelRect.top))) / 2 };
+            const actual = { x: markerRect.left + markerRect.width / 2, y: markerRect.top + markerRect.height / 2 };
+            checks.push({ mode: expedition ? "expedition" : "territory", panelHeight: Math.round(panelRect.height), actual, expected, zoom: map.zoom, bearing: map.bearing });
+          }
+        }
+        panel.style.removeProperty("height");
+        marker.remove();
+        follow.dispose();
+        return checks;
+      })()`);
+      for (const check of markerChecks) {
+        assert.ok(Math.abs(check.actual.x - check.expected.x) <= 1, `${width}x${height} ${check.mode}: GPS marker x=${check.actual.x.toFixed(1)} expected ${check.expected.x.toFixed(1)}`);
+        assert.ok(Math.abs(check.actual.y - check.expected.y) <= 1, `${width}x${height} ${check.mode} with ${check.panelHeight}px panel: GPS marker y=${check.actual.y.toFixed(1)} expected ${check.expected.y.toFixed(1)}`);
+        assert.equal(check.zoom, 15, `${width}x${height} ${check.mode}: zoom is preserved`);
+        assert.equal(check.bearing, 37, `${width}x${height} ${check.mode}: bearing is preserved`);
+      }
+      t.diagnostic(`${width}x${height}: map ${baselineMapHeight}px; ${scenarios.length} UI states; GPS marker centered above panel in both modes (${markerChecks.map((check) => `${check.actual.x.toFixed(1)},${check.actual.y.toFixed(1)}→${check.expected.x.toFixed(1)},${check.expected.y.toFixed(1)}`).join("; ")})`);
     }
   } finally {
     cdp?.close();

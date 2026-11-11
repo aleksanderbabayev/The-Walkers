@@ -104,6 +104,12 @@
   const zoomControlCorner = map.getContainer().querySelector(".leaflet-bottom.leaflet-right");
   const zoomControl = map.getContainer().querySelector(".leaflet-control-zoom");
   const walkPanel = document.querySelector(".panel");
+  const getMapVisualCenter = () => MapFollow.getVisibleMapCenter({
+    mapElement: map.getContainer(),
+    panelElement: walkPanel,
+    mobile: isMobileViewport(),
+    createPoint: L.point
+  });
   const updateMobileZoomPosition = () => {
     if (!zoomControlCorner || !zoomControl || !isMobileViewport()) {
       zoomControlCorner?.style.removeProperty("--mobile-zoom-control-bottom");
@@ -191,6 +197,7 @@
     mapInitialPositionSet = true;
     map.setView([point.lat, point.lng], 15);
     map.invalidateSize();
+    mapFollow.centerOn(point, { force: true });
     $("locationStartupScreen").hidden = true;
   };
   const showLocationStartupError = (details) => {
@@ -440,6 +447,7 @@
     syncMobileViewportHeight();
     requestAnimationFrame(() => {
       map.invalidateSize({ pan: false });
+      recenterFollowingLocation();
       reportMapDiagnostics("layout-refresh", null);
     });
   };
@@ -720,7 +728,22 @@
   const locationIsFresh = Tracking.isLocationFresh;
   let mapFollowStorage = null;
   try { mapFollowStorage = window.localStorage; } catch {}
-  const mapFollow = MapFollow.createMapFollow({ map, storage: mapFollowStorage, onChange: () => updateLocateButton(locationState) });
+  const mapFollow = MapFollow.createMapFollow({
+    map,
+    storage: mapFollowStorage,
+    onChange: () => updateLocateButton(locationState),
+    getTargetPoint: getMapVisualCenter
+  });
+  let followLayoutFrame = 0;
+  const recenterFollowingLocation = () => {
+    if (!mapFollow.enabled || !locationIsFresh(latestLocation) || followLayoutFrame) return;
+    followLayoutFrame = requestAnimationFrame(() => {
+      followLayoutFrame = 0;
+      map.invalidateSize({ pan: false });
+      mapFollow.centerOn(latestLocation);
+    });
+  };
+  if (typeof ResizeObserver === "function") new ResizeObserver(recenterFollowingLocation).observe(walkPanel);
   const expeditionLine = ExpeditionLine.createExpeditionLine({ map, leaflet: L, isLocationFresh: Tracking.isLocationFresh });
   const updateCaptureAvailability = () => {
     const routePoints = initialRouteBuffer.pending ? [] : points;
