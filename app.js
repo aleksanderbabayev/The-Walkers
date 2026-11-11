@@ -747,27 +747,23 @@
   };
   if (typeof ResizeObserver === "function") new ResizeObserver(recenterFollowingLocation).observe(walkPanel);
   const expeditionLine = ExpeditionLine.createExpeditionLine({ map, leaflet: L, isLocationFresh: Tracking.isLocationFresh });
-  const evaluateCaptureReadiness = () => {
-    const routePoints = initialRouteBuffer.pending ? [] : points;
+  const evaluateCaptureReadiness = (routePoints = initialRouteBuffer.pending ? [] : points, allowFinishing = false) => {
     const readiness = Tracking.evaluateTerritoryCapture(routePoints, capturePosition);
     return {
       ...readiness,
-      eligible: recordingActive && activeMode === "territory" && !finishing && !cancelling && readiness.eligible
+      eligible: recordingActive && activeMode === "territory" && (allowFinishing || !finishing) && !cancelling && readiness.eligible
     };
   };
-  const updateCaptureAvailability = () => {
-    const readiness = evaluateCaptureReadiness();
+  const captureReadinessMessage = (readiness) => readiness.reason === "unsafe-gap" ? "Разрыв маршрута: захват недоступен"
+    : readiness.reason === "waiting-for-gps" ? "Ожидаем точный GPS"
+      : readiness.reason === "too-far" ? `До финиша: ${Math.round(readiness.distanceToStartMeters)} м`
+        : readiness.reason === "finish-reached" ? "Финиш достигнут!"
+          : readiness.reason === "too-few-points" ? "Запишите больше точек маршрута"
+            : readiness.reason === "not-closed" || readiness.reason === "invalid-geometry" ? "Маршрут не образует контур"
+              : "Ожидаем начальную точку";
+  const updateCaptureAvailability = (readiness = evaluateCaptureReadiness()) => {
     $("finish").disabled = !readiness.eligible;
-    if (recordingActive && activeMode === "territory") {
-      const status = readiness.reason === "unsafe-gap" ? "Разрыв маршрута: захват недоступен"
-        : readiness.reason === "waiting-for-gps" ? "Ожидаем точный GPS"
-          : readiness.reason === "too-far" ? `До финиша: ${Math.round(readiness.distanceToStartMeters)} м`
-            : readiness.reason === "finish-reached" ? "Финиш достигнут!"
-              : readiness.reason === "too-few-points" ? "Запишите больше точек маршрута"
-                : readiness.reason === "not-closed" || readiness.reason === "invalid-geometry" ? "Маршрут не образует контур"
-                  : "Ожидаем начальную точку";
-      $("statusText").textContent = status;
-    }
+    if (recordingActive && activeMode === "territory") $("statusText").textContent = captureReadinessMessage(readiness);
     return readiness;
   };
   const setCapturePosition = (point) => {
@@ -1282,7 +1278,7 @@
       await beginRecordingAt(freshCandidate, true);
     }).catch(() => {});
   });
-  const receivePosition = (position) => enqueueTrackingTask(() => processPosition(position));
+  const receivePosition = (position) => finishing ? Promise.resolve() : enqueueTrackingTask(() => processPosition(position));
   const onLocationError = (error) => {
     recordDiagnosticEvent({ type: "gps-error", at: Date.now(), phase: warmingUp ? "warm-up" : recordingActive ? (initialRouteBuffer.pending ? "initial-buffer" : "recording") : "location", code: Number.isFinite(error?.code) ? error.code : null });
     noteLocationRequest(error?.code === 1 ? "PERMISSION_DENIED" : error?.code === 3 ? "TIMEOUT" : "POSITION_UNAVAILABLE");
@@ -1493,15 +1489,19 @@
     try {
       await trackingQueue;
       const bufferedPoints = initialRouteBuffer.pending ? initialRouteBuffer.flush().points : [];
-      const finishedPoints = [...points, ...bufferedPoints];
+      let finishedPoints = [...points, ...bufferedPoints];
       const finishedDistance = distanceForPoints(finishedPoints);
-      if (!retreated && walkMode === "territory" && finishedPoints.length < 2) {
-        recordDiagnosticEvent({ type: "finish-rejected", at: Date.now(), reason: "insufficient-route-points", pointCount: finishedPoints.length });
-        resumeAfterFinishFailure("Нужно ещё GPS-точек для сохранения. Продолжаем запись.");
-        return;
+      if (!retreated && walkMode === "territory") {
+        const readiness = evaluateCaptureReadiness(finishedPoints, true);
+        if (!readiness.eligible) {
+          recordDiagnosticEvent({ type: "finish-rejected", at: Date.now(), reason: readiness.reason, pointCount: finishedPoints.length });
+          resumeAfterFinishFailure(captureReadinessMessage(readiness));
+          updateCaptureAvailability(readiness);
+          return;
+        }
       }
       const finishedAt = Date.now();
-      const closed = walkMode === "territory" && !retreated && Tracking.canCloseTrack(finishedPoints);
+      const closed = walkMode === "territory" && !retreated;
       const walk = {
         id: crypto.randomUUID(), points: finishedPoints, startedAt, finishedAt,
         durationMs: finishedAt - startedAt, distanceMeters: finishedDistance,
@@ -1531,7 +1531,42 @@
       await diagnosticsQueue;
       if (diagnosticSession) await persistDiagnosticSession();
       await diagnosticsQueue;
-      await WalkStorage.completeWalk(db, walk);
+      if (!retreated && walkMode === "territory") {
+        const result = await Actions.commitIfReady({
+          waitForPending: () => trackingQueue,
+          evaluate: () => {
+            const finalBufferedPoints = initialRouteBuffer.pending ? initialRouteBuffer.flush().points : [];
+            finishedPoints = [...points, ...finalBufferedPoints];
+            const readiness = evaluateCaptureReadiness(finishedPoints, true);
+            return { ...readiness, readiness, finishedPoints, finishedDistance: distanceForPoints(finishedPoints) };
+          },
+          commit: async (finalRoute) => {
+            walk.points = finalRoute.finishedPoints;
+            walk.distanceMeters = finalRoute.finishedDistance;
+            walk.closed = true;
+            walk.showOnMap = true;
+            await WalkStorage.completeWalk(db, walk);
+          }
+        });
+        if (!result.committed) {
+          if (diagnosticSession?.state === "finalizing") {
+            diagnosticSession.state = "active";
+            delete diagnosticSession.walkId;
+            delete diagnosticSession.walkStatus;
+            delete diagnosticSession.finalRoute;
+            delete diagnosticSession.finishedAt;
+            delete diagnosticSession.territoryCaptured;
+            persistDiagnosticSession();
+            await diagnosticsQueue;
+          }
+          recordDiagnosticEvent({ type: "finish-rejected", at: Date.now(), reason: result.evaluation.reason, pointCount: finishedPoints.length });
+          resumeAfterFinishFailure(captureReadinessMessage(result.evaluation.readiness));
+          updateCaptureAvailability(result.evaluation.readiness);
+          return;
+        }
+      } else {
+        await WalkStorage.completeWalk(db, walk);
+      }
       clearRouteStartMarker();
       clearExpeditionStartMarker();
       stopStopwatch(finishedAt);

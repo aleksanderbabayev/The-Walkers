@@ -7,5 +7,16 @@
 
   const bindClick = (button, action) => button.addEventListener("click", () => action());
 
-  return { bindClick };
+  const commitIfReady = async ({ waitForPending, evaluate, commit, onReject }) => {
+    await waitForPending();
+    const evaluation = evaluate();
+    if (!evaluation?.eligible) {
+      await onReject?.(evaluation);
+      return { committed: false, evaluation };
+    }
+    await commit(evaluation);
+    return { committed: true, evaluation };
+  };
+
+  return { bindClick, commitIfReady };
 });

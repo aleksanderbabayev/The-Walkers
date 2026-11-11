@@ -175,7 +175,7 @@ test("expedition UI, accepted GPS completion, persistence and territory isolatio
   assert.match(html, /id="expeditionCompass"[^>]+hidden/);
   assert.doesNotMatch(html, /compassNorth|>N</);
   assert.doesNotMatch(app + html, /DeviceOrientation|deviceorientation/);
-  assert.ok(app.includes("const receivePosition = (position) => enqueueTrackingTask(() => processPosition(position))"));
+  assert.ok(app.includes("const receivePosition = (position) => finishing ? Promise.resolve() : enqueueTrackingTask(() => processPosition(position)"));
   const processingStart = app.indexOf("const processPosition");
   const processingEnd = app.indexOf('$("manualWarmupStart").addEventListener', processingStart);
   const processing = app.slice(processingStart, processingEnd);
@@ -183,12 +183,12 @@ test("expedition UI, accepted GPS completion, persistence and territory isolatio
   const acceptedUpdate = processing.lastIndexOf("updateExpeditionProgress(result.point)");
   assert.ok(rejectedPosition >= 0 && acceptedUpdate > rejectedPosition);
   assert.ok(processing.indexOf("return;", rejectedPosition) < acceptedUpdate);
-  assert.ok(app.includes("const closed = walkMode === \"territory\" && !retreated && Tracking.canCloseTrack(finishedPoints)"));
+  assert.ok(app.includes("const closed = walkMode === \"territory\" && !retreated"));
   assert.ok(app.includes('expeditionStatus: retreated ? "incomplete" : "reached"'));
   assert.ok(app.includes('active ? activeMode === "expedition" ? "Идёт экспедиция"'));
   assert.ok(app.includes('if (walk.expeditionStatus === "reached") showExpeditionResult(walk)'));
   assert.match(html, /Экспедиция завершена/);
   assert.ok(bootstrap.includes('"expedition-core.js?v=0.2.3"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.20"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.21"'));
   assert.doesNotMatch(app, /router|routing service|OSRM|GraphHopper/i);
 });
