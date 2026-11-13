@@ -466,10 +466,46 @@ test("recovery restores its checkpoint after reload and route distance excludes 
   };
   assert.equal(Tracking.evaluateSegmentContinuity(anchor, resumedPoint).continuous, true);
   assert.ok(Tracking.distanceForPoints([anchor, resumedPoint]) < 6, "the unrecorded return distance is not added to the route");
+  assert.equal(Tracking.splitSegments([anchor, resumedPoint]).length, 1, "confirmed recovery is one displayed line without changing its GPS segment marker");
+  assert.equal(resumedPoint.segmentStart, true, "the recovery point remains a logical segment start for the distance and safety rules");
   const restoredRoute = Tracking.validateInitialRoute([anchor, resumedPoint]).points;
   assert.equal(restoredRoute[1].recoveryResume.confirmationCount, Tracking.ROUTE_RECOVERY_CONFIRMATIONS);
   assert.equal(Tracking.evaluateSegmentContinuity(restoredRoute[0], restoredRoute[1]).reason, "recovered-gap");
+  assert.equal(Tracking.splitSegments(restoredRoute).length, 1, "the visual connection survives reload validation");
   assert.ok(Tracking.distanceForPoints(restoredRoute) < 6, "reload validation keeps only movement recorded after return");
+});
+
+test("ordinary GPS segment breaks stay disconnected and add no synthetic recovery points", () => {
+  const route = [
+    point(0, 0, now - 10000, true, 5),
+    point(0, 0.00005, now - 5000, false, 5),
+    point(0, 0.001, now, true, 5),
+    point(0, 0.00105, now + 5000, false, 5)
+  ];
+  const segments = Tracking.splitSegments(route);
+  assert.equal(segments.length, 2);
+  assert.deepEqual(segments.flat(), route);
+  assert.equal(Tracking.distanceForPoints(route), Tracking.distanceMeters(route[0], route[1]) + Tracking.distanceMeters(route[2], route[3]));
+});
+
+test("confirmed recovery joins stay visible in a captured route without counting return distance", () => {
+  const meters = (value) => value / 111194.9266;
+  const start = point(0, 0, now - 30000, true, 5);
+  const east = point(0, meters(10), now - 20000, false, 5);
+  const northEast = point(meters(10), meters(10), now - 10000, false, 5);
+  const north = point(meters(10), 0, now - 5000, false, 5);
+  const resumed = {
+    ...point(meters(5), meters(5), now, true, 5),
+    recoveryResume: {
+      confirmed: true, confirmationCount: 3, returnAccuracyMeters: 5,
+      checkpoint: { lat: north.lat, lng: north.lng }, checkpointDistanceMeters: 5, segmentDistanceMeters: 5
+    }
+  };
+  const route = [start, east, northEast, north, resumed];
+  assert.equal(route.length, 5, "visual reconnection does not invent an intermediate GPS point");
+  assert.equal(Tracking.evaluateTrackClosure(route).eligible, true);
+  assert.equal(Tracking.splitSegments(route).length, 1);
+  assert.ok(Tracking.distanceForPoints(route) < 40, "only the measured route and resumed walking count toward distance");
 });
 
 test("a second long unsafe GPS gap after recovery creates the same checkpoint recovery state", () => {

@@ -292,7 +292,10 @@
   const splitSegments = (points = []) => {
     const segments = [];
     for (const point of points) {
-      if (!segments.length || point.segmentStart) segments.push([]);
+      const previous = segments.at(-1)?.at(-1);
+      const recoveredJoin = point.segmentStart && previous
+        && evaluateSegmentContinuity(previous, point).reason === "recovered-gap";
+      if (!segments.length || point.segmentStart && !recoveredJoin) segments.push([]);
       segments.at(-1).push(point);
     }
     return segments;

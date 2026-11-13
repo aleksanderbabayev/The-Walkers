@@ -136,7 +136,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const appSource = fs.readFileSync(path.join(projectRoot, "app.js"), "utf8");
     const htmlSource = fs.readFileSync(path.join(projectRoot, "index.html"), "utf8");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.31">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.32">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);

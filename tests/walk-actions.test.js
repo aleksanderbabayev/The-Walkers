@@ -50,7 +50,8 @@ test("Finish and Retreat button dispatch call their actions without passing the 
   assert.doesNotMatch(resumeFailure, /positionFilter\.reset|gpsWarmup\.reset/);
   assert.match(appSource, /const receivePosition = Actions\.createPositionReceiver\(/);
   assert.ok(bootstrapSource.includes('"walk-actions.js?v=0.1.48"'));
-  assert.ok(bootstrapSource.includes('"app.js?v=0.2.31"'));
+  assert.ok(bootstrapSource.includes('"app.js?v=0.2.32"'));
+  assert.ok(bootstrapSource.includes('"tracking-core.js?v=0.2.13"'));
   assert.match(appSource, /const evaluateCaptureReadiness = \(routePoints = initialRouteBuffer\.pending \? \[\] : points, allowFinishing = false\) => \{[\s\S]*?Tracking\.evaluateTerritoryCapture\(routePoints, capturePosition\)[\s\S]*?\(allowFinishing \|\| !finishing\).*?readiness\.eligible/);
   assert.match(appSource, /const updateCaptureAvailability = \(readiness = evaluateCaptureReadiness\(\)\) => \{\s*\$\("finish"\)\.disabled = !readiness\.eligible/);
   assert.match(appSource, /const finishPositionFilter = Tracking\.createFinishPositionFilter\(\)/);
@@ -115,6 +116,15 @@ test("only unsafe territory gaps enter persisted recovery; return never enters t
   assert.match(appSource, /\$\("abandonWalk"\)\.hidden = !\(active \|\| warmingUp\)/);
   assert.match(appSource, /const processPosition = async \(position\) => \{[\s\S]*?if \(routeRecovery\.active\)[\s\S]*?await processRecoveryPosition\(position, processedAt\);\s*return;/);
   assert.match(appSource, /if \(updateExpeditionProgress\(result\.point\)\) say\("Цель достигнута\. Завершаем экспедицию…"\)/);
+});
+
+test("active and saved route drawing share confirmed visual recovery joins", () => {
+  const appSource = fs.readFileSync(require.resolve("../app.js"), "utf8");
+  const drawCurrent = appSource.slice(appSource.indexOf("const drawCurrent"), appSource.indexOf("const redrawSaved"));
+  const redrawSaved = appSource.slice(appSource.indexOf("const redrawSaved"), appSource.indexOf('$("routes").addEventListener'));
+  assert.match(drawCurrent, /Tracking\.splitSegments\(points\)/);
+  assert.match(redrawSaved, /Tracking\.splitSegments\(walk\.points \|\| \[\]\)/);
+  assert.match(redrawSaved, /L\.polygon\(\(walk\.points \|\| \[\]\)\.map/);
 });
 
 test("short routes remain ineligible for Finish but can be retained by Retreat", () => {
