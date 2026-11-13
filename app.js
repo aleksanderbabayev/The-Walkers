@@ -139,6 +139,8 @@
   let selectedMode = "territory", activeMode = "territory", expeditionTarget = null;
   let targetMethod = "manual", expeditionDistanceMeters = null, expeditionCompletionPending = false;
   let recordingActive = false, warmingUp = false, points = [], distanceMetersTotal = 0, currentLines = [], savedLayers = [], stopwatchTimer = null, warmupWaitTimer = null, warmupStartedAt = null, startedAt = null;
+  let recordingFilterPrevious = null, routeReconnectPending = false, recoveryResumeProof = null;
+  let recoveryProgressBucket = null, recoveryLastProgressAt = 0, recoveryDistanceToPoint = null;
   let walksById = new Map();
   const trackingTasks = Actions.createSerialQueue((error) => say(`Не удалось сохранить прогулку: ${error.message || "ошибка IndexedDB"}.`));
   let diagnosticSession = null, diagnosticsQueue = Promise.resolve(), diagnosticsPersistenceFailed = false;
@@ -149,9 +151,10 @@
   const gpsWarmup = Tracking.createGpsWarmup();
   const startupGpsStabilizer = Tracking.createGpsWarmup();
   const initialRouteBuffer = Tracking.createInitialRouteBuffer();
+  const routeRecovery = Tracking.createRouteRecovery();
   let currentLocationMarker = null, accuracyCircle = null, startupPositionReady = false, accuracyCircleDismissed = false;
   let capturePosition = null, captureFreshnessTimer = null;
-  let routeStartMarker = null, territoryFinishZone = null;
+  let routeStartMarker = null, territoryFinishZone = null, routeRecoveryMarker = null, routeRecoveryRadius = null;
   const expeditionMarkers = ExpeditionMarkers.createExpeditionMarkers({ map, leaflet: L });
   let locationState = "loading", latestLocation = null, locationRequestPending = false;
   let locationPermissionMonitored = false;
@@ -216,6 +219,27 @@
   const clearTerritoryFinishZone = () => {
     if (territoryFinishZone) map.removeLayer(territoryFinishZone);
     territoryFinishZone = null;
+  };
+  const clearRouteRecoveryMarker = () => {
+    if (routeRecoveryMarker) map.removeLayer(routeRecoveryMarker);
+    if (routeRecoveryRadius) map.removeLayer(routeRecoveryRadius);
+    routeRecoveryMarker = null;
+    routeRecoveryRadius = null;
+  };
+  const updateRouteRecoveryMarker = (point) => {
+    if (!point) { clearRouteRecoveryMarker(); return; }
+    const latlng = [point.lat, point.lng];
+    if (routeRecoveryRadius) routeRecoveryRadius.setLatLng(latlng).setRadius(Tracking.ROUTE_RECOVERY_RADIUS_METERS);
+    else routeRecoveryRadius = L.circle(latlng, {
+      radius: Tracking.ROUTE_RECOVERY_RADIUS_METERS,
+      color: "#1b64c8", weight: 2, opacity: 0.95,
+      fillColor: "#2877df", fillOpacity: 0.17, interactive: false
+    }).addTo(map);
+    if (routeRecoveryMarker) routeRecoveryMarker.setLatLng(latlng);
+    else routeRecoveryMarker = L.circleMarker(latlng, {
+      radius: 10, color: "#fff", weight: 3, fillColor: "#1769d2", fillOpacity: 1,
+      title: "Точка восстановления маршрута", interactive: false
+    }).addTo(map);
   };
   const updateTerritoryFinishZone = (point) => {
     if (!recordingActive || activeMode !== "territory" || !point) {
@@ -490,7 +514,11 @@
   const distanceForPoints = Tracking.distanceForPoints;
   const formatKilometers = (meters) => `${(Math.max(0, meters) / 1000).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} км`;
   const durationOfWalk = (walk) => Number.isFinite(walk.durationMs) ? Math.max(0, walk.durationMs) : Math.max(0, (walk.finishedAt || 0) - (walk.startedAt || 0));
-  const say = (message) => { $("message").textContent = message; };
+  const say = (message) => {
+    const status = $("message");
+    status.textContent = message;
+    status.classList.toggle("is-route-recovery", routeRecovery.active && Boolean(message));
+  };
   const queueDiagnosticWrite = (operation) => {
     diagnosticsQueue = diagnosticsQueue.then(() => diagnosticsPersistenceFailed ? undefined : operation()).catch(() => { diagnosticsPersistenceFailed = true; });
     return diagnosticsQueue;
@@ -786,12 +814,18 @@
   const expeditionLine = ExpeditionLine.createExpeditionLine({ map, leaflet: L, isLocationFresh: Tracking.isLocationFresh });
   const evaluateCaptureReadiness = (routePoints = initialRouteBuffer.pending ? [] : points, allowFinishing = false) => {
     const readiness = Tracking.evaluateTerritoryCapture(routePoints, capturePosition);
+    if (routeRecovery.active) return {
+      ...readiness, eligible: false, reason: "recovery-required",
+      distanceToRecoveryMeters: recoveryDistanceToPoint
+    };
     return {
       ...readiness,
       eligible: recordingActive && activeMode === "territory" && (allowFinishing || !finishing) && !cancelling && readiness.eligible
     };
   };
-  const captureReadinessMessage = (readiness) => readiness.reason === "unsafe-gap" ? "Разрыв маршрута: захват недоступен"
+  const captureReadinessMessage = (readiness) => readiness.reason === "recovery-required"
+    ? Number.isFinite(readiness.distanceToRecoveryMeters) ? `До точки восстановления: ${Math.round(readiness.distanceToRecoveryMeters)} м` : "Маршрут прерван — вернитесь к точке"
+    : readiness.reason === "unsafe-gap" ? "Разрыв маршрута: захват недоступен"
     : readiness.reason === "waiting-for-gps" ? "Ожидаем точный GPS"
       : readiness.reason === "too-far" ? `До финиша: ${Math.round(readiness.distanceToStartMeters)} м`
         : readiness.reason === "finish-reached" ? "Финиш достигнут!"
@@ -993,9 +1027,12 @@
     clearInterval(warmupWaitTimer);
     warmupWaitTimer = null;
   };
-  const draftSnapshot = (nextPoints = points, nextStartedAt = startedAt, nextInitialBuffer = initialRouteBuffer.snapshot()) => ({
+  const draftSnapshot = (nextPoints = points, nextStartedAt = startedAt, nextInitialBuffer = initialRouteBuffer.snapshot(), nextFilterPrevious = recordingFilterPrevious) => ({
     id: "active", points: nextPoints, startedAt: nextStartedAt, updatedAt: Date.now(),
     ...(nextPoints[0] || nextInitialBuffer[0] ? { startPosition: { ...(nextPoints[0] || nextInitialBuffer[0]) } } : {}),
+    ...(nextFilterPrevious ? { routeFilterPrevious: { ...nextFilterPrevious } } : {}),
+    ...(activeMode === "territory" && routeRecovery.active ? { routeRecovery: routeRecovery.snapshot() } : {}),
+    ...(activeMode === "territory" && routeReconnectPending ? { routeReconnectPending: true, recoveryResumeProof: { ...recoveryResumeProof } } : {}),
     mode: activeMode,
     ...(activeMode === "expedition" ? {
       targetMethod,
@@ -1003,7 +1040,7 @@
     } : {}),
     ...(nextInitialBuffer.length ? { initialBuffer: nextInitialBuffer } : {})
   });
-  const saveDraftSnapshot = (nextPoints = points, nextStartedAt = startedAt, nextInitialBuffer = initialRouteBuffer.snapshot()) => WalkStorage.writeDraft(db, draftSnapshot(nextPoints, nextStartedAt, nextInitialBuffer));
+  const saveDraftSnapshot = (nextPoints = points, nextStartedAt = startedAt, nextInitialBuffer = initialRouteBuffer.snapshot(), nextFilterPrevious = recordingFilterPrevious) => WalkStorage.writeDraft(db, draftSnapshot(nextPoints, nextStartedAt, nextInitialBuffer, nextFilterPrevious));
   const enqueueTrackingTask = (task) => {
     const pending = trackingTasks.enqueue(task);
     pending.then(() => {
@@ -1124,6 +1161,7 @@
   });
   const beginRecordingAt = async (startPoint, manual = false) => {
     const initialPoint = { ...startPoint, segmentStart: true };
+    recordingFilterPrevious = initialPoint;
     gpsWarmup.reset();
     if (activeMode === "territory") finishPositionFilter.reset(initialPoint);
     const recordingStartedAt = Date.now();
@@ -1154,6 +1192,112 @@
     recordDiagnosticEvent({ type: "recording-started", at: recordingStartedAt, timestamp: initialPoint.timestamp, manualStart: manual });
     return true;
   };
+  const RECOVERY_INSTRUCTION = "Маршрут прерван. Вернитесь к отмеченной точке, чтобы продолжить захват территории";
+  const showRecoveryLocation = (position, processedAt) => {
+    const result = Tracking.evaluatePosition(position, null, processedAt);
+    if (!result.accepted) return null;
+    if (rememberLocation(result.point)) {
+      updateLocationMarker(result.point);
+      mapFollow.centerOn(result.point);
+    }
+    return result.point;
+  };
+  const beginRouteRecovery = async (candidate, gpsEvent) => {
+    const anchor = points.at(-1);
+    if (!anchor || !routeRecovery.start(anchor, "unsafe-gap", {
+      gapDurationMs: candidate.timestamp - anchor.timestamp,
+      gapDistanceMeters: Tracking.distanceMeters(anchor, candidate),
+      maxSafeGapMeters: Tracking.evaluateSegmentContinuity(anchor, candidate).maxGapMeters
+    })) return false;
+    positionFilter.reset();
+    recordingFilterPrevious = { ...anchor };
+    routeReconnectPending = false; recoveryResumeProof = null;
+    recoveryProgressBucket = null; recoveryLastProgressAt = 0;
+    recoveryDistanceToPoint = Tracking.distanceMeters(anchor, candidate);
+    if (gpsEvent) {
+      gpsEvent.decision = "rejected"; gpsEvent.filteringReason = "route-recovery-required";
+      gpsEvent.includedInRoute = false; gpsEvent.pendingCandidate = false;
+    }
+    pendingDiagnosticEvents.forEach((event) => {
+      event.decision = "rejected"; event.filteringReason = "route-recovery-required";
+      event.includedInRoute = false; event.pendingCandidate = false;
+    });
+    persistDiagnosticUpdates(pendingDiagnosticEvents);
+    pendingDiagnosticEvents = []; pendingDiagnosticPrevious = null;
+    recordDiagnosticEvent({
+      type: "recovery-required", at: Date.now(), reason: "unsafe-gap",
+      gapDurationMs: candidate.timestamp - anchor.timestamp,
+      gapDistanceMeters: recoveryDistanceToPoint,
+      maxSafeGapMeters: routeRecovery.snapshot().gap.maxSafeGapMeters,
+      recoveryRadiusMeters: Tracking.ROUTE_RECOVERY_RADIUS_METERS,
+      checkpointTimestamp: anchor.timestamp
+    });
+    updateRouteRecoveryMarker(anchor);
+    showRecoveryLocation({ timestamp: candidate.timestamp, coords: { latitude: candidate.lat, longitude: candidate.lng, accuracy: candidate.accuracy } }, Date.now());
+    updateCaptureAvailability();
+    say(RECOVERY_INSTRUCTION);
+    try { await saveDraftSnapshot(); }
+    catch { say(`${RECOVERY_INSTRUCTION}. Не удалось сохранить состояние; не перезагружайте страницу.`); }
+    return true;
+  };
+  const processRecoveryPosition = async (position, processedAt) => {
+    const anchor = routeRecovery.anchor;
+    const result = routeRecovery.evaluate(position, processedAt);
+    const displayPoint = showRecoveryLocation(position, processedAt);
+    const distanceToRecovery = displayPoint && anchor ? Tracking.distanceMeters(anchor, displayPoint) : result.distanceToAnchorMeters;
+    const decision = result.accepted ? result.completed ? "accepted" : "pending_confirmation" : "rejected";
+    const gpsEvent = recordGpsDiagnostic(position, processedAt, "recovery", decision, result.reason || null, anchor, {
+      pendingCandidate: result.accepted && !result.completed,
+      recoveryDistanceMeters: Number.isFinite(distanceToRecovery) ? distanceToRecovery : null,
+      recoveryConfirmations: result.confirmations || 0
+    });
+    if (gpsEvent) { gpsEvent.includedInRoute = false; gpsEvent.pendingCandidate = false; }
+    persistDiagnosticEvent(gpsEvent);
+    if (Number.isFinite(distanceToRecovery)) {
+      recoveryDistanceToPoint = distanceToRecovery;
+      updateCaptureAvailability();
+      const bucket = Math.floor(distanceToRecovery / 5);
+      if (bucket !== recoveryProgressBucket && processedAt - recoveryLastProgressAt >= 10000) {
+        recordDiagnosticEvent({ type: "recovery-progress", at: processedAt, distanceMeters: distanceToRecovery, recoveryRadiusMeters: Tracking.ROUTE_RECOVERY_RADIUS_METERS, confirmationCount: result.confirmations || 0 });
+        recoveryProgressBucket = bucket;
+        recoveryLastProgressAt = processedAt;
+      }
+    }
+    if (!result.completed) return;
+
+    const savedRecovery = routeRecovery.snapshot();
+    const previousFilterPoint = recordingFilterPrevious;
+    const previousReconnectPending = routeReconnectPending, previousResumeProof = recoveryResumeProof;
+    routeRecovery.clear();
+    recordingFilterPrevious = { ...result.point };
+    routeReconnectPending = true;
+    recoveryResumeProof = {
+      confirmed: true, checkpoint: { lat: savedRecovery.anchor.lat, lng: savedRecovery.anchor.lng },
+      checkpointDistanceMeters: result.distanceToAnchorMeters,
+      returnAccuracyMeters: result.point.accuracy, confirmationCount: result.confirmations
+    };
+    recoveryDistanceToPoint = null; recoveryProgressBucket = null; recoveryLastProgressAt = 0;
+    clearRouteRecoveryMarker();
+    positionFilter.reset();
+    try { await saveDraftSnapshot(); }
+    catch {
+      routeRecovery.restore(savedRecovery);
+      recordingFilterPrevious = previousFilterPoint;
+      routeReconnectPending = previousReconnectPending; recoveryResumeProof = previousResumeProof;
+      recoveryDistanceToPoint = result.distanceToAnchorMeters;
+      updateRouteRecoveryMarker(savedRecovery.anchor);
+      updateCaptureAvailability();
+      say("Не удалось сохранить восстановление маршрута. Оставайтесь у отмеченной точки и продолжайте ждать GPS.");
+      return;
+    }
+    recordDiagnosticEvent({
+      type: "recovery-completed", at: processedAt, checkpointTimestamp: savedRecovery.anchor.timestamp,
+      positionTimestamp: result.point.timestamp, distanceToCheckpointMeters: result.distanceToAnchorMeters,
+      accuracyMeters: result.point.accuracy, confirmationCount: result.confirmations
+    });
+    updateCaptureAvailability();
+    say("Маршрут восстановлен");
+  };
   const processPosition = async (position) => {
     if (cancelling) return;
     const processedAt = Date.now();
@@ -1169,6 +1313,10 @@
     } else if (!startupPositionReady) {
       const details = LocationUi.getLocationState({ reason: displayResult.reason, accuracy: position.coords?.accuracy });
       showLocationStartupError({ ...details, action: details.action || "" });
+    }
+    if (routeRecovery.active) {
+      await processRecoveryPosition(position, processedAt);
+      return;
     }
     if (!warmingUp && !recordingActive) {
       const result = Tracking.evaluateLocationUpdate(position, latestLocation, processedAt);
@@ -1222,13 +1370,21 @@
     const previous = pendingDiagnosticPrevious || (bufferingInitial ? previousInitialBuffer.at(-1) : points.at(-1));
     const result = bufferingInitial
       ? initialRouteBuffer.add(position, Date.now())
-      : positionFilter.evaluate(position, points.at(-1), Date.now());
+      : positionFilter.evaluate(position, recordingFilterPrevious || points.at(-1), Date.now());
+    let acceptedRoutePoints = result.points || [result.point];
+    if (!bufferingInitial && result.accepted && routeReconnectPending && recoveryResumeProof) {
+      const segmentDistanceMeters = result.distanceMeters || 0;
+      acceptedRoutePoints = acceptedRoutePoints.map((point, index) => index === 0 ? {
+        ...point, segmentStart: true, segmentDistanceMeters,
+        recoveryResume: { ...recoveryResumeProof, segmentDistanceMeters }
+      } : point);
+    }
     const decision = result.candidate ? "pending_confirmation"
       : bufferingInitial && result.accepted ? "pending_confirmation"
         : result.accepted ? "accepted" : "rejected";
     const gpsEvent = recordGpsDiagnostic(position, processedAt, phase, decision, result.reason, previous, {
       pendingCandidate: Boolean(result.candidate),
-      segmentStart: Boolean((result.points || [result.point]).some((point) => point?.segmentStart)),
+      segmentStart: Boolean(acceptedRoutePoints.some((point) => point?.segmentStart)),
       distanceMeters: result.distanceMeters ?? null
     });
     if (result.candidate) pendingDiagnosticPrevious = result.candidate;
@@ -1238,6 +1394,13 @@
       persistDiagnosticUpdates(pendingDiagnosticEvents);
       pendingDiagnosticEvents = gpsEvent ? [gpsEvent] : [];
       if (gpsEvent) gpsEvent.includedInRoute = null;
+    }
+    if (!bufferingInitial && activeMode === "territory" && result.reason === "confirm" && result.candidate) {
+      const continuity = Tracking.evaluateSegmentContinuity(points.at(-1), result.candidate);
+      if (!continuity.continuous) {
+        await beginRouteRecovery(result.candidate, gpsEvent);
+        return;
+      }
     }
     if (!result.accepted) {
       if (decision === "rejected" && gpsEvent) gpsEvent.includedInRoute = false;
@@ -1272,7 +1435,8 @@
         return;
       }
       const nextPoints = [...points, ...result.validatedPoints];
-      try { await saveDraftSnapshot(nextPoints, startedAt, []); }
+      const nextFilterPrevious = result.validatedPoints.at(-1) || recordingFilterPrevious;
+      try { await saveDraftSnapshot(nextPoints, startedAt, [], nextFilterPrevious); }
       catch {
         initialRouteBuffer.restore(previousInitialBuffer);
         pendingDiagnosticPrevious = null;
@@ -1293,6 +1457,7 @@
       initialRouteBuffer.reset(); positionFilter.reset();
       pendingDiagnosticPrevious = null;
       points = nextPoints; distanceMetersTotal = distanceForPoints(points);
+      recordingFilterPrevious = nextFilterPrevious;
       if (activeMode === "expedition" && points[0]) updateExpeditionStartMarker(points[0]);
       if (activeMode === "territory" && points[0]) {
         updateRouteStartMarker(points[0]);
@@ -1309,9 +1474,13 @@
       return;
     }
 
-    const nextPoints = [...points, ...(result.points || [result.point])];
-    try { await saveDraftSnapshot(nextPoints, startedAt); }
+    const nextPoints = [...points, ...acceptedRoutePoints];
+    const nextFilterPrevious = acceptedRoutePoints.at(-1) || recordingFilterPrevious;
+    const reconnectWasPending = routeReconnectPending, previousResumeProof = recoveryResumeProof;
+    if (result.accepted && routeReconnectPending) { routeReconnectPending = false; recoveryResumeProof = null; }
+    try { await saveDraftSnapshot(nextPoints, startedAt, initialRouteBuffer.snapshot(), nextFilterPrevious); }
     catch {
+      routeReconnectPending = reconnectWasPending; recoveryResumeProof = previousResumeProof;
       if (gpsEvent) gpsEvent.includedInRoute = false;
       persistDiagnosticEvent(gpsEvent);
       pendingDiagnosticEvents.forEach((event) => { event.includedInRoute = false; event.pendingCandidate = false; });
@@ -1321,10 +1490,11 @@
     }
 
     points = nextPoints;
+    recordingFilterPrevious = nextFilterPrevious;
     distanceMetersTotal += result.distanceMeters;
     if (gpsEvent) gpsEvent.includedInRoute = true;
     persistDiagnosticEvent(gpsEvent);
-    persistDiagnosticUpdates(resolveDiagnosticEvents(result.points || [result.point], ["recording"], true));
+    persistDiagnosticUpdates(resolveDiagnosticEvents(acceptedRoutePoints, ["recording"], true));
     rememberLocation(result.point);
     drawCurrent(); updateDistance(); updateLocationMarker(result.point); mapFollow.centerOn(result.point);
     if (updateExpeditionProgress(result.point)) say("Цель достигнута. Завершаем экспедицию…");
@@ -1447,6 +1617,9 @@
     expeditionCompletionPending = false;
     expeditionDistanceMeters = mode === "expedition" && locationIsFresh(latestLocation) ? Tracking.distanceMeters(latestLocation, expeditionTarget) : null;
     positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset();
+    routeRecovery.clear(); clearRouteRecoveryMarker();
+    recordingFilterPrevious = null; routeReconnectPending = false; recoveryResumeProof = null;
+    recoveryProgressBucket = null; recoveryLastProgressAt = 0; recoveryDistanceToPoint = null;
     expeditionLine.hide();
     latestLocation = null; updateLocateButton("loading"); clearRouteStartMarker();
     showLocationState({});
@@ -1524,6 +1697,9 @@
   };
   const clearActiveWalkView = () => {
     points = []; distanceMetersTotal = 0; startedAt = null;
+    recordingFilterPrevious = null; routeReconnectPending = false; recoveryResumeProof = null;
+    routeRecovery.clear(); clearRouteRecoveryMarker();
+    recoveryProgressBucket = null; recoveryLastProgressAt = 0; recoveryDistanceToPoint = null;
     setCapturePosition(null);
     initialRouteBuffer.reset();
     expeditionTarget = null; expeditionDistanceMeters = null; expeditionCompletionPending = false;
@@ -1621,6 +1797,9 @@
       }
       const { walk, finishedAt, closed } = walkContext;
       positionFilter.reset(); gpsWarmup.reset();
+      routeRecovery.clear(); clearRouteRecoveryMarker(); recordingFilterPrevious = null;
+      routeReconnectPending = false; recoveryResumeProof = null;
+      recoveryProgressBucket = null; recoveryLastProgressAt = 0; recoveryDistanceToPoint = null;
       clearRouteStartMarker();
       clearExpeditionStartMarker();
       stopStopwatch(finishedAt);
@@ -1758,6 +1937,16 @@
         recordDiagnosticEvent({ type: "draft-restored", at: Date.now(), pointCount: (draft.points || []).length, bufferedPointCount: (draft.initialBuffer || []).length });
           locateRequestId += 1;
           points = draftPoints;
+          routeRecovery.clear();
+          recordingFilterPrevious = draft.routeFilterPrevious || points.at(-1) || null;
+          routeReconnectPending = activeMode === "territory" && !draft.routeRecovery && draft.routeReconnectPending === true && draft.recoveryResumeProof?.confirmed === true;
+          recoveryResumeProof = routeReconnectPending ? { ...draft.recoveryResumeProof } : null;
+          recoveryProgressBucket = null; recoveryLastProgressAt = 0; recoveryDistanceToPoint = null;
+          if (activeMode === "territory" && draft.routeRecovery && routeRecovery.restore(draft.routeRecovery)) {
+            recoveryDistanceToPoint = locationIsFresh(latestLocation) ? Tracking.distanceMeters(routeRecovery.anchor, latestLocation) : null;
+            updateRouteRecoveryMarker(routeRecovery.anchor);
+            say(RECOVERY_INSTRUCTION);
+          } else clearRouteRecoveryMarker();
           finishPositionFilter.reset(points.at(-1) || null);
           initialRouteBuffer.restore(draftInitialBuffer);
           setCapturePosition(null);
@@ -1784,7 +1973,7 @@
               updateTerritoryFinishZone(restoredValidatedPoints[0]);
             }
             if (warmingUp) { say(""); warmupWaitTimer = setInterval(refreshManualWarmupStart, 1000); }
-            else { startStopwatch(); say("Прогулка восстановлена. Ожидаем свежую GPS-точку…"); }
+            else { startStopwatch(); say(routeRecovery.active ? RECOVERY_INSTRUCTION : "Прогулка восстановлена. Ожидаем свежую GPS-точку…"); }
           } catch {
             starting = false;
             positionFilter.reset(); gpsWarmup.reset(); initialRouteBuffer.reset(); warmingUp = false;

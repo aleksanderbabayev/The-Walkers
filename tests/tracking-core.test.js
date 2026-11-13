@@ -396,6 +396,104 @@ test("confirms recovery after a gap at 30 meter accuracy without counting the ga
   assert.ok(Tracking.distanceForPoints([previous, ...confirmed.points]) < 10);
 });
 
+test("route recovery requires fresh accurate stable fixes inside the 15 m checkpoint radius", () => {
+  const meters = (value) => value / 111194.9266;
+  const anchor = point(0, 0, now - 60000, true, 5);
+  const recovery = Tracking.createRouteRecovery();
+  assert.ok(recovery.start(anchor, "unsafe-gap", { gapDurationMs: 60000, gapDistanceMeters: 100 }));
+  assert.equal(recovery.snapshot().anchor.timestamp, anchor.timestamp);
+
+  assert.equal(recovery.evaluate(position(0, meters(5), now, 13), now).reason, "accuracy");
+  assert.equal(recovery.evaluate(position(0, meters(5), now - 16000, 5), now).reason, "stale");
+  const first = recovery.evaluate(position(0, meters(14.5), now, 5), now);
+  assert.equal(first.reached, true);
+  assert.equal(first.confirmations, 1);
+  const second = recovery.evaluate(position(0, meters(14), now + 3000, 5), now + 3000);
+  assert.notEqual(second.completed, true);
+  assert.equal(second.confirmations, 2);
+  const third = recovery.evaluate(position(0, meters(14), now + 6000, 5), now + 6000);
+  assert.equal(third.completed, true);
+  assert.equal(third.confirmations, Tracking.ROUTE_RECOVERY_CONFIRMATIONS);
+  assert.ok(third.distanceToAnchorMeters <= Tracking.ROUTE_RECOVERY_RADIUS_METERS);
+  assert.equal(recovery.active, true, "completion is a result; caller clears only after persisting the transition");
+  recovery.clear();
+  assert.equal(recovery.active, false);
+});
+
+test("GPS drift or a single false approach cannot complete route recovery", () => {
+  const meters = (value) => value / 111194.9266;
+  const recovery = Tracking.createRouteRecovery();
+  recovery.start(point(0, 0, now - 60000, true, 5));
+  assert.equal(recovery.evaluate(position(0, meters(10), now, 5), now).confirmations, 1);
+  const falseApproach = recovery.evaluate(position(0, meters(22), now + 3000, 5), now + 3000);
+  assert.equal(falseApproach.reached, false);
+  assert.equal(falseApproach.confirmations, 0);
+  assert.equal(recovery.evaluate(position(0, meters(10), now + 6000, 5), now + 6000).confirmations, 1);
+  assert.notEqual(recovery.evaluate(position(0, meters(10), now + 9000, 5), now + 9000).completed, true);
+  assert.equal(recovery.evaluate(position(0, meters(10), now + 12000, 5), now + 12000).completed, true);
+});
+
+test("recovery restores its checkpoint after reload and route distance excludes the return", () => {
+  const meters = (value) => value / 111194.9266;
+  const anchor = point(0, 0, now - 60000, true, 5);
+  const recovery = Tracking.createRouteRecovery();
+  recovery.start(anchor, "unsafe-gap", { gapDurationMs: 60000, gapDistanceMeters: 80 });
+  const saved = structuredClone(recovery.snapshot());
+  const restored = Tracking.createRouteRecovery();
+  assert.equal(restored.restore(saved), true);
+  assert.equal(restored.active, true);
+  assert.equal(restored.evaluate(position(0, meters(14), now, 5), now).confirmations, 1, "pre-reload GPS confirmation is not trusted");
+  restored.clear();
+
+  const recorderFilter = Tracking.createPositionFilter();
+  const completedRecovery = Tracking.createRouteRecovery();
+  completedRecovery.start(anchor);
+  completedRecovery.evaluate(position(0, meters(10), now + 3000, 5), now + 3000);
+  completedRecovery.evaluate(position(0, meters(10), now + 6000, 5), now + 6000);
+  const completion = completedRecovery.evaluate(position(0, meters(10), now + 9000, 5), now + 9000);
+  assert.equal(completion.completed, true);
+  const baseline = completion.point;
+  const resumed = recorderFilter.evaluate(position(0, meters(15), now + 12000, 5), baseline, now + 12000);
+  assert.equal(resumed.accepted, true);
+  assert.ok(resumed.distanceMeters > 4 && resumed.distanceMeters < 6);
+  const resumedPoint = {
+    ...resumed.point, segmentStart: true, segmentDistanceMeters: resumed.distanceMeters,
+    recoveryResume: {
+      confirmed: true, confirmationCount: 3, returnAccuracyMeters: completion.point.accuracy,
+      checkpoint: { lat: anchor.lat, lng: anchor.lng }, checkpointDistanceMeters: completion.distanceToAnchorMeters,
+      segmentDistanceMeters: resumed.distanceMeters
+    }
+  };
+  assert.equal(Tracking.evaluateSegmentContinuity(anchor, resumedPoint).continuous, true);
+  assert.ok(Tracking.distanceForPoints([anchor, resumedPoint]) < 6, "the unrecorded return distance is not added to the route");
+  const restoredRoute = Tracking.validateInitialRoute([anchor, resumedPoint]).points;
+  assert.equal(restoredRoute[1].recoveryResume.confirmationCount, Tracking.ROUTE_RECOVERY_CONFIRMATIONS);
+  assert.equal(Tracking.evaluateSegmentContinuity(restoredRoute[0], restoredRoute[1]).reason, "recovered-gap");
+  assert.ok(Tracking.distanceForPoints(restoredRoute) < 6, "reload validation keeps only movement recorded after return");
+});
+
+test("a second long unsafe GPS gap after recovery creates the same checkpoint recovery state", () => {
+  const meters = (value) => value / 111194.9266;
+  const filter = Tracking.createPositionFilter();
+  const anchor = point(0, 0, now - 60000, true, 5);
+  const firstGap = filter.evaluate(position(0, meters(80), now - 5000, 5), anchor, now - 5000);
+  assert.equal(firstGap.reason, "confirm");
+  assert.equal(Tracking.evaluateSegmentContinuity(anchor, firstGap.candidate).continuous, false);
+  const recovery = Tracking.createRouteRecovery();
+  recovery.start(anchor);
+  const returnedAt = now;
+  recovery.evaluate(position(0, meters(5), returnedAt, 5), returnedAt);
+  recovery.evaluate(position(0, meters(5), returnedAt + 3000, 5), returnedAt + 3000);
+  const recovered = recovery.evaluate(position(0, meters(5), returnedAt + 6000, 5), returnedAt + 6000);
+  const newBaseline = { ...anchor, timestamp: recovered.point.timestamp, accuracy: recovered.point.accuracy };
+  filter.reset();
+  const secondGap = filter.evaluate(position(0, meters(90), returnedAt + 40000, 5), newBaseline, returnedAt + 40000);
+  assert.equal(secondGap.reason, "confirm");
+  assert.equal(Tracking.evaluateSegmentContinuity(newBaseline, secondGap.candidate).continuous, false);
+  assert.ok(recovery.start(anchor, "unsafe-gap", { gapDurationMs: 40000 }));
+  assert.equal(recovery.active, true);
+});
+
 test("initial route buffering filters an early drift outlier without straightening the walk", () => {
   const meters = (value) => value / 111320;
   const buffer = Tracking.createInitialRouteBuffer(18000);

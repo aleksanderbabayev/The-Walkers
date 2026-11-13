@@ -77,6 +77,7 @@ const scenarios = [
   { name: "expedition target selection", state: { expedition: true }, buttons: ["startExpedition"] },
   { name: "random expedition target selection", state: { expedition: true, random: true }, buttons: ["startExpedition", "generateTarget"] },
   { name: "active territory walk", state: { active: true }, buttons: ["finish", "abandonWalk"] },
+  { name: "territory recovery required", state: { active: true, recovery: true }, buttons: ["abandonWalk"] },
   { name: "active expedition", state: { active: true, expedition: true }, buttons: ["abandonWalk"] },
   { name: "walk completed", state: {}, buttons: ["start"] }
 ];
@@ -135,7 +136,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const appSource = fs.readFileSync(path.join(projectRoot, "app.js"), "utf8");
     const htmlSource = fs.readFileSync(path.join(projectRoot, "index.html"), "utf8");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.30">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.31">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -216,6 +217,14 @@ test("mobile primary actions are actually visible over a full-height map at requ
       document.getElementById("locationNoticeTitle").textContent = s.retry || s.startupError ? "Геолокация недоступна" : s.startup || s.warmup ? "Определяем местоположение" : "Местоположение определено";
       document.getElementById("locationNoticeText").textContent = s.retry || s.startupError ? "GPS недоступен. Попробуйте снова." : "Ожидаем свежие координаты GPS.";
       for (const id of ["start", "startExpedition", "finish", "abandonWalk", "manualWarmupStart", "locationRetry", "locationStartupRetry"]) document.getElementById(id).disabled = false;
+      if (s.recovery) {
+        document.getElementById("finish").disabled = true;
+        document.getElementById("message").classList.add("is-route-recovery");
+        document.getElementById("message").textContent = "Маршрут прерван. Вернитесь к отмеченной точке, чтобы продолжить захват территории";
+      } else {
+        document.getElementById("message").classList.remove("is-route-recovery");
+        document.getElementById("message").textContent = "";
+      }
       return true;
     })()`;
 
@@ -232,6 +241,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
         const result = await evaluate(`(() => {
           const panel = document.querySelector(".panel").getBoundingClientRect();
           const startupScreen = document.getElementById("locationStartupScreen");
+          const recoveryMessage = document.getElementById("message");
           const startupRect = startupScreen.getBoundingClientRect();
           const mapElement = document.querySelector(".mapFrame");
           const map = mapElement.getBoundingClientRect();
@@ -270,10 +280,16 @@ test("mobile primary actions are actually visible over a full-height map at requ
           const headerActions = document.querySelector(".headerActions").getBoundingClientRect();
           const version = document.getElementById("appVersion");
           const versionRect = version.getBoundingClientRect();
-          return { mapHeight: map.height, viewportHeight: innerHeight, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, header: { brand: { left: brand.left, right: brand.right }, title: { left: brandTitle.left, right: brandTitle.right }, actions: { left: headerActions.left, right: headerActions.right }, version: { text: version.textContent, label: version.getAttribute("aria-label"), left: versionRect.left, right: versionRect.right, width: versionRect.width, height: versionRect.height, visible: getComputedStyle(version).display !== "none" && getComputedStyle(version).visibility !== "hidden" }, menuVersionCount: document.querySelectorAll(".utility-menu-panel .appVersion").length }, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height, left: mapLocate.left, right: mapLocate.right }, zoomButtons, compass: { top: compassRect.top, bottom: compassRect.bottom, left: compassRect.left, right: compassRect.right }, panel: { top: panel.top, bottom: panel.bottom, left: panel.left, right: panel.right }, startup: { hidden: startupScreen.hidden, top: startupRect.top, left: startupRect.left, right: startupRect.right, bottom: startupRect.bottom, background: getComputedStyle(startupScreen).backgroundColor, stackingLevel: getStackingLevel(startupScreen), mapStackingLevel: getStackingLevel(mapElement), probeIsBlocked: Boolean(mapProbe && startupScreen.contains(mapProbe)), probeReachesMap: Boolean(mapProbe && mapElement.contains(mapProbe)), underlyingProbeReachesMap: Boolean(underlyingProbe && mapElement.contains(underlyingProbe)) } };
+          return { mapHeight: map.height, viewportHeight: innerHeight, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, recoveryMessage: { text: recoveryMessage.textContent, visible: getComputedStyle(recoveryMessage).display !== "none" && recoveryMessage.getBoundingClientRect().height > 0, height: recoveryMessage.getBoundingClientRect().height, fullText: getComputedStyle(recoveryMessage).whiteSpace === "normal" }, captureDisabled: document.getElementById("finish").disabled, header: { brand: { left: brand.left, right: brand.right }, title: { left: brandTitle.left, right: brandTitle.right }, actions: { left: headerActions.left, right: headerActions.right }, version: { text: version.textContent, label: version.getAttribute("aria-label"), left: versionRect.left, right: versionRect.right, width: versionRect.width, height: versionRect.height, visible: getComputedStyle(version).display !== "none" && getComputedStyle(version).visibility !== "hidden" }, menuVersionCount: document.querySelectorAll(".utility-menu-panel .appVersion").length }, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height, left: mapLocate.left, right: mapLocate.right }, zoomButtons, compass: { top: compassRect.top, bottom: compassRect.bottom, left: compassRect.left, right: compassRect.right }, panel: { top: panel.top, bottom: panel.bottom, left: panel.left, right: panel.right }, startup: { hidden: startupScreen.hidden, top: startupRect.top, left: startupRect.left, right: startupRect.right, bottom: startupRect.bottom, background: getComputedStyle(startupScreen).backgroundColor, stackingLevel: getStackingLevel(startupScreen), mapStackingLevel: getStackingLevel(mapElement), probeIsBlocked: Boolean(mapProbe && startupScreen.contains(mapProbe)), probeReachesMap: Boolean(mapProbe && mapElement.contains(mapProbe)), underlyingProbeReachesMap: Boolean(underlyingProbe && mapElement.contains(underlyingProbe)) } };
         })()`);
         assert.ok(Math.abs(result.mapHeight - baselineMapHeight) < 1, `${width}x${height} ${scenario.name}: controls changed map height`);
         assert.ok(result.scrollHeight <= result.viewportHeight + 1, `${width}x${height} ${scenario.name}: page gained vertical scroll`);
+        if (scenario.state.recovery) {
+          assert.equal(result.recoveryMessage.text, "Маршрут прерван. Вернитесь к отмеченной точке, чтобы продолжить захват территории", `${width}x${height}: recovery instructions remain complete`);
+          assert.equal(result.recoveryMessage.visible, true, `${width}x${height}: recovery instructions are visible`);
+          assert.equal(result.recoveryMessage.fullText, true, `${width}x${height}: recovery instructions wrap without clipping`);
+          assert.equal(result.captureDisabled, true, `${width}x${height}: capture remains disabled during recovery`);
+        }
         assert.equal(result.header.version.text, `v${htmlSource.match(/name="app-version" content="([^"]+)"/)[1]}`, `${width}x${height}: header version comes from app-version meta`);
         assert.equal(result.header.version.visible, true, `${width}x${height}: version remains visible`);
         assert.equal(result.header.menuVersionCount, 0, `${width}x${height}: menu has no duplicate version`);

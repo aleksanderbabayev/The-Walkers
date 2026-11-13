@@ -84,6 +84,40 @@ test("initial validation buffer survives draft autosave and reload", async () =>
   assert.deepEqual(restored.points, []);
 });
 
+test("an active route-recovery checkpoint and filter baseline survive draft reload", async () => {
+  const db = new MemoryDatabase();
+  const recovery = {
+    anchor: { lat: 48.9, lng: 21.2, accuracy: 7, timestamp: 1000, segmentStart: true },
+    reason: "unsafe-gap", startedAt: 61000, gap: { gapDurationMs: 60000, gapDistanceMeters: 84, maxSafeGapMeters: 5 }
+  };
+  const filterBaseline = { ...recovery.anchor, timestamp: 62000 };
+  const draft = {
+    id: "active", mode: "territory", startedAt: 900, points: [recovery.anchor],
+    routeRecovery: recovery, routeFilterPrevious: filterBaseline
+  };
+  await Storage.createDraft(db, draft);
+  const restored = await Storage.readDraft(db);
+  assert.deepEqual(restored.routeRecovery, recovery);
+  assert.deepEqual(restored.routeFilterPrevious, filterBaseline);
+});
+
+test("the first accepted segment after returning to a recovery checkpoint survives draft reload", async () => {
+  const db = new MemoryDatabase();
+  const recoveryResumeProof = {
+    confirmed: true, confirmationCount: 3, checkpoint: { lat: 48.9, lng: 21.2 },
+    checkpointDistanceMeters: 8, returnAccuracyMeters: 6, segmentDistanceMeters: 5
+  };
+  const draft = {
+    id: "active", mode: "territory", startedAt: 900, points: [],
+    routeFilterPrevious: { lat: 48.9001, lng: 21.2, accuracy: 6, timestamp: 62000 },
+    routeReconnectPending: true, recoveryResumeProof
+  };
+  await Storage.createDraft(db, draft);
+  const restored = await Storage.readDraft(db);
+  assert.equal(restored.routeReconnectPending, true);
+  assert.deepEqual(restored.recoveryResumeProof, recoveryResumeProof);
+});
+
 test("expedition mode and target survive draft recovery and completed history while old walks stay compatible", async () => {
   const db = new MemoryDatabase();
   const target = { lat: 50.08, lng: 14.43 };

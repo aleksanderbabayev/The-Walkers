@@ -26,6 +26,9 @@
   });
   const FINISH_ZONE_RADIUS_METERS = 25;
   const MAX_SAFE_SEGMENT_GAP_METERS = 12;
+  const ROUTE_RECOVERY_RADIUS_METERS = 15;
+  const ROUTE_RECOVERY_ACCURACY_METERS = 12;
+  const ROUTE_RECOVERY_CONFIRMATIONS = 3;
 
   const distanceMeters = (a, b) => {
     const radius = 6371000, rad = (value) => value * Math.PI / 180;
@@ -116,6 +119,67 @@
     };
   };
 
+  const createRouteRecovery = () => {
+    let recovery = null, previousFix = null, confirmations = 0;
+    const start = (anchor, reason = "unsafe-gap", gap = {}) => {
+      if (!anchor || !Number.isFinite(anchor.lat) || !Number.isFinite(anchor.lng)) return null;
+      recovery = { anchor: { ...anchor }, reason, startedAt: Date.now(), gap: { ...gap } };
+      previousFix = null;
+      confirmations = 0;
+      return snapshot();
+    };
+    const restore = (saved) => {
+      if (!saved?.anchor || !Number.isFinite(saved.anchor.lat) || !Number.isFinite(saved.anchor.lng)) return false;
+      recovery = {
+        anchor: { ...saved.anchor }, reason: saved.reason || "unsafe-gap",
+        startedAt: Number.isFinite(saved.startedAt) ? saved.startedAt : Date.now(), gap: { ...(saved.gap || {}) }
+      };
+      previousFix = null;
+      confirmations = 0;
+      return true;
+    };
+    const evaluate = (position, now = Date.now()) => {
+      if (!recovery) return { active: false };
+      const validation = evaluatePosition(position, null, now, {
+        ...DEFAULTS, maxAccuracyMeters: ROUTE_RECOVERY_ACCURACY_METERS,
+        maxAgeMs: DEFAULTS.maxAgeMs
+      });
+      if (!validation.accepted) {
+        previousFix = null;
+        confirmations = 0;
+        return { active: true, accepted: false, reason: validation.reason, anchor: { ...recovery.anchor }, confirmations };
+      }
+
+      const point = validation.point;
+      const distanceToAnchorMeters = distanceMeters(recovery.anchor, point);
+      if (distanceToAnchorMeters > ROUTE_RECOVERY_RADIUS_METERS) {
+        previousFix = null;
+        confirmations = 0;
+        return { active: true, accepted: true, reached: false, point, anchor: { ...recovery.anchor }, distanceToAnchorMeters, confirmations };
+      }
+
+      if (previousFix) {
+        const elapsedMs = point.timestamp - previousFix.timestamp;
+        const movedMeters = distanceMeters(previousFix, point);
+        if (elapsedMs <= 0 || elapsedMs > GPS_WARMUP_DEFAULTS.maxGapMs
+          || movedMeters / (elapsedMs / 1000) > DEFAULTS.maxSpeedMetersPerSecond) confirmations = 1;
+        else confirmations += 1;
+      } else confirmations = 1;
+      previousFix = point;
+      if (confirmations >= ROUTE_RECOVERY_CONFIRMATIONS) return {
+        active: false, accepted: true, completed: true, point,
+        anchor: { ...recovery.anchor }, distanceToAnchorMeters, confirmations
+      };
+      return { active: true, accepted: true, reached: true, point, anchor: { ...recovery.anchor }, distanceToAnchorMeters, confirmations };
+    };
+    const snapshot = () => recovery ? {
+      anchor: { ...recovery.anchor }, reason: recovery.reason,
+      startedAt: recovery.startedAt, gap: { ...recovery.gap }
+    } : null;
+    const clear = () => { recovery = null; previousFix = null; confirmations = 0; };
+    return { start, restore, evaluate, snapshot, clear, get active() { return recovery !== null; }, get anchor() { return recovery ? { ...recovery.anchor } : null; } };
+  };
+
   const validateInitialRoute = (points = [], options = DEFAULTS) => {
     const accepted = [], filter = createPositionFilter();
     for (const candidate of points) {
@@ -123,7 +187,11 @@
       if (!accepted.length || candidate.segmentStart) {
         filter.reset();
         const result = evaluatePosition(position, null, candidate.timestamp, options);
-        if (result.accepted) accepted.push({ ...result.point, segmentStart: true });
+        if (result.accepted) accepted.push({
+          ...result.point,
+          ...(candidate.recoveryResume ? { recoveryResume: { ...candidate.recoveryResume } } : {}),
+          segmentStart: true
+        });
         continue;
       }
       const result = filter.evaluate(position, accepted.at(-1), candidate.timestamp, options);
@@ -231,8 +299,33 @@
   };
 
   const distanceForPoints = (points = []) => points.slice(1).reduce((total, point, index) => {
-    return point.segmentStart ? total : total + distanceMeters(points[index], point);
+    if (!point.segmentStart) return total + distanceMeters(points[index], point);
+    const resumedDistance = point.recoveryResume?.segmentDistanceMeters;
+    return Number.isFinite(resumedDistance) && resumedDistance > 0 ? total + resumedDistance : total;
   }, 0);
+
+  const evaluateSegmentContinuity = (previous, current, options = DEFAULTS) => {
+    if (![previous?.lat, previous?.lng, current?.lat, current?.lng].every(Number.isFinite)) {
+      return { continuous: false, reason: "invalid-route-point", distanceMeters: null, maxGapMeters: 0 };
+    }
+    if (![previous?.accuracy, current?.accuracy].every((accuracy) => Number.isFinite(accuracy) && accuracy > 0 && accuracy <= options.maxAccuracyMeters)) {
+      return { continuous: false, reason: "unsafe-gap", distanceMeters: distanceMeters(previous, current), maxGapMeters: 0 };
+    }
+    const accuracyLimit = Math.max(options.minMovementMeters, (previous.accuracy + current.accuracy) / 2);
+    const maxGapMeters = Math.min(MAX_SAFE_SEGMENT_GAP_METERS, accuracyLimit);
+    const gapMeters = distanceMeters(previous, current);
+    const recovery = current.recoveryResume;
+    if (recovery?.confirmed === true
+      && recovery.confirmationCount >= ROUTE_RECOVERY_CONFIRMATIONS
+      && Number.isFinite(recovery.returnAccuracyMeters) && recovery.returnAccuracyMeters <= ROUTE_RECOVERY_ACCURACY_METERS
+      && Number.isFinite(recovery.checkpointDistanceMeters) && recovery.checkpointDistanceMeters <= ROUTE_RECOVERY_RADIUS_METERS
+      && Number.isFinite(recovery.segmentDistanceMeters) && recovery.segmentDistanceMeters >= 0
+      && recovery.checkpoint && distanceMeters(previous, recovery.checkpoint) <= 1
+      && gapMeters <= recovery.checkpointDistanceMeters + recovery.segmentDistanceMeters + Math.max(2, current.accuracy)) {
+      return { continuous: true, reason: "recovered-gap", distanceMeters: gapMeters, maxGapMeters };
+    }
+    return { continuous: gapMeters <= maxGapMeters, reason: gapMeters <= maxGapMeters ? "continuous" : "unsafe-gap", distanceMeters: gapMeters, maxGapMeters };
+  };
 
   const evaluateTrackClosure = (points = [], options = DEFAULTS) => {
     if (points.length < options.minPolygonPoints) return { eligible: false, reason: "too-few-points" };
@@ -249,12 +342,7 @@
     for (let index = 1; index < points.length; index += 1) {
       if (!points[index].segmentStart) continue;
       const previous = points[index - 1], current = points[index];
-      if (![previous.accuracy, current.accuracy].every((accuracy) => Number.isFinite(accuracy) && accuracy > 0 && accuracy <= options.maxAccuracyMeters)) {
-        return { eligible: false, reason: "unsafe-gap" };
-      }
-      const accuracyLimit = Math.max(options.minMovementMeters, (previous.accuracy + current.accuracy) / 2);
-      const safeGapMeters = Math.min(MAX_SAFE_SEGMENT_GAP_METERS, accuracyLimit);
-      if (distanceMeters(previous, current) > safeGapMeters) return { eligible: false, reason: "unsafe-gap" };
+      if (!evaluateSegmentContinuity(previous, current, options).continuous) return { eligible: false, reason: "unsafe-gap" };
     }
     if (distanceMeters(points[0], points.at(-1)) > options.closeMeters) return { eligible: false, reason: "not-closed" };
     return { eligible: true, reason: "closed" };
@@ -353,5 +441,5 @@
     return { start, startWatch, stopAutosave, stop };
   };
 
-  return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, FINISH_ZONE_RADIUS_METERS, distanceMeters, evaluatePosition, evaluateDisplayPosition, shouldUpdateGpsMarker, evaluateLocationPosition, isLocationFresh, evaluateLocationUpdate, createPositionFilter, createFinishPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, evaluateTrackClosure, canCloseTrack, evaluateTerritoryCapture, shouldDisplayWalkOnMap, createGpsServices };
+  return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, FINISH_ZONE_RADIUS_METERS, ROUTE_RECOVERY_RADIUS_METERS, ROUTE_RECOVERY_ACCURACY_METERS, ROUTE_RECOVERY_CONFIRMATIONS, distanceMeters, evaluatePosition, evaluateDisplayPosition, shouldUpdateGpsMarker, evaluateLocationPosition, isLocationFresh, evaluateLocationUpdate, createPositionFilter, createRouteRecovery, createFinishPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, evaluateSegmentContinuity, evaluateTrackClosure, canCloseTrack, evaluateTerritoryCapture, shouldDisplayWalkOnMap, createGpsServices };
 });

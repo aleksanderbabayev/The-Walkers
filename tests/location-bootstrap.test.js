@@ -56,7 +56,7 @@ test("GPS accuracy circle is dismissed once the existing warm-up stability crite
 test("active recording moves the GPS marker only after accepted route filtering", () => {
   const processing = app.slice(app.indexOf("const processPosition"), app.indexOf("const receivePosition"));
   assert.match(processing, /Tracking\.shouldUpdateGpsMarker\("preliminary", recordingActive\)/);
-  assert.match(processing, /const result = bufferingInitial\s*\?[\s\S]*?positionFilter\.evaluate\(position, points\.at\(-1\), Date\.now\(\)\)/);
+  assert.match(processing, /const result = bufferingInitial\s*\?[\s\S]*?positionFilter\.evaluate\(position, recordingFilterPrevious \|\| points\.at\(-1\), Date\.now\(\)\)/);
   assert.match(processing, /if \(!result\.accepted\) \{[\s\S]*?return;[\s\S]*?rememberLocation\(lastValidatedPoint\);\s*updateLocationMarker\(lastValidatedPoint\)/);
   assert.match(processing, /rememberLocation\(result\.point\);\s*drawCurrent\(\); updateDistance\(\); updateLocationMarker\(result\.point\)/);
 });
@@ -102,7 +102,7 @@ test("mobile controls overlay the full-height map and live in compact action and
   for (const id of ["musicToggle", "walksToggle", "openLocationDiagnostics", "copyActiveDiagnostics"]) {
     assert.match(utilityMenu, new RegExp(`id="${id}"`));
   }
-  assert.match(bootstrap, /"utility-menu\.js\?v=0\.1\.0",[\s\S]*?"app\.js\?v=0\.2\.30"/);
+  assert.match(bootstrap, /"utility-menu\.js\?v=0\.1\.0",[\s\S]*?"app\.js\?v=0\.2\.31"/);
   assert.match(app, /const appVersion = document\.querySelector\('meta\[name="app-version"\]'\)\.content/);
   assert.match(app, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
   assert.doesNotMatch(css, /@media \(max-width: 760px\) and \(max-height:/);
