@@ -135,7 +135,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const appSource = fs.readFileSync(path.join(projectRoot, "app.js"), "utf8");
     const htmlSource = fs.readFileSync(path.join(projectRoot, "index.html"), "utf8");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.29">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.30">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -338,13 +338,15 @@ test("mobile primary actions are actually visible over a full-height map at requ
             const meta = document.createElement("small"); meta.textContent = "13 нояб. 2026 г. · 00:10:37 · 0,78 км · 80 точек";
             details.append(title, meta);
             const actions = document.createElement("div"); actions.className = "routeActions";
+            const exportButton = document.createElement("button"); exportButton.className = "diagnosticsExport"; exportButton.textContent = "Экспорт диагностики";
             const copy = document.createElement("button"); copy.className = "diagnosticsCopy"; copy.textContent = "Копировать диагностику";
             const remove = document.createElement("button"); remove.className = "routeDelete"; remove.textContent = "Удалить";
-            actions.append(copy, remove); row.append(icon, details, actions); list.append(row);
+            actions.append(exportButton, copy, remove); row.append(icon, details, actions); list.append(row);
           }
           list.scrollTop = 180;
           const copy = list.querySelector(".diagnosticsCopy"); copy.focus();
           const box = (element) => { const rect = element.getBoundingClientRect(); return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height }; };
+          const exportBox = box(list.querySelector(".diagnosticsExport"));
           const copyBox = box(copy), deleteBox = box(list.querySelector(".routeDelete"));
           const panelBox = box(drawer);
           const headerBox = box(document.querySelector("header"));
@@ -359,7 +361,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
           const overlay = document.querySelector(".diagnosticsFallback");
           const reportPreserved = overlay?.querySelector("textarea").value === "Full diagnostics report";
           overlay?.querySelector("button:last-child").click();
-          return { drawerVisible: getComputedStyle(drawer).visibility === "visible", drawerOpen: document.body.classList.contains("walks-open"), panelBox, backdropColor, panelColor, titleColor, outsideHitIsBackdrop: outsideTarget === backdrop, panelHitStaysInDrawer: drawer.contains(panelTarget), copyBox, deleteBox, scrollBefore: beforeScroll, scrollAfter: list.scrollTop, reportPreserved, overlayClosed: !document.querySelector(".diagnosticsFallback"), focusRestored: document.activeElement === copy, horizontalOverflow: drawer.scrollWidth > drawer.clientWidth || list.scrollWidth > list.clientWidth };
+          return { drawerVisible: getComputedStyle(drawer).visibility === "visible", drawerOpen: document.body.classList.contains("walks-open"), panelBox, backdropColor, panelColor, titleColor, outsideHitIsBackdrop: outsideTarget === backdrop, panelHitStaysInDrawer: drawer.contains(panelTarget), exportBox, copyBox, deleteBox, scrollBefore: beforeScroll, scrollAfter: list.scrollTop, reportPreserved, overlayClosed: !document.querySelector(".diagnosticsFallback"), focusRestored: document.activeElement === copy, horizontalOverflow: drawer.scrollWidth > drawer.clientWidth || list.scrollWidth > list.clientWidth };
         })()`);
         assert.equal(history.drawerVisible, true, `${width}x${height}: history drawer is visible`);
         assert.equal(history.drawerOpen, true, `${width}x${height}: copy does not close history`);
@@ -368,8 +370,9 @@ test("mobile primary actions are actually visible over a full-height map at requ
         assert.equal(history.panelHitStaysInDrawer, true, `${width}x${height}: drawer stays above the backdrop for interaction`);
         assert.equal(history.panelColor, "rgb(255, 255, 255)", `${width}x${height}: history panel stays opaque`);
         assert.ok(history.titleColor && history.panelBox.width <= width, `${width}x${height}: history panel fits the viewport`);
-        assert.ok(history.copyBox.height >= 44 && history.deleteBox.height >= 44, `${width}x${height}: copy and delete controls meet 44px touch target`);
-        assert.ok(history.copyBox.left >= 0 && history.copyBox.right <= width && history.deleteBox.left >= 0 && history.deleteBox.right <= width, `${width}x${height}: history actions stay inside the screen`);
+        assert.ok(history.exportBox.height >= 44 && history.copyBox.height >= 44 && history.deleteBox.height >= 44, `${width}x${height}: export, copy and delete controls meet 44px touch target`);
+        assert.ok(history.exportBox.left >= 0 && history.exportBox.right <= width && history.copyBox.left >= 0 && history.copyBox.right <= width && history.deleteBox.left >= 0 && history.deleteBox.right <= width, `${width}x${height}: history actions stay inside the screen`);
+        assert.ok(history.copyBox.top >= history.exportBox.bottom + 7, `${width}x${height}: export and copy actions have clear spacing`);
         assert.ok(history.deleteBox.top >= history.copyBox.bottom + 7, `${width}x${height}: copy and delete controls have clear spacing`);
         assert.equal(history.horizontalOverflow, false, `${width}x${height}: history has no horizontal overflow`);
         assert.equal(history.scrollAfter, history.scrollBefore, `${width}x${height}: manual fallback preserves history scroll position`);

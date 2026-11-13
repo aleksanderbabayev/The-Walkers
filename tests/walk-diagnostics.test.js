@@ -159,6 +159,199 @@ test("click-time report loading does not wait for history-menu preload and dedup
   assert.equal(statuses[0], "Загружаем диагностику прогулки…");
 });
 
+test("full completed report is exported as a named JSON file through Web Share", async () => {
+  const shared = [];
+  class TestFile {
+    constructor(parts, name, options) { this.parts = parts; this.name = name; this.type = options.type; }
+  }
+  const exporter = Diagnostics.createDiagnosticFileExporter({
+    navigatorLike: {
+      canShare: ({ files }) => files[0].type === "application/json",
+      share: async (payload) => shared.push(payload)
+    },
+    documentLike: {}, urlLike: {}, BlobConstructor: class {}, FileConstructor: TestFile
+  });
+  const statuses = [];
+  const states = [];
+  const button = {};
+  let resolveLoad;
+  let loadCount = 0;
+  let exportCount = 0;
+  let exportedText = "";
+  let exportedName = "";
+  const walk = {
+    id: "walk-56", mode: "territory", status: "retreated", startedAt: 100, finishedAt: 900,
+    durationMs: 800, distanceMeters: 1200, closed: false,
+    points: Array.from({ length: 900 }, (_, index) => ({ lat: 48 + index / 10000, lng: 17, timestamp: index }))
+  };
+  const originalWalk = structuredClone(walk);
+  const stored = {
+    id: "walk-56", appVersion: "0.2.30", formatVersion: 1, state: "completed", walkStatus: "retreated",
+    events: Array.from({ length: 1200 }, (_, sequence) => ({ sequence: sequence + 1, type: "gps-measurement", rawMeasurement: { latitude: sequence / 10000 } })),
+    finalRoute: walk.points
+  };
+  const originalStored = structuredClone(stored);
+  const controller = Diagnostics.createCompletedExportController({
+    load: () => { loadCount += 1; return new Promise((resolve) => { resolveLoad = resolve; }); },
+    exportFile: async (text, name) => {
+      exportCount += 1; exportedText = text; exportedName = name;
+      return exporter(text, name);
+    },
+    setStatus: (status) => statuses.push(status),
+    setBusy: (_button, busy) => states.push(busy)
+  });
+
+  const first = controller(walk, 56, button);
+  const repeated = controller(walk, 56, button);
+  assert.strictEqual(repeated, first);
+  assert.equal(loadCount, 1);
+  assert.deepEqual(states, [true]);
+  resolveLoad(stored);
+  await Promise.all([first, repeated]);
+
+  const report = JSON.parse(exportedText);
+  assert.equal(exportedName, "the-walkers-diagnostics-56.json");
+  assert.equal(report.events.length, 1200);
+  assert.equal(report.rawMeasurements.length, 1200);
+  assert.equal(report.finalAcceptedRoute.length, 900);
+  assert.equal(report.metadata.diagnosticsAvailable, undefined);
+  assert.equal(shared.length, 1);
+  assert.equal(shared[0].files[0].name, exportedName);
+  assert.equal(shared[0].files[0].type, "application/json");
+  assert.equal(shared[0].files[0].parts[0], exportedText);
+  assert.deepEqual(states, [true, false]);
+  assert.equal(exportCount, 1);
+  assert.deepEqual(walk, originalWalk, "export does not change the stored walk object");
+  assert.deepEqual(stored, originalStored, "export does not change persisted diagnostics or route points");
+  assert.equal(statuses.at(-1), "Отчёт передан в меню «Поделиться».");
+});
+
+test("unsupported file sharing downloads JSON through a temporary object URL", async () => {
+  let clickedLink;
+  let blobData;
+  const revoked = [];
+  const scheduled = [];
+  class TestBlob { constructor(parts, options) { this.parts = parts; this.type = options.type; blobData = this; } }
+  const exporter = Diagnostics.createDiagnosticFileExporter({
+    navigatorLike: { canShare: () => false, share: async () => assert.fail("share is unsupported") },
+    documentLike: { body: { append(link) { clickedLink = link; } }, createElement: () => ({ click() { this.clicked = true; }, remove() { this.removed = true; } }) },
+    urlLike: { createObjectURL: () => "blob:diagnostics", revokeObjectURL: (url) => revoked.push(url) },
+    BlobConstructor: TestBlob, FileConstructor: class {}, schedule: (callback) => scheduled.push(callback)
+  });
+  const text = JSON.stringify({ events: [], finalAcceptedRoute: [{ latitude: 48.1, longitude: 17.1 }] });
+  const result = await exporter(text, "the-walkers-diagnostics-56.json");
+
+  assert.deepEqual(result, { downloaded: true });
+  assert.equal(blobData.type, "application/json");
+  assert.equal(blobData.parts[0], text);
+  assert.equal(clickedLink.href, "blob:diagnostics");
+  assert.equal(clickedLink.download, "the-walkers-diagnostics-56.json");
+  assert.equal(clickedLink.clicked, true);
+  assert.equal(clickedLink.removed, true);
+  assert.deepEqual(revoked, []);
+  scheduled[0]();
+  assert.deepEqual(revoked, ["blob:diagnostics"]);
+});
+
+test("missing Web Share or canShare APIs use the JSON download fallback", async () => {
+  for (const navigatorLike of [{}, { share: async () => assert.fail("share requires canShare") }, { canShare: () => true }]) {
+    let clicked = false;
+    const exporter = Diagnostics.createDiagnosticFileExporter({
+      navigatorLike,
+      documentLike: { body: { append(link) { link.click = () => { clicked = true; }; } }, createElement: () => ({ remove() {} }) },
+      urlLike: { createObjectURL: () => "blob:fallback", revokeObjectURL() {} },
+      BlobConstructor: class {}, FileConstructor: class {}, schedule: (callback) => callback()
+    });
+    assert.deepEqual(await exporter("{}", "the-walkers-diagnostics-56.json"), { downloaded: true });
+    assert.equal(clicked, true);
+  }
+});
+
+test("a rejected Web Share request falls back to downloading the report", async () => {
+  let downloaded = false;
+  const exporter = Diagnostics.createDiagnosticFileExporter({
+    navigatorLike: { canShare: () => true, share: async () => { throw new Error("share unavailable"); } },
+    documentLike: { body: { append(link) { link.click = () => { downloaded = true; }; } }, createElement: () => ({ remove() {} }) },
+    urlLike: { createObjectURL: () => "blob:rejected-share", revokeObjectURL() {} },
+    BlobConstructor: class {}, FileConstructor: class {}, schedule: (callback) => callback()
+  });
+  assert.deepEqual(await exporter("{}", "the-walkers-diagnostics-56.json"), { downloaded: true });
+  assert.equal(downloaded, true);
+});
+
+test("cancelling Web Share does not download or report an error", async () => {
+  let fallbackCreated = false;
+  const statuses = [];
+  class TestFile {}
+  const exporter = Diagnostics.createDiagnosticFileExporter({
+    navigatorLike: { canShare: () => true, share: async () => { const error = new Error("cancelled"); error.name = "AbortError"; throw error; } },
+    documentLike: {}, urlLike: { createObjectURL: () => { fallbackCreated = true; } }, BlobConstructor: class {}, FileConstructor: TestFile
+  });
+  const controller = Diagnostics.createCompletedExportController({
+    load: async () => ({ events: [{ sequence: 1, type: "start" }] }), exportFile: exporter,
+    setStatus: (status) => statuses.push(status)
+  });
+  await assert.doesNotReject(controller({ id: "walk-56", points: [] }, 56, null));
+  assert.equal(statuses.at(-1), "");
+  assert.equal(fallbackCreated, false);
+});
+
+test("export uses available walk data when IndexedDB fails or has no diagnostic events", async () => {
+  const statuses = [];
+  const exported = [];
+  const walk = {
+    id: "walk-56", mode: "territory", status: "retreated", startedAt: 100, finishedAt: 900,
+    durationMs: 800, distanceMeters: 700, closed: false,
+    points: [{ lat: 48.1, lng: 17.1, timestamp: 100 }]
+  };
+  const controller = Diagnostics.createCompletedExportController({
+    load: async () => { throw new Error("IndexedDB unavailable"); },
+    exportFile: async (text, name) => { exported.push({ report: JSON.parse(text), name }); return { downloaded: true }; },
+    setStatus: (status) => statuses.push(status)
+  });
+
+  await assert.doesNotReject(controller(walk, 56, null));
+  assert.equal(exported[0].name, "the-walkers-diagnostics-56.json");
+  assert.equal(exported[0].report.metadata.diagnosticsAvailable, false);
+  assert.equal(exported[0].report.metadata.diagnosticsUnavailableReason, "read-error");
+  assert.equal(exported[0].report.metadata.walkSummary.pointCount, 1);
+  assert.equal(exported[0].report.finalAcceptedRoute.length, 1);
+  assert.deepEqual(exported[0].report.events, []);
+  assert.match(statuses.at(-1), /не удалось прочитать диагностику/i);
+
+  const withoutEvents = Diagnostics.createCompletedReportData(walk, { id: walk.id, events: [] });
+  const missingEventsReport = Diagnostics.buildReport(withoutEvents.session, withoutEvents.route, withoutEvents.events);
+  assert.equal(missingEventsReport.metadata.diagnosticsUnavailableReason, "events-not-found");
+  assert.equal(missingEventsReport.finalAcceptedRoute.length, 1);
+});
+
+test("completed export catches report failures and re-enables only its action", async () => {
+  const busy = [];
+  const statuses = [];
+  const controller = Diagnostics.createCompletedExportController({
+    load: async () => null,
+    exportFile: async () => { throw new Error("download failed"); },
+    setStatus: (status) => statuses.push(status),
+    setBusy: (button, state) => busy.push([button, state])
+  });
+  const button = { id: "export-56" };
+  await assert.doesNotReject(controller({ id: "walk-56", points: [] }, 56, button));
+  assert.deepEqual(busy, [[button, true], [button, false]]);
+  assert.match(statuses.at(-1), /не удалось подготовить или экспортировать/i);
+});
+
+test("app wires a separate export action without redrawing history", () => {
+  const app = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "app.js"), "utf8");
+  assert.match(app, /data-export-diagnostics/);
+  assert.match(app, /Diagnostics\.createCompletedExportController/);
+  assert.match(app, /Diagnostics\.createDiagnosticFileExporter/);
+  const handlerStart = app.indexOf('const exportButton = event.target.closest("button[data-export-diagnostics]");');
+  const handlerEnd = app.indexOf('const copyButton = event.target.closest("button[data-copy-diagnostics]");', handlerStart);
+  const exportBranch = app.slice(handlerStart, handlerEnd);
+  assert.match(exportBranch, /await exportCompletedDiagnostics/);
+  assert.doesNotMatch(exportBranch, /setWalksDrawerOpen|redrawSaved|replaceChildren/);
+});
+
 test("IndexedDB read errors are handled and still allow a fallback report from saved walk data", async () => {
   const statuses = [];
   let copiedData;
@@ -220,10 +413,11 @@ test("app requests completed diagnostics from the copy action and no longer prel
   const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
   const bootstrap = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
 
-  assert.match(html, /name="app-version" content="0\.2\.29"/);
-  assert.ok(bootstrap.includes('"walk-diagnostics.js?v=0.1.45"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.29"'));
-  assert.match(app, /Diagnostics\.createCompletedCopyController\([\s\S]*?WalkStorage\.readDiagnostics\(db, walkId\)/);
+  assert.match(html, /name="app-version" content="0\.2\.30"/);
+  assert.ok(bootstrap.includes('"walk-diagnostics.js?v=0.1.46"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.30"'));
+  assert.match(app, /const loadCompletedDiagnostics = async \(walkId\) => \{[\s\S]*?WalkStorage\.readDiagnostics\(db, walkId\)/);
+  assert.match(app, /Diagnostics\.createCompletedCopyController\(\{\s*load: loadCompletedDiagnostics/);
   assert.match(app, /copyCompletedDiagnostics\(walk, copyButton\)/);
   assert.doesNotMatch(app, /preloadWalkDiagnostics/);
 });

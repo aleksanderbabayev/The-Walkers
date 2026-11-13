@@ -197,5 +197,70 @@
     };
   };
 
-  return { FORMAT_VERSION, MAX_EVENTS, createSession, restoreSession, addEvent, createGpsMeasurement, applyRouteDisposition, buildReport, copyText, copyTextOrFallback, createCompletedReportData, createCompletedCopyController };
+  const diagnosticFileName = (walkNumber) => {
+    const safeNumber = String(walkNumber ?? "walk").trim().replace(/[^a-z0-9_-]/gi, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "walk";
+    return `the-walkers-diagnostics-${safeNumber}.json`;
+  };
+
+  const createDiagnosticFileExporter = ({ navigatorLike, documentLike, urlLike, BlobConstructor, FileConstructor, schedule = setTimeout }) => async (text, fileName) => {
+    let canShareFile = false;
+    try {
+      if (typeof FileConstructor === "function" && typeof navigatorLike?.share === "function" && typeof navigatorLike.canShare === "function") {
+        const file = new FileConstructor([text], fileName, { type: "application/json" });
+        canShareFile = navigatorLike.canShare({ files: [file] });
+        if (canShareFile) await navigatorLike.share({ files: [file] });
+      }
+    } catch (error) {
+      if (error?.name === "AbortError") return { cancelled: true };
+      canShareFile = false;
+    }
+    if (canShareFile) {
+      return { shared: true };
+    }
+
+    const objectUrl = urlLike.createObjectURL(new BlobConstructor([text], { type: "application/json" }));
+    const link = documentLike.createElement("a");
+    link.href = objectUrl;
+    link.download = fileName;
+    link.hidden = true;
+    documentLike.body.append(link);
+    try { link.click(); }
+    finally {
+      link.remove();
+      schedule(() => urlLike.revokeObjectURL(objectUrl), 0);
+    }
+    return { downloaded: true };
+  };
+
+  const createCompletedExportController = ({ load, exportFile, setStatus = () => {}, setBusy = () => {} }) => {
+    const inFlight = new Map();
+    return (walk, walkNumber, button) => {
+      if (inFlight.has(walk.id)) return inFlight.get(walk.id);
+      setBusy(button, true);
+      setStatus("Подготавливаем файл диагностики прогулки…");
+      const operation = (async () => {
+        let stored = null, readError = null;
+        try { stored = await load(walk.id); } catch (error) { readError = error; }
+        try {
+          const reportData = createCompletedReportData(walk, stored, readError);
+          const report = buildReport(reportData.session, reportData.route, reportData.events);
+          const text = JSON.stringify(report, null, 2);
+          const result = await exportFile(text, diagnosticFileName(walkNumber));
+          if (result?.cancelled) { setStatus(""); return; }
+          if (readError) setStatus("Не удалось прочитать диагностику; экспортированы доступные данные прогулки.");
+          else if (!reportData.events.length) setStatus("Диагностические события не найдены; экспортирован доступный маршрут.");
+          else setStatus(result?.shared ? "Отчёт передан в меню «Поделиться»." : "JSON-файл скачан.");
+        } catch {
+          setStatus("Не удалось подготовить или экспортировать JSON-отчёт.");
+        }
+      })().finally(() => {
+        inFlight.delete(walk.id);
+        setBusy(button, false);
+      });
+      inFlight.set(walk.id, operation);
+      return operation;
+    };
+  };
+
+  return { FORMAT_VERSION, MAX_EVENTS, createSession, restoreSession, addEvent, createGpsMeasurement, applyRouteDisposition, buildReport, copyText, copyTextOrFallback, createCompletedReportData, createCompletedCopyController, diagnosticFileName, createDiagnosticFileExporter, createCompletedExportController };
 });

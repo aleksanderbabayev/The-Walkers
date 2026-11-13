@@ -595,17 +595,18 @@
     if (result.copied) say(`Диагностика скопирована в буфер обмена.${missingEvents}`);
     else say(`Скопируйте полный отчёт из открывшегося окна.${missingEvents}`);
   };
+  const loadCompletedDiagnostics = async (walkId) => {
+    if (diagnosticsByWalkId.has(walkId)) return diagnosticsByWalkId.get(walkId);
+    let stored = await WalkStorage.readDiagnostics(db, walkId);
+    if (!stored) {
+      const active = await WalkStorage.readDiagnostics(db, "active");
+      if (active?.walkId === walkId) stored = active;
+    }
+    diagnosticsByWalkId.set(walkId, stored);
+    return stored;
+  };
   const diagnosticsCopyController = Diagnostics.createCompletedCopyController({
-    load: async (walkId) => {
-      if (diagnosticsByWalkId.has(walkId)) return diagnosticsByWalkId.get(walkId);
-      let stored = await WalkStorage.readDiagnostics(db, walkId);
-      if (!stored) {
-        const active = await WalkStorage.readDiagnostics(db, "active");
-        if (active?.walkId === walkId) stored = active;
-      }
-      diagnosticsByWalkId.set(walkId, stored);
-      return stored;
-    },
+    load: loadCompletedDiagnostics,
     copy: async (walk, stored, readError) => {
       const reportData = Diagnostics.createCompletedReportData(walk, stored, readError);
       await copyDiagnosticReport(reportData.session, reportData.route, reportData.events);
@@ -619,6 +620,22 @@
     }
   });
   const copyCompletedDiagnostics = (walk, button) => diagnosticsCopyController(walk, button);
+  const exportDiagnosticFile = Diagnostics.createDiagnosticFileExporter({
+    navigatorLike: navigator, documentLike: document, urlLike: URL, BlobConstructor: Blob,
+    FileConstructor: typeof File === "function" ? File : null
+  });
+  const diagnosticsExportController = Diagnostics.createCompletedExportController({
+    load: loadCompletedDiagnostics,
+    exportFile: exportDiagnosticFile,
+    setStatus: say,
+    setBusy: (button, busy) => {
+      if (!button) return;
+      button.disabled = busy;
+      button.textContent = busy ? "Подготовка…" : "Экспорт диагностики";
+      button.setAttribute("aria-busy", String(busy));
+    }
+  });
+  const exportCompletedDiagnostics = (walk, walkNumber, button) => diagnosticsExportController(walk, walkNumber, button);
   const copyActiveDiagnostics = () => {
     if (!diagnosticSession) { say("Диагностика ещё не готова."); return; }
     copyDiagnosticReport(diagnosticSession, points, diagnosticSession.events).catch(() => say("Не удалось подготовить диагностику для копирования."));
@@ -1053,10 +1070,14 @@
       const deleteButton = document.createElement("button"); deleteButton.className = "routeDelete"; deleteButton.type = "button";
       deleteButton.textContent = "Удалить"; deleteButton.dataset.walkId = walk.id;
       deleteButton.setAttribute("aria-label", `Удалить: ${title.textContent}`);
+      const exportButton = document.createElement("button"); exportButton.className = "diagnosticsExport"; exportButton.type = "button";
+      exportButton.textContent = "Экспорт диагностики"; exportButton.dataset.exportDiagnostics = walk.id;
+      exportButton.dataset.walkNumber = String(walks.length - index);
+      exportButton.setAttribute("aria-label", `Экспорт диагностики: ${title.textContent}`);
       const copyButton = document.createElement("button"); copyButton.className = "diagnosticsCopy"; copyButton.type = "button";
       copyButton.textContent = "Копировать диагностику"; copyButton.dataset.copyDiagnostics = walk.id;
       copyButton.setAttribute("aria-label", `Копировать диагностику: ${title.textContent}`);
-      const actions = document.createElement("div"); actions.className = "routeActions"; actions.append(copyButton, deleteButton);
+      const actions = document.createElement("div"); actions.className = "routeActions"; actions.append(exportButton, copyButton, deleteButton);
       row.append(icon, details, actions); list.append(row);
     });
     if (focusedTerritory) {
@@ -1072,6 +1093,13 @@
     }
   };
   $("routes").addEventListener("click", async (event) => {
+    const exportButton = event.target.closest("button[data-export-diagnostics]");
+    if (exportButton) {
+      const walk = walksById.get(exportButton.dataset.exportDiagnostics);
+      if (walk) await exportCompletedDiagnostics(walk, exportButton.dataset.walkNumber, exportButton);
+      else say("Не удалось найти прогулку для экспорта диагностики.");
+      return;
+    }
     const copyButton = event.target.closest("button[data-copy-diagnostics]");
     if (copyButton) {
       const walk = walksById.get(copyButton.dataset.copyDiagnostics);
