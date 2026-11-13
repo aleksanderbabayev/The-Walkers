@@ -67,7 +67,6 @@
     $("walksBackdrop").hidden = !drawerOpen;
     if (drawerOpen) $("walksClose").focus();
     else if (returnFocus) $("walksToggle").focus();
-    if (drawerOpen) preloadWalkDiagnostics();
   };
   setWalksDrawerOpen(false);
   $("walksToggle").addEventListener("click", () => setWalksDrawerOpen(!document.body.classList.contains("walks-open")));
@@ -567,51 +566,55 @@
     startedAt, restored
   });
   const showDiagnosticsFallback = (text) => {
-    const overlay = document.createElement("div"); overlay.className = "diagnosticsFallback"; overlay.setAttribute("role", "dialog"); overlay.setAttribute("aria-modal", "true");
+    const previousFocus = document.activeElement;
+    const overlay = document.createElement("div"); overlay.className = "diagnosticsFallback"; overlay.setAttribute("role", "dialog"); overlay.setAttribute("aria-modal", "true"); overlay.setAttribute("aria-label", "Копирование диагностического отчёта");
     const card = document.createElement("div"); card.className = "diagnosticsFallbackCard";
-    const instructions = document.createElement("p"); instructions.textContent = "Автокопирование недоступно. Выделите текст и выберите «Копировать».";
-    const textarea = document.createElement("textarea"); textarea.readOnly = true; textarea.value = text; textarea.setAttribute("aria-label", "Диагностика для копирования");
-    const close = document.createElement("button"); close.type = "button"; close.textContent = "Закрыть"; close.addEventListener("click", () => overlay.remove());
-    card.append(instructions, textarea, close); overlay.append(card); document.body.append(overlay);
-    textarea.focus(); textarea.select(); textarea.setSelectionRange(0, textarea.value.length);
+    const instructions = document.createElement("p"); instructions.textContent = "Автокопирование недоступно. Нажмите «Выделить весь текст», затем выберите «Копировать».";
+    const textarea = document.createElement("textarea"); textarea.readOnly = true; textarea.spellcheck = false; textarea.value = text; textarea.setAttribute("aria-label", "Полный диагностический отчёт для ручного копирования");
+    const selectAll = document.createElement("button"); selectAll.type = "button"; selectAll.textContent = "Выделить весь текст";
+    const selectReport = () => { textarea.focus(); textarea.select(); textarea.setSelectionRange(0, textarea.value.length); };
+    selectAll.addEventListener("click", selectReport);
+    const close = document.createElement("button"); close.type = "button"; close.textContent = "Закрыть"; close.addEventListener("click", () => { overlay.remove(); previousFocus?.focus?.(); });
+    card.append(instructions, selectAll, textarea, close); overlay.append(card); document.body.append(overlay);
+    selectReport();
   };
   const copyDiagnosticReport = async (session, route, events) => {
-    const report = Diagnostics.buildReport({ ...session, diagnosticsPersistenceFailed: diagnosticsPersistenceFailed || session?.diagnosticsPersistenceFailed }, route, events);
+    const reportSession = session?.id === "active"
+      ? { ...session, diagnosticsPersistenceFailed: diagnosticsPersistenceFailed || session?.diagnosticsPersistenceFailed }
+      : session;
+    const report = Diagnostics.buildReport(reportSession, route, events);
     const text = JSON.stringify(report, null, 2);
-    const result = await Diagnostics.copyText(text, navigator.clipboard);
-    if (result.copied) say("Диагностика скопирована в буфер обмена.");
-    else { say("Выделите и скопируйте диагностику в открывшемся окне."); showDiagnosticsFallback(text); }
+    let clipboard = null;
+    try { clipboard = navigator.clipboard; } catch {}
+    const result = await Diagnostics.copyTextOrFallback(text, clipboard, showDiagnosticsFallback);
+    const missingEvents = reportSession?.diagnosticsAvailable === false ? " Диагностические события отсутствуют; в отчёте указаны доступные данные прогулки." : "";
+    if (result.copied) say(`Диагностика скопирована в буфер обмена.${missingEvents}`);
+    else say(`Скопируйте полный отчёт из открывшегося окна.${missingEvents}`);
   };
-  const findDiagnosticsButton = (walkId) => [...document.querySelectorAll("button[data-copy-diagnostics]")]
-    .find((button) => button.dataset.copyDiagnostics === walkId);
-  const preloadWalkDiagnostics = () => {
-    if (!walksById.size) return;
-    const activeDiagnostics = WalkStorage.readDiagnostics(db, "active").catch(() => null);
-    walksById.forEach((walk, walkId) => {
-      if (diagnosticsByWalkId.has(walkId)) return;
-      const button = findDiagnosticsButton(walkId);
-      if (button) { button.disabled = true; button.title = "Загружаем диагностику"; }
-      WalkStorage.readDiagnostics(db, walkId)
-        .then((stored) => stored || activeDiagnostics.then((active) => active?.walkId === walkId ? active : null))
-        .then((stored) => diagnosticsByWalkId.set(walkId, stored))
-        .catch(() => diagnosticsByWalkId.set(walkId, null))
-        .finally(() => {
-          const readyButton = findDiagnosticsButton(walkId);
-          if (readyButton) { readyButton.disabled = false; readyButton.removeAttribute("title"); }
-        });
-    });
-  };
-  const copyCompletedDiagnostics = (walk) => {
-    if (!diagnosticsByWalkId.has(walk.id)) { say("Подготовка диагностики ещё не завершена. Подождите и нажмите снова."); return; }
-    const stored = diagnosticsByWalkId.get(walk.id);
-    const route = stored?.finalRoute || walk.points || [];
-    const session = stored || Diagnostics.createSession({
-      id: walk.id, appVersion: "not recorded", navigatorLike: {},
-      startedAt: walk.startedAt
-    });
-    if (!stored) session.state = "completed";
-    copyDiagnosticReport(session, route, stored?.events || []).catch(() => say("Не удалось подготовить диагностику для копирования."));
-  };
+  const diagnosticsCopyController = Diagnostics.createCompletedCopyController({
+    load: async (walkId) => {
+      if (diagnosticsByWalkId.has(walkId)) return diagnosticsByWalkId.get(walkId);
+      let stored = await WalkStorage.readDiagnostics(db, walkId);
+      if (!stored) {
+        const active = await WalkStorage.readDiagnostics(db, "active");
+        if (active?.walkId === walkId) stored = active;
+      }
+      diagnosticsByWalkId.set(walkId, stored);
+      return stored;
+    },
+    copy: async (walk, stored, readError) => {
+      const reportData = Diagnostics.createCompletedReportData(walk, stored, readError);
+      await copyDiagnosticReport(reportData.session, reportData.route, reportData.events);
+    },
+    setStatus: say,
+    setBusy: (button, busy) => {
+      if (!button) return;
+      button.disabled = busy;
+      button.textContent = busy ? "Загружаем…" : "Копировать диагностику";
+      button.setAttribute("aria-busy", String(busy));
+    }
+  });
+  const copyCompletedDiagnostics = (walk, button) => diagnosticsCopyController(walk, button);
   const copyActiveDiagnostics = () => {
     if (!diagnosticSession) { say("Диагностика ещё не готова."); return; }
     copyDiagnosticReport(diagnosticSession, points, diagnosticSession.events).catch(() => say("Не удалось подготовить диагностику для копирования."));
@@ -1050,14 +1053,15 @@
         maxZoom: 16
       });
     }
-    if (!isMobileViewport()) preloadWalkDiagnostics();
   };
   $("routes").addEventListener("click", async (event) => {
     const copyButton = event.target.closest("button[data-copy-diagnostics]");
     if (copyButton) {
       const walk = walksById.get(copyButton.dataset.copyDiagnostics);
-      if (walk) await copyCompletedDiagnostics(walk);
-      else say("Не удалось найти прогулку для копирования диагностики.");
+      if (walk) {
+        try { await copyCompletedDiagnostics(walk, copyButton); }
+        catch { say("Не удалось подготовить диагностику для копирования."); }
+      } else say("Не удалось найти прогулку для копирования диагностики.");
       return;
     }
     const button = event.target.closest("button[data-walk-id]");

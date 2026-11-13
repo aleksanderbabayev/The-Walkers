@@ -234,11 +234,11 @@ main {
 .routeActions .diagnosticsCopy { min-height: 34px; padding: 5px 7px; font-size: 10px; }
 .diagnosticsCopy { min-height: 30px; padding: 4px 2px; border: 0; background: transparent; color: #68776a; font: inherit; font-size: 10px; text-align: left; cursor: pointer; }
 .diagnosticsCopy[hidden] { display: none; }
-.diagnosticsFallback { position: fixed; z-index: 2000; inset: 0; padding: 18px; display: flex; flex-direction: column; justify-content: center; gap: 10px; background: #172019b8; }
+.diagnosticsFallback { position: fixed; z-index: 2000; inset: 0; box-sizing: border-box; padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); display: flex; flex-direction: column; justify-content: center; gap: 10px; background: #172019b8; }
 .diagnosticsFallback[hidden] { display: none; }
-.diagnosticsFallbackCard { width: min(100%, 620px); max-height: 90%; margin: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; border-radius: 18px; background: #fff; box-shadow: 0 12px 40px #0004; }
+.diagnosticsFallbackCard { box-sizing: border-box; width: min(100%, 620px); max-height: calc(var(--visible-viewport-height, 100dvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px); min-height: 0; margin: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; border-radius: 18px; background: #fff; box-shadow: 0 12px 40px #0004; }
 .diagnosticsFallbackCard p { margin: 0; color: #344438; font-size: 13px; line-height: 1.4; }
-.diagnosticsFallback textarea { width: 100%; min-height: 180px; flex: 1; padding: 10px; border: 1px solid #d9dfd7; border-radius: 10px; color: #26372a; font: 11px/1.35 monospace; resize: vertical; -webkit-user-select: text; user-select: text; }
+.diagnosticsFallback textarea { box-sizing: border-box; width: 100%; min-height: 180px; flex: 1 1 0; padding: 10px; border: 1px solid #d9dfd7; border-radius: 10px; color: #26372a; font: 16px/1.35 monospace; resize: vertical; -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 .diagnosticsFallback button { min-height: 44px; border: 0; border-radius: 12px; background: #edf2e8; color: #26372a; font: inherit; font-weight: 650; }
 .walkInstructions { position: fixed; z-index: 3000; inset: 0; padding: calc(18px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom)); display: grid; place-items: center; background: #17201935; pointer-events: auto; }
 .walkInstructions[hidden] { display: none; }

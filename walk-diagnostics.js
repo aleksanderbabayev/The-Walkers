@@ -94,8 +94,8 @@
     return changed;
   };
 
-  const buildReport = (session, route = [], events = session?.events || []) => ({
-    metadata: {
+  const buildReport = (session, route = [], events = session?.events || []) => {
+    const metadata = {
       appVersion: session?.appVersion || "unknown",
       diagnosticFormatVersion: session?.formatVersion || FORMAT_VERSION,
       startedAt: session?.startedAt || null,
@@ -109,26 +109,34 @@
       routeStatus: session?.state || "active",
       walkStatus: session?.walkStatus || null,
       territoryCaptured: session?.territoryCaptured ?? null
-    },
-    events: events.map(({ id, sessionId, ...event }) => ({ ...event })),
-    rawMeasurements: events.filter((event) => event.type === "gps-measurement").map((event) => ({
-      sequence: event.sequence,
-      phase: event.phase,
-      measuredAt: event.rawMeasurement?.timestamp ?? null,
-      processedAt: event.processedAt,
-      rawPosition: { ...(event.rawMeasurement || {}) },
-      decision: event.decision,
-      filteringReason: event.filteringReason || null,
-      comparison: event.comparison || null,
-      thresholds: event.thresholds || {},
-      includedInRoute: event.includedInRoute ?? null,
-      routeSegmentStart: event.routeSegmentStart ?? false
-    })),
-    finalAcceptedRoute: route.map((point) => ({
-      latitude: point.lat, longitude: point.lng, accuracyMeters: point.accuracy,
-      timestamp: point.timestamp, segmentStart: Boolean(point.segmentStart)
-    }))
-  });
+    };
+    if (session?.diagnosticsAvailable === false) Object.assign(metadata, {
+      diagnosticsAvailable: false,
+      diagnosticsUnavailableReason: session.diagnosticsUnavailableReason || "not-found",
+      walkSummary: session.walkSummary || null
+    });
+    return {
+      metadata,
+      events: events.map(({ id, sessionId, ...event }) => ({ ...event })),
+      rawMeasurements: events.filter((event) => event.type === "gps-measurement").map((event) => ({
+        sequence: event.sequence,
+        phase: event.phase,
+        measuredAt: event.rawMeasurement?.timestamp ?? null,
+        processedAt: event.processedAt,
+        rawPosition: { ...(event.rawMeasurement || {}) },
+        decision: event.decision,
+        filteringReason: event.filteringReason || null,
+        comparison: event.comparison || null,
+        thresholds: event.thresholds || {},
+        includedInRoute: event.includedInRoute ?? null,
+        routeSegmentStart: event.routeSegmentStart ?? false
+      })),
+      finalAcceptedRoute: route.map((point) => ({
+        latitude: point.lat, longitude: point.lng, accuracyMeters: point.accuracy,
+        timestamp: point.timestamp, segmentStart: Boolean(point.segmentStart)
+      }))
+    };
+  };
 
   const copyText = async (text, clipboard) => {
     if (typeof clipboard?.writeText !== "function") return { copied: false };
@@ -138,5 +146,56 @@
     } catch { return { copied: false }; }
   };
 
-  return { FORMAT_VERSION, MAX_EVENTS, createSession, restoreSession, addEvent, createGpsMeasurement, applyRouteDisposition, buildReport, copyText };
+  const copyTextOrFallback = async (text, clipboard, showFallback) => {
+    let result = { copied: false };
+    try { result = await copyText(text, clipboard); } catch {}
+    if (!result.copied) showFallback(text);
+    return result;
+  };
+
+  const createCompletedReportData = (walk, stored, readError = null) => {
+    const events = Array.isArray(stored?.events) ? stored.events : [];
+    const diagnosticsAvailable = events.length > 0;
+    const diagnosticsUnavailableReason = diagnosticsAvailable ? null : readError ? "read-error" : stored ? "events-not-found" : "not-found";
+    const walkSummary = diagnosticsAvailable ? null : {
+      id: walk.id,
+      mode: walk.mode || null,
+      status: walk.status || walk.expeditionStatus || null,
+      startedAt: walk.startedAt || null,
+      finishedAt: walk.finishedAt || null,
+      durationMs: Number.isFinite(walk.durationMs) ? walk.durationMs : null,
+      distanceMeters: Number.isFinite(walk.distanceMeters) ? walk.distanceMeters : null,
+      pointCount: Array.isArray(walk.points) ? walk.points.length : 0,
+      closed: Boolean(walk.closed),
+      target: walk.target || null
+    };
+    const session = {
+      ...(stored || { id: walk.id, appVersion: "not recorded", startedAt: walk.startedAt, state: "completed" }),
+      diagnosticsAvailable, diagnosticsUnavailableReason, walkSummary
+    };
+    const route = stored?.finalRoute?.length ? stored.finalRoute : walk.points || [];
+    return { session, route, events };
+  };
+
+  const createCompletedCopyController = ({ load, copy, setStatus = () => {}, setBusy = () => {} }) => {
+    const inFlight = new Map();
+    return (walk, button) => {
+      if (inFlight.has(walk.id)) return inFlight.get(walk.id);
+      setBusy(button, true);
+      setStatus("Загружаем диагностику прогулки…");
+      const operation = (async () => {
+        let stored = null, readError = null;
+        try { stored = await load(walk.id); } catch (error) { readError = error; }
+        try { await copy(walk, stored, readError); }
+        catch { setStatus("Не удалось подготовить диагностику для копирования."); }
+      })().finally(() => {
+        inFlight.delete(walk.id);
+        setBusy(button, false);
+      });
+      inFlight.set(walk.id, operation);
+      return operation;
+    };
+  };
+
+  return { FORMAT_VERSION, MAX_EVENTS, createSession, restoreSession, addEvent, createGpsMeasurement, applyRouteDisposition, buildReport, copyText, copyTextOrFallback, createCompletedReportData, createCompletedCopyController };
 });

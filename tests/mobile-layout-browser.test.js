@@ -295,6 +295,41 @@ test("mobile primary actions are actually visible over a full-height map at requ
           assert.ok(button.top >= button.hostTop - 1 && button.bottom <= button.hostBottom + 1, `${width}x${height} ${scenario.name}: #${button.id} is clipped by its action container`);
         }
       }
+      const appSource = fs.readFileSync(path.join(projectRoot, "app.js"), "utf8");
+      const fallbackStart = appSource.indexOf("const showDiagnosticsFallback = ") + "const showDiagnosticsFallback = ".length;
+      const fallbackEnd = appSource.indexOf("\n  const copyDiagnosticReport", fallbackStart);
+      const fallbackFactory = appSource.slice(fallbackStart, fallbackEnd).trim().replace(/;$/, "");
+      assert.ok(fallbackFactory, "the browser check uses the production manual-copy fallback");
+      const diagnosticText = JSON.stringify({ events: [], finalAcceptedRoute: Array.from({ length: 80 }, (_, index) => ({ latitude: 48 + index / 10000, longitude: 17, timestamp: index })) }, null, 2);
+      for (const [width, height] of viewports) {
+        await setViewport(width, height);
+        const fallback = await evaluate(`(() => {
+          (${fallbackFactory})(${JSON.stringify(diagnosticText)});
+          const overlay = document.querySelector(".diagnosticsFallback");
+          const card = overlay.querySelector(".diagnosticsFallbackCard");
+          const textarea = overlay.querySelector("textarea");
+          const selectButton = [...overlay.querySelectorAll("button")].find((button) => button.textContent === "Выделить весь текст");
+          const closeButton = [...overlay.querySelectorAll("button")].find((button) => button.textContent === "Закрыть");
+          const cardRect = card.getBoundingClientRect(), textareaRect = textarea.getBoundingClientRect();
+          selectButton.click();
+          const result = {
+            textMatches: textarea.value === ${JSON.stringify(diagnosticText)},
+            selectionCoversText: textarea.selectionStart === 0 && textarea.selectionEnd === textarea.value.length,
+            card: { left: cardRect.left, right: cardRect.right, top: cardRect.top, bottom: cardRect.bottom },
+            textarea: { width: textareaRect.width, height: textareaRect.height },
+            buttons: [...overlay.querySelectorAll("button")].map((button) => ({ text: button.textContent, height: button.getBoundingClientRect().height }))
+          };
+          closeButton.click();
+          return { ...result, removed: !document.querySelector(".diagnosticsFallback") };
+        })()`);
+        assert.equal(fallback.textMatches, true, `${width}x${height}: the complete report remains in the manual-copy field`);
+        assert.equal(fallback.selectionCoversText, true, `${width}x${height}: the manual select-all action selects the full report`);
+        assert.ok(fallback.card.left >= 0 && fallback.card.right <= width, `${width}x${height}: the fallback card fits the phone width`);
+        assert.ok(fallback.card.top >= 0 && fallback.card.bottom <= height, `${width}x${height}: the fallback card fits the phone height`);
+        assert.ok(fallback.textarea.width > 0 && fallback.textarea.height >= 180, `${width}x${height}: the report area remains visible`);
+        assert.ok(fallback.buttons.every((button) => button.height >= 44), `${width}x${height}: manual-copy actions have touch-sized buttons`);
+        assert.equal(fallback.removed, true, `${width}x${height}: the dialog can be dismissed`);
+      }
       const markerChecks = await evaluate(`(() => {
         const mapElement = document.getElementById("map");
         const panel = document.querySelector(".panel");
