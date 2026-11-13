@@ -226,16 +226,16 @@ main {
 .savedHead { margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; font-size: 14px; }
 .savedHead span { padding: 3px 9px; border-radius: 12px; background: #edf2e8; color: #50634e; font-size: 12px; }
 .empty { color: #8b948a; font-size: 12px; line-height: 1.5; }
-.route { padding: 12px 0; display: flex; align-items: center; gap: 10px; border-top: 1px solid #edf0eb; }
+.route { min-width: 0; padding: 12px 0; display: flex; align-items: center; gap: 10px; border-top: 1px solid #edf0eb; }
 .route > div { min-width: 0; flex: 1; }
 .routeIcon { color: #456b43; }
 .route.retreated .routeIcon { color: #b63d36; }
 .route strong { display: block; font-size: 12px; }
 .route small { display: block; margin-top: 4px; color: #818a80; font-size: 11px; }
-.routeDelete { flex: none; padding: 7px 9px; border: 1px solid #e5e8e1; border-radius: 10px; background: #fff; color: #8a3932; font: inherit; font-size: 11px; cursor: pointer; }
+.routeDelete { min-height: 44px; flex: none; padding: 7px 9px; border: 1px solid #e5e8e1; border-radius: 10px; background: #fff; color: #8a3932; font: inherit; font-size: 11px; cursor: pointer; }
 .routeDelete:disabled { opacity: .5; cursor: wait; }
-.routeActions { flex: none; display: flex; align-items: center; gap: 5px; }
-.routeActions .diagnosticsCopy { min-height: 34px; padding: 5px 7px; font-size: 10px; }
+.routeActions { min-width: 0; max-width: 46%; flex: none; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.routeActions .diagnosticsCopy { min-width: 0; min-height: 44px; padding: 7px 9px; border: 1px solid #d8dfd5; border-radius: 10px; background: #f3f7f0; color: #315b39; font: inherit; font-size: 11px; font-weight: 650; line-height: 1.25; text-align: center; overflow-wrap: anywhere; cursor: pointer; }
 .diagnosticsCopy { min-height: 30px; padding: 4px 2px; border: 0; background: transparent; color: #68776a; font: inherit; font-size: 10px; text-align: left; cursor: pointer; }
 .diagnosticsCopy[hidden] { display: none; }
 .diagnosticsFallback { position: fixed; z-index: 2000; inset: 0; box-sizing: border-box; padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); display: flex; flex-direction: column; justify-content: center; gap: 10px; background: #172019b8; }
@@ -397,7 +397,7 @@ button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
   }
   .panel {
     position: absolute;
-    z-index: 1100;
+    z-index: 1301;
     right: max(8px, env(safe-area-inset-right));
     bottom: calc(24px + env(safe-area-inset-bottom));
     left: max(8px, env(safe-area-inset-left));
@@ -491,7 +491,7 @@ button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
   .savedHead { flex: none; margin-bottom: 12px; }
   .walksClose { width: 44px; height: 44px; min-width: 44px; min-height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: #edf2e8; color: #314435; font-size: 24px; line-height: 1; }
   #routes { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
-  .drawerBackdrop { position: fixed; z-index: 1300; inset: 0; width: 100%; height: 100%; padding: 0; display: block; border: 0; background: #18211c70; }
+  .drawerBackdrop { position: fixed; z-index: 1300; inset: 0; width: 100%; height: 100%; padding: 0; display: block; border: 0; background: transparent; }
   .drawerBackdrop[hidden] { display: none; }
   footer { display: none; }
 }

@@ -135,7 +135,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const appSource = fs.readFileSync(path.join(projectRoot, "app.js"), "utf8");
     const htmlSource = fs.readFileSync(path.join(projectRoot, "index.html"), "utf8");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.28">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.29">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -321,6 +321,63 @@ test("mobile primary actions are actually visible over a full-height map at requ
       const fallbackEnd = appSource.indexOf("\n  const copyDiagnosticReport", fallbackStart);
       const fallbackFactory = appSource.slice(fallbackStart, fallbackEnd).trim().replace(/;$/, "");
       assert.ok(fallbackFactory, "the browser check uses the production manual-copy fallback");
+      for (const [width, height] of viewports) {
+        await setViewport(width, height);
+        const history = await evaluate(`(() => {
+          const drawer = document.getElementById("walksDrawer");
+          const backdrop = document.getElementById("walksBackdrop");
+          const list = document.getElementById("routes");
+          document.body.classList.add("walks-open");
+          backdrop.hidden = false;
+          list.replaceChildren();
+          for (let index = 0; index < 12; index++) {
+            const row = document.createElement("div"); row.className = "route";
+            const icon = document.createElement("span"); icon.className = "routeIcon"; icon.textContent = "↗";
+            const details = document.createElement("div");
+            const title = document.createElement("strong"); title.textContent = "Маршрут " + index;
+            const meta = document.createElement("small"); meta.textContent = "13 нояб. 2026 г. · 00:10:37 · 0,78 км · 80 точек";
+            details.append(title, meta);
+            const actions = document.createElement("div"); actions.className = "routeActions";
+            const copy = document.createElement("button"); copy.className = "diagnosticsCopy"; copy.textContent = "Копировать диагностику";
+            const remove = document.createElement("button"); remove.className = "routeDelete"; remove.textContent = "Удалить";
+            actions.append(copy, remove); row.append(icon, details, actions); list.append(row);
+          }
+          list.scrollTop = 180;
+          const copy = list.querySelector(".diagnosticsCopy"); copy.focus();
+          const box = (element) => { const rect = element.getBoundingClientRect(); return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height }; };
+          const copyBox = box(copy), deleteBox = box(list.querySelector(".routeDelete"));
+          const panelBox = box(drawer);
+          const headerBox = box(document.querySelector("header"));
+          const backdropColor = getComputedStyle(backdrop).backgroundColor;
+          const panelColor = getComputedStyle(drawer).backgroundColor;
+          const titleColor = getComputedStyle(drawer.querySelector(".savedHead")).color;
+          const outsideTarget = document.elementFromPoint(8, headerBox.bottom + 8);
+          const panelTarget = document.elementFromPoint(panelBox.left + panelBox.width / 2, panelBox.top + panelBox.height / 2);
+          const beforeScroll = list.scrollTop;
+          copy.addEventListener("click", () => { (${fallbackFactory})("Full diagnostics report"); });
+          copy.click();
+          const overlay = document.querySelector(".diagnosticsFallback");
+          const reportPreserved = overlay?.querySelector("textarea").value === "Full diagnostics report";
+          overlay?.querySelector("button:last-child").click();
+          return { drawerVisible: getComputedStyle(drawer).visibility === "visible", drawerOpen: document.body.classList.contains("walks-open"), panelBox, backdropColor, panelColor, titleColor, outsideHitIsBackdrop: outsideTarget === backdrop, panelHitStaysInDrawer: drawer.contains(panelTarget), copyBox, deleteBox, scrollBefore: beforeScroll, scrollAfter: list.scrollTop, reportPreserved, overlayClosed: !document.querySelector(".diagnosticsFallback"), focusRestored: document.activeElement === copy, horizontalOverflow: drawer.scrollWidth > drawer.clientWidth || list.scrollWidth > list.clientWidth };
+        })()`);
+        assert.equal(history.drawerVisible, true, `${width}x${height}: history drawer is visible`);
+        assert.equal(history.drawerOpen, true, `${width}x${height}: copy does not close history`);
+        assert.equal(history.backdropColor, "rgba(0, 0, 0, 0)", `${width}x${height}: backdrop remains transparent`);
+        assert.equal(history.outsideHitIsBackdrop, true, `${width}x${height}: outside taps still reach the closing backdrop`);
+        assert.equal(history.panelHitStaysInDrawer, true, `${width}x${height}: drawer stays above the backdrop for interaction`);
+        assert.equal(history.panelColor, "rgb(255, 255, 255)", `${width}x${height}: history panel stays opaque`);
+        assert.ok(history.titleColor && history.panelBox.width <= width, `${width}x${height}: history panel fits the viewport`);
+        assert.ok(history.copyBox.height >= 44 && history.deleteBox.height >= 44, `${width}x${height}: copy and delete controls meet 44px touch target`);
+        assert.ok(history.copyBox.left >= 0 && history.copyBox.right <= width && history.deleteBox.left >= 0 && history.deleteBox.right <= width, `${width}x${height}: history actions stay inside the screen`);
+        assert.ok(history.deleteBox.top >= history.copyBox.bottom + 7, `${width}x${height}: copy and delete controls have clear spacing`);
+        assert.equal(history.horizontalOverflow, false, `${width}x${height}: history has no horizontal overflow`);
+        assert.equal(history.scrollAfter, history.scrollBefore, `${width}x${height}: manual fallback preserves history scroll position`);
+        assert.equal(history.reportPreserved, true, `${width}x${height}: full diagnostics remain available for manual copy`);
+        assert.equal(history.overlayClosed, true, `${width}x${height}: manual-copy window closes`);
+        assert.equal(history.focusRestored, true, `${width}x${height}: closing fallback returns focus to the copy action`);
+        await evaluate(`(() => { document.body.classList.remove("walks-open"); document.getElementById("walksBackdrop").hidden = true; document.getElementById("routes").replaceChildren(); })()`);
+      }
       const diagnosticText = JSON.stringify({ events: [], finalAcceptedRoute: Array.from({ length: 80 }, (_, index) => ({ latitude: 48 + index / 10000, longitude: 17, timestamp: index })) }, null, 2);
       for (const [width, height] of viewports) {
         await setViewport(width, height);

@@ -71,6 +71,11 @@
   setWalksDrawerOpen(false);
   $("walksClose").addEventListener("click", () => setWalksDrawerOpen(false, true));
   $("walksBackdrop").addEventListener("click", () => setWalksDrawerOpen(false, true));
+  document.addEventListener("pointerdown", (event) => {
+    if (!document.body.classList.contains("walks-open") || event.target === $("walksBackdrop")) return;
+    if ($("walksDrawer").contains(event.target) || event.target.closest(".diagnosticsFallback")) return;
+    setWalksDrawerOpen(false, true);
+  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && document.body.classList.contains("walks-open")) setWalksDrawerOpen(false, true);
   });
