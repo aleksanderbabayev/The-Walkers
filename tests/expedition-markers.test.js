@@ -125,10 +125,10 @@ test("app draws expedition start only from accepted route data and restores save
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
   const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
   const bootstrap = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
-  assert.match(html, /name="app-version" content="0\.2\.27"/);
+  assert.match(html, /name="app-version" content="0\.2\.28"/);
   assert.ok(bootstrap.includes('"walk-colors.js?v=0.2.25"'));
   assert.ok(bootstrap.includes('"expedition-markers.js?v=0.2.7"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.27"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.28"'));
   assert.ok(app.includes("if (activeMode === \"expedition\") updateExpeditionStartMarker(recordedStartPoint)"));
   assert.ok(app.includes("if (activeMode === \"expedition\") updateExpeditionStartMarker(restoredValidatedPoints[0])"));
   assert.ok(app.includes("if (activeMode === \"expedition\" && points[0]) updateExpeditionStartMarker(points[0])"));

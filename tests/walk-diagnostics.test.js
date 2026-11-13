@@ -220,9 +220,9 @@ test("app requests completed diagnostics from the copy action and no longer prel
   const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
   const bootstrap = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
 
-  assert.match(html, /name="app-version" content="0\.2\.27"/);
+  assert.match(html, /name="app-version" content="0\.2\.28"/);
   assert.ok(bootstrap.includes('"walk-diagnostics.js?v=0.1.45"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.27"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.28"'));
   assert.match(app, /Diagnostics\.createCompletedCopyController\([\s\S]*?WalkStorage\.readDiagnostics\(db, walkId\)/);
   assert.match(app, /copyCompletedDiagnostics\(walk, copyButton\)/);
   assert.doesNotMatch(app, /preloadWalkDiagnostics/);

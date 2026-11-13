@@ -81,16 +81,19 @@ test("compact diagnostic JSON contains only technical fields and never includes 
   assert.doesNotMatch(json, /48\.9|21\.2/);
 });
 
-test("shared diagnostics UI renders details and copies with a selectable fallback", async () => {
+test("diagnostics UI stays in a standalone dialog and copies with a selectable fallback", async () => {
   const fs = require("node:fs");
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
   const bootstrap = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
   const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
-  assert.match(html, /<details id="locationDiagnostics" class="location-diagnostics">/);
+  assert.match(html, /<dialog id="locationDiagnosticsView" class="location-diagnostics-view"/);
   assert.match(html, /id="locationDiagnosticsFallback"[^>]*readonly hidden/);
   assert.match(app, /\$\("copyLocationDiagnostics"\)\.addEventListener\("click", \(\) => diagnosticsUi\.copy\(\)\)/);
   assert.doesNotMatch(bootstrap, /locationDiagnostics|copyLocationDiagnostics/);
-  assert.match(app, /\$\("locationDiagnostics"\)\.addEventListener\("toggle"/);
+  assert.match(app, /UtilityMenu\.bind\([\s\S]*?action === "diagnostics"\) openLocationDiagnostics\(\)/);
+  assert.match(app, /action === "music"\) return musicControl\.toggle\(\)/);
+  assert.match(app, /action === "history"\) setWalksDrawerOpen\(!document\.body\.classList\.contains\("walks-open"\)\)/);
+  assert.match(app, /if \(locationDiagnosticsView\.open\) renderLocationDiagnostics\(\)/);
 
   const elements = () => ({
     hidden: true, value: "", textContent: "", children: [], focused: false, selected: false,

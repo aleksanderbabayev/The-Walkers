@@ -135,7 +135,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const appSource = fs.readFileSync(path.join(projectRoot, "app.js"), "utf8");
     const htmlSource = fs.readFileSync(path.join(projectRoot, "index.html"), "utf8");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.27">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.28">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -351,6 +351,88 @@ test("mobile primary actions are actually visible over a full-height map at requ
         assert.ok(fallback.buttons.every((button) => button.height >= 44), `${width}x${height}: manual-copy actions have touch-sized buttons`);
         assert.equal(fallback.removed, true, `${width}x${height}: the dialog can be dismissed`);
       }
+      await setViewport(320, 568);
+      await evaluate(fs.readFileSync(path.join(projectRoot, "location-diagnostics.js"), "utf8"));
+      await evaluate(fs.readFileSync(path.join(projectRoot, "utility-menu.js"), "utf8"));
+      await evaluate(`(() => {
+        const report = { operatingSystem: { name: "Android", version: "14" }, browser: { name: "Chrome", version: "130" }, geolocationApi: "available", permissionsApi: "available", geolocationPermission: "granted", operatingSystemLocationPermission: "unknown", siteLocationPermission: "granted", lastRequest: { result: "success", checkedAt: Date.now() }, checkedAt: Date.now(), userAgent: navigator.userAgent };
+        const ui = window.WalkLocationDiagnostics.createUi({ documentLike: document, navigatorLike: { clipboard: null }, getReport: () => report, fields: document.getElementById("locationDiagnosticsFields"), status: document.getElementById("locationDiagnosticsStatus"), fallback: document.getElementById("locationDiagnosticsFallback") });
+        ui.render();
+        document.getElementById("copyLocationDiagnostics").addEventListener("click", () => ui.copy());
+        window.utilityMenuActions = [];
+        window.utilityMenuController = window.WalkUtilityMenu.bind({
+          menu: document.getElementById("utilityMenu"), dialog: document.getElementById("locationDiagnosticsView"),
+          onOpen: () => { document.body.classList.remove("walks-open"); },
+          onAction: (action) => {
+            utilityMenuActions.push(action);
+            if (action === "history") { document.body.classList.add("walks-open"); document.getElementById("walksClose").focus(); }
+            if (action === "diagnostics") document.getElementById("locationDiagnosticsView").showModal();
+          }
+        });
+        document.getElementById("locationDiagnosticsClose").addEventListener("click", () => document.getElementById("locationDiagnosticsView").close());
+        document.getElementById("locationStartupScreen").hidden = true;
+        return true;
+      })()`);
+      const touchOutside = async (selector) => evaluate(`(() => {
+        const menu = document.getElementById("utilityMenu"); menu.open = true;
+        const target = document.querySelector(${JSON.stringify(selector)});
+        target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch" }));
+        target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        return menu.open;
+      })()`);
+      assert.equal(await touchOutside("#map"), false, "touching the map closes the menu");
+      assert.equal(await touchOutside(".panel"), false, "touching the walk controls closes the menu");
+      const musicSelection = await evaluate(`(() => {
+        const menu = document.getElementById("utilityMenu"); menu.open = true;
+        document.getElementById("musicToggle").click();
+        return { open: menu.open, action: utilityMenuActions.at(-1) };
+      })()`);
+      assert.deepEqual(musicSelection, { open: false, action: "music" }, "music selection runs and closes the menu");
+      const activeDiagnosticsSelection = await evaluate(`(() => {
+        const menu = document.getElementById("utilityMenu"), button = document.getElementById("copyActiveDiagnostics");
+        button.hidden = false; menu.open = true; button.click();
+        return { open: menu.open, itemRemainsAvailable: button.hidden === false };
+      })()`);
+      assert.deepEqual(activeDiagnosticsSelection, { open: false, itemRemainsAvailable: true }, "copying active diagnostics also closes the main menu");
+      const historySelection = await evaluate(`(() => {
+        const menu = document.getElementById("utilityMenu"); menu.open = true;
+        document.getElementById("walksToggle").click();
+        return { open: menu.open, action: utilityMenuActions.at(-1), historyOpen: document.body.classList.contains("walks-open"), focus: document.activeElement.id };
+      })()`);
+      assert.deepEqual(historySelection, { open: false, action: "history", historyOpen: true, focus: "walksClose" }, "history opens and receives focus after the menu closes");
+      await evaluate(`new Promise((resolve) => setTimeout(resolve, 0))`);
+      const historyDismissed = await evaluate(`(() => {
+        const menu = document.getElementById("utilityMenu"); menu.querySelector("summary").click();
+        return { menuOpen: menu.open, historyOpen: document.body.classList.contains("walks-open") };
+      })()`);
+      assert.deepEqual(historyDismissed, { menuOpen: true, historyOpen: false }, "opening the menu dismisses the history drawer");
+      const diagnosticSelection = await evaluate(`(() => {
+        const menu = document.getElementById("utilityMenu"); menu.open = true;
+        document.getElementById("openLocationDiagnostics").click();
+        const dialog = document.getElementById("locationDiagnosticsView");
+        return { menuOpen: menu.open, dialogOpen: dialog.open, action: utilityMenuActions.at(-1), focus: document.activeElement.id };
+      })()`);
+      assert.deepEqual(diagnosticSelection, { menuOpen: false, dialogOpen: true, action: "diagnostics", focus: "locationDiagnosticsClose" }, "diagnostics remain in a separate focused dialog");
+      await evaluate(`document.getElementById("copyLocationDiagnostics").click()`);
+      await evaluate(`new Promise((resolve) => setTimeout(resolve, 0))`);
+      const copiedDiagnostics = await evaluate(`(() => ({ dialogOpen: document.getElementById("locationDiagnosticsView").open, fallbackVisible: !document.getElementById("locationDiagnosticsFallback").hidden, fallbackHasUserAgent: document.getElementById("locationDiagnosticsFallback").value.includes("Android") }))()`);
+      assert.deepEqual(copiedDiagnostics, { dialogOpen: true, fallbackVisible: true, fallbackHasUserAgent: true }, "diagnostic copy still works after the main menu closes");
+      const escapeDialog = await evaluate(`(async () => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); await new Promise((resolve) => setTimeout(resolve, 50)); return { open: document.getElementById("locationDiagnosticsView").open, focus: document.activeElement.tagName === "SUMMARY", activeId: document.activeElement.id, activeTag: document.activeElement.tagName }; })()`);
+      assert.equal(escapeDialog.open, false, "Escape closes diagnostics");
+      assert.equal(escapeDialog.focus, true, `Escape restores focus to the menu trigger (${escapeDialog.activeTag}#${escapeDialog.activeId})`);
+      const escapeMenu = await evaluate(`(() => {
+        const menu = document.getElementById("utilityMenu"); menu.open = true;
+        document.getElementById("musicToggle").focus();
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+        return { open: menu.open, focus: document.activeElement.tagName === "SUMMARY" };
+      })()`);
+      assert.deepEqual(escapeMenu, { open: false, focus: true }, "Escape closes the menu and returns keyboard focus");
+      const repeatedSummary = await evaluate(`(() => {
+        const menu = document.getElementById("utilityMenu"), summary = menu.querySelector("summary");
+        summary.click(); const opened = menu.open; summary.click();
+        return { opened, closed: !menu.open };
+      })()`);
+      assert.deepEqual(repeatedSummary, { opened: true, closed: true }, "tapping the menu trigger again closes it");
       const markerChecks = await evaluate(`(() => {
         const mapElement = document.getElementById("map");
         const panel = document.querySelector(".panel");
@@ -472,6 +554,20 @@ test("mobile primary actions are actually visible over a full-height map at requ
       }
       t.diagnostic(`${width}x${height}: map ${baselineMapHeight}px; ${scenarios.length} UI states; GPS marker centered above panel; captured territory fits and centers above two measured panel heights`);
     }
+    await cdp.send("Emulation.setUserAgentOverride", {
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+      platform: "Win32"
+    });
+    await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, screenWidth: 1280, screenHeight: 800, deviceScaleFactor: 1, mobile: false });
+    const desktopOutsideClick = await evaluate(`(() => {
+      const menu = document.getElementById("utilityMenu"); menu.open = true;
+      const target = document.getElementById("map");
+      target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse" }));
+      target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      return { open: menu.open, userAgent: navigator.userAgent };
+    })()`);
+    assert.equal(desktopOutsideClick.open, false, "desktop map clicks close the utility menu too");
+    assert.match(desktopOutsideClick.userAgent, /Windows NT 10\.0.*Chrome\/130/);
   } finally {
     cdp?.close();
     if (chrome && chrome.exitCode === null) {

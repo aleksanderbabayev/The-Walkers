@@ -18,15 +18,19 @@ body { margin: 0; min-height: 100vh; }
 .location-access-card button { width: 100%; min-height: 48px; padding: 10px 16px; border: 0; border-radius: 14px; background: linear-gradient(180deg, #4389ed, #2868c3); color: #fff; font: inherit; font-weight: 700; box-shadow: 0 3px 0 #174b9b, 0 6px 14px #18211c20; cursor: pointer; }
 .location-access-card button[hidden] { display: none; }
 .location-access-card button:active { transform: translateY(2px); filter: brightness(.94); }
-.location-diagnostics { margin-top: 18px; padding-top: 14px; border-top: 1px solid #e9ece6; color: #3e4a41; }
-.location-diagnostics summary { min-height: 44px; display: flex; align-items: center; color: #59665b; font-size: 13px; font-weight: 650; cursor: pointer; }
-.location-diagnostics dl { margin: 8px 0 12px; display: grid; grid-template-columns: minmax(100px, .8fr) minmax(0, 1.2fr); gap: 6px 10px; font-size: 11px; line-height: 1.35; }
-.location-diagnostics dt { color: #778078; }
-.location-diagnostics dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: #344638; }
-.location-diagnostics #copyLocationDiagnostics { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid #d8dfd5; border-radius: 12px; background: #f3f7f0; color: #315b39; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
-.location-diagnostics #locationDiagnosticsStatus { margin: 6px 0 0; color: #68756a; font-size: 11px; line-height: 1.35; }
-.location-diagnostics #locationDiagnosticsFallback { width: 100%; margin-top: 8px; padding: 9px; border: 1px solid #d8dfd5; border-radius: 10px; color: #26372a; font: 10px/1.4 monospace; -webkit-user-select: text; user-select: text; }
-.location-diagnostics #locationDiagnosticsFallback[hidden] { display: none; }
+.location-diagnostics-view { width: min(560px, calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right))); max-width: none; max-height: calc(var(--visible-viewport-height, 100dvh) - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); margin: auto; padding: 0; overflow: auto; border: 0; border-radius: 18px; background: transparent; color: #3e4a41; }
+.location-diagnostics-view::backdrop { background: #172019b8; }
+.locationDiagnosticsCard { padding: 20px; border: 1px solid #e3e8df; border-radius: 18px; background: #fff; box-shadow: 0 12px 40px #0004; }
+.locationDiagnosticsHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.locationDiagnosticsHead h2 { margin: 0; color: #26372a; font-size: 18px; }
+.locationDiagnosticsHead #locationDiagnosticsClose { flex: none; width: 44px; height: 44px; border: 0; border-radius: 12px; background: #edf2e8; color: #315b39; font-size: 24px; cursor: pointer; }
+.locationDiagnosticsCard dl { margin: 8px 0 12px; display: grid; grid-template-columns: minmax(100px, .8fr) minmax(0, 1.2fr); gap: 6px 10px; font-size: 12px; line-height: 1.4; }
+.locationDiagnosticsCard dt { color: #778078; }
+.locationDiagnosticsCard dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: #344638; }
+.locationDiagnosticsCard #copyLocationDiagnostics { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid #d8dfd5; border-radius: 12px; background: #f3f7f0; color: #315b39; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.locationDiagnosticsCard #locationDiagnosticsStatus { margin: 6px 0 0; color: #68756a; font-size: 12px; line-height: 1.4; }
+.locationDiagnosticsCard #locationDiagnosticsFallback { width: 100%; margin-top: 8px; padding: 9px; border: 1px solid #d8dfd5; border-radius: 10px; color: #26372a; font: 12px/1.4 monospace; -webkit-user-select: text; user-select: text; }
+.locationDiagnosticsCard #locationDiagnosticsFallback[hidden] { display: none; }
 header {
   height: 72px;
   padding: 0 24px;
@@ -277,10 +281,6 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
 .utility-menu-panel > .soundToggle { display: flex; align-items: center; gap: 10px; font-size: 14px; }
 .utility-menu-panel > .walksToggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .utility-menu-panel > .diagnosticsCopy[hidden] { display: none; }
-.utility-menu-panel > .location-diagnostics { min-width: 0; margin: 0; padding: 0; border: 0; }
-.utility-menu-panel > .location-diagnostics summary { min-height: 44px; padding: 0 10px; border: 1px solid #d8dfd5; border-radius: 12px; background: #f7f9f5; }
-.utility-menu-panel > .location-diagnostics[open] summary { border-radius: 12px 12px 0 0; }
-.utility-menu-panel > .location-diagnostics #copyLocationDiagnostics { min-height: 44px; }
 .mapLocate {
   position: absolute;
   z-index: 1000;
@@ -369,6 +369,7 @@ button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
   .utility-menu > summary { width: 44px; height: 44px; }
   .utility-menu-panel { position: fixed; top: calc(env(safe-area-inset-top) + 48px); right: max(8px, env(safe-area-inset-right)); width: min(300px, calc(100vw - 16px)); max-height: min(70dvh, 620px); }
   .utility-menu-panel > .walksToggle { height: 44px; min-height: 44px; margin: 0; }
+  .locationDiagnosticsCard { padding: 16px; }
   .brand small { display: none; }
   .brandTitle { min-width: 0; gap: 5px; }
   .brandTitle strong { font-size: 15px; white-space: nowrap; }

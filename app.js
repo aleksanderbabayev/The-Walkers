@@ -2,7 +2,7 @@
   "use strict";
   const DB_NAME = "the-walkers", DB_VERSION = 2;
   const AUTOSAVE_MS = 5000;
-  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl, MapFollow = window.WalkMapFollow, Expedition = window.WalkExpedition, ExpeditionLine = window.WalkExpeditionLine, ExpeditionMarkers = window.WalkExpeditionMarkers, WALK_COLORS = window.WalkColors;
+  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl, MapFollow = window.WalkMapFollow, Expedition = window.WalkExpedition, ExpeditionLine = window.WalkExpeditionLine, ExpeditionMarkers = window.WalkExpeditionMarkers, WALK_COLORS = window.WalkColors, UtilityMenu = window.WalkUtilityMenu;
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   const expeditionCompassState = Expedition.createCompassState(Tracking.distanceMeters);
@@ -45,7 +45,6 @@
   ["gesturestart", "gesturechange", "gestureend"].forEach((eventName) => {
     document.addEventListener(eventName, (event) => event.preventDefault(), { passive: false });
   });
-  $("musicToggle").addEventListener("click", () => { musicControl.toggle(); });
   const isMobileViewport = () => window.matchMedia("(max-width: 760px)").matches;
   const syncMobileViewportHeight = () => {
     if (!isMobileViewport()) {
@@ -67,10 +66,9 @@
     $("walksDrawer").setAttribute("aria-hidden", String(isMobileViewport() && !drawerOpen));
     $("walksBackdrop").hidden = !drawerOpen;
     if (drawerOpen) $("walksClose").focus();
-    else if (returnFocus) $("walksToggle").focus();
+    else if (returnFocus) $("utilityMenu").querySelector("summary").focus();
   };
   setWalksDrawerOpen(false);
-  $("walksToggle").addEventListener("click", () => setWalksDrawerOpen(!document.body.classList.contains("walks-open")));
   $("walksClose").addEventListener("click", () => setWalksDrawerOpen(false, true));
   $("walksBackdrop").addEventListener("click", () => setWalksDrawerOpen(false, true));
   document.addEventListener("keydown", (event) => {
@@ -663,13 +661,26 @@
     fields: $("locationDiagnosticsFields"), status: $("locationDiagnosticsStatus"), fallback: $("locationDiagnosticsFallback")
   });
   const renderLocationDiagnostics = () => diagnosticsUi.render();
+  const locationDiagnosticsView = $("locationDiagnosticsView");
+  const closeLocationDiagnostics = () => { if (locationDiagnosticsView.open) locationDiagnosticsView.close(); };
+  const openLocationDiagnostics = () => {
+    renderLocationDiagnostics();
+    if (!locationDiagnosticsView.open) locationDiagnosticsView.showModal();
+  };
+  $("locationDiagnosticsClose").addEventListener("click", closeLocationDiagnostics);
+  UtilityMenu.bind({
+    menu: $("utilityMenu"), dialog: locationDiagnosticsView,
+    onOpen: () => { if (document.body.classList.contains("walks-open")) setWalksDrawerOpen(false); },
+    onAction: (action) => {
+      if (action === "music") return musicControl.toggle();
+      if (action === "history") setWalksDrawerOpen(!document.body.classList.contains("walks-open"));
+      if (action === "diagnostics") openLocationDiagnostics();
+    }
+  });
   const noteLocationRequest = (result) => {
     lastLocationRequest = { result, checkedAt: Date.now() };
-    if ($("locationDiagnostics").open) renderLocationDiagnostics();
+    if (locationDiagnosticsView.open) renderLocationDiagnostics();
   };
-  $("locationDiagnostics").addEventListener("toggle", () => {
-    if ($("locationDiagnostics").open) renderLocationDiagnostics();
-  });
   $("copyLocationDiagnostics").addEventListener("click", () => diagnosticsUi.copy());
   const cancelPendingLocationRequest = () => {
     locationRequestToken += 1;
@@ -837,7 +848,7 @@
   const handleLocationResume = () => {
     if (document.visibilityState === "hidden") return;
     if (locationPermissionStatus) locationPermissionState = locationPermissionStatus.state;
-    if ($("locationDiagnostics").open) renderLocationDiagnostics();
+    if (locationDiagnosticsView.open) renderLocationDiagnostics();
     if (locationPermissionState === "denied" && !locationPermissionDenied) {
       showLocationState({ error: { code: 1 } });
     }
@@ -863,7 +874,7 @@
       locationPermissionMonitored = true;
       const updatePermission = () => {
         locationPermissionState = permission.state;
-        if ($("locationDiagnostics").open) renderLocationDiagnostics();
+        if (locationDiagnosticsView.open) renderLocationDiagnostics();
         const wasAllowed = musicControl.isLocationAllowed();
         musicControl.setLocationAllowed(permission.state === "granted");
         if (permission.state === "denied") {
@@ -883,7 +894,7 @@
       updatePermission();
     } catch {
       locationPermissionState = "unknown";
-      if ($("locationDiagnostics").open) renderLocationDiagnostics();
+      if (locationDiagnosticsView.open) renderLocationDiagnostics();
     }
   };
   monitorLocationPermission();

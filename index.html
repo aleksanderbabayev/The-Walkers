@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.2.27">
+  <meta name="app-version" content="0.2.28">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=0.2.27">
+  <link rel="stylesheet" href="styles.css?v=0.2.28">
   <link rel="stylesheet" href="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.css">
 </head>
 <body>
@@ -24,20 +24,23 @@
       <details id="utilityMenu" class="utility-menu">
         <summary aria-label="Дополнительное меню" title="Дополнительное меню">•••</summary>
         <div class="utility-menu-panel">
-          <button id="musicToggle" class="icon soundToggle" type="button" aria-label="Выключить фоновую музыку" aria-pressed="true" title="Выключить фоновую музыку">🔊 <span>Музыка</span></button>
-          <button id="walksToggle" class="walksToggle" type="button" aria-expanded="false" aria-controls="walksDrawer"><span>Мои прогулки</span><span id="walkCountToggle" class="walkCount">0</span></button>
+          <button id="musicToggle" class="icon soundToggle" type="button" data-menu-action="music" aria-label="Выключить фоновую музыку" aria-pressed="true" title="Выключить фоновую музыку">🔊 <span>Музыка</span></button>
+          <button id="walksToggle" class="walksToggle" type="button" data-menu-action="history" aria-expanded="false" aria-controls="walksDrawer"><span>Мои прогулки</span><span id="walkCountToggle" class="walkCount">0</span></button>
           <button id="copyActiveDiagnostics" class="diagnosticsCopy" type="button" hidden>Копировать диагностику прогулки</button>
-          <details id="locationDiagnostics" class="location-diagnostics">
-            <summary>Диагностика геолокации</summary>
-            <dl id="locationDiagnosticsFields"></dl>
-            <button id="copyLocationDiagnostics" type="button">Копировать диагностику</button>
-            <p id="locationDiagnosticsStatus" role="status" aria-live="polite"></p>
-            <textarea id="locationDiagnosticsFallback" rows="7" readonly hidden aria-label="JSON диагностики геолокации для ручного копирования"></textarea>
-          </details>
+          <button id="openLocationDiagnostics" type="button" data-menu-action="diagnostics">Диагностика геолокации</button>
         </div>
       </details>
     </div>
   </header>
+  <dialog id="locationDiagnosticsView" class="location-diagnostics-view" aria-labelledby="locationDiagnosticsTitle">
+    <section class="locationDiagnosticsCard">
+      <div class="locationDiagnosticsHead"><h2 id="locationDiagnosticsTitle">Диагностика геолокации</h2><button id="locationDiagnosticsClose" type="button" aria-label="Закрыть диагностику геолокации" autofocus>×</button></div>
+      <dl id="locationDiagnosticsFields"></dl>
+      <button id="copyLocationDiagnostics" type="button">Копировать диагностику</button>
+      <p id="locationDiagnosticsStatus" role="status" aria-live="polite"></p>
+      <textarea id="locationDiagnosticsFallback" rows="7" readonly hidden aria-label="JSON диагностики геолокации для ручного копирования"></textarea>
+    </section>
+  </dialog>
   <audio id="backgroundMusic" src="assets/audio/chest_of_adventure.mp3" preload="none" loop aria-hidden="true"></audio>
   <main>
     <div class="mapFrame">
@@ -153,6 +156,6 @@
   </div>
   <footer>Карта © OpenStreetMap · Маршруты хранятся на этом устройстве</footer>
   <script src="location-diagnostics.js?v=0.1.72"></script>
-  <script src="location-bootstrap.js?v=0.2.27"></script>
+  <script src="location-bootstrap.js?v=0.2.28"></script>
 </body>
 </html>
