@@ -281,7 +281,6 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
 .utility-menu-panel > .location-diagnostics summary { min-height: 44px; padding: 0 10px; border: 1px solid #d8dfd5; border-radius: 12px; background: #f7f9f5; }
 .utility-menu-panel > .location-diagnostics[open] summary { border-radius: 12px 12px 0 0; }
 .utility-menu-panel > .location-diagnostics #copyLocationDiagnostics { min-height: 44px; }
-.utility-menu-panel > .appVersion { width: fit-content; padding: 5px 9px; font-size: 12px; }
 .mapLocate {
   position: absolute;
   z-index: 1000;
@@ -370,7 +369,10 @@ button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
   .utility-menu > summary { width: 44px; height: 44px; }
   .utility-menu-panel { position: fixed; top: calc(env(safe-area-inset-top) + 48px); right: max(8px, env(safe-area-inset-right)); width: min(300px, calc(100vw - 16px)); max-height: min(70dvh, 620px); }
   .utility-menu-panel > .walksToggle { height: 44px; min-height: 44px; margin: 0; }
-  .brand small, .brandTitle { display: none; }
+  .brand small { display: none; }
+  .brandTitle { min-width: 0; gap: 5px; }
+  .brandTitle strong { font-size: 15px; white-space: nowrap; }
+  .brand .appVersion { padding: 2px 5px; font-size: 9px; }
   main {
     position: relative;
     width: 100%;

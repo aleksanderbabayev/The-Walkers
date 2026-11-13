@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.2.26">
+  <meta name="app-version" content="0.2.27">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=0.2.26">
+  <link rel="stylesheet" href="styles.css?v=0.2.27">
   <link rel="stylesheet" href="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.css">
 </head>
 <body>
@@ -19,12 +19,11 @@
     </section>
   </main>
   <header>
-    <div class="brand"><span class="mark" aria-hidden="true">↗</span><strong>The Walkers</strong></div>
+    <div class="brand"><span class="mark" aria-hidden="true">↗</span><div class="brandTitle"><strong>The Walkers</strong><span class="appVersion" id="appVersion"></span></div></div>
     <div class="headerActions">
       <details id="utilityMenu" class="utility-menu">
         <summary aria-label="Дополнительное меню" title="Дополнительное меню">•••</summary>
         <div class="utility-menu-panel">
-          <span class="appVersion" id="appVersion"></span>
           <button id="musicToggle" class="icon soundToggle" type="button" aria-label="Выключить фоновую музыку" aria-pressed="true" title="Выключить фоновую музыку">🔊 <span>Музыка</span></button>
           <button id="walksToggle" class="walksToggle" type="button" aria-expanded="false" aria-controls="walksDrawer"><span>Мои прогулки</span><span id="walkCountToggle" class="walkCount">0</span></button>
           <button id="copyActiveDiagnostics" class="diagnosticsCopy" type="button" hidden>Копировать диагностику прогулки</button>
@@ -154,6 +153,6 @@
   </div>
   <footer>Карта © OpenStreetMap · Маршруты хранятся на этом устройстве</footer>
   <script src="location-diagnostics.js?v=0.1.72"></script>
-  <script src="location-bootstrap.js?v=0.2.26"></script>
+  <script src="location-bootstrap.js?v=0.2.27"></script>
 </body>
 </html>

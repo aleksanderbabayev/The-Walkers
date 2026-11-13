@@ -114,6 +114,10 @@ test("mobile primary actions are actually visible over a full-height map at requ
     await cdp.send("Runtime.enable");
     await cdp.send("Network.enable");
     await cdp.send("Network.setBlockedURLs", { urls: ["https://*"] });
+    await cdp.send("Emulation.setUserAgentOverride", {
+      userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36",
+      platform: "Linux armv8l"
+    });
     const loadComplete = cdp.once("Page.loadEventFired");
     await cdp.send("Page.navigate", { url: `http://127.0.0.1:${localPort}/index.html` });
     await loadComplete;
@@ -128,6 +132,13 @@ test("mobile primary actions are actually visible over a full-height map at requ
       if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || "Browser evaluation failed");
       return result.result.value;
     };
+    const appSource = fs.readFileSync(path.join(projectRoot, "app.js"), "utf8");
+    const htmlSource = fs.readFileSync(path.join(projectRoot, "index.html"), "utf8");
+    assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.27">/);
+    assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
+    assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
+    await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
     await evaluate(fs.readFileSync(path.join(projectRoot, "map-follow.js"), "utf8"));
     await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
     await evaluate(`(() => {
@@ -254,10 +265,21 @@ test("mobile primary actions are actually visible over a full-height map at requ
             const zIndex = getComputedStyle(element).zIndex;
             return zIndex === "auto" ? 0 : Number(zIndex);
           };
-          return { mapHeight: map.height, viewportHeight: innerHeight, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height, left: mapLocate.left, right: mapLocate.right }, zoomButtons, compass: { top: compassRect.top, bottom: compassRect.bottom, left: compassRect.left, right: compassRect.right }, panel: { top: panel.top, bottom: panel.bottom, left: panel.left, right: panel.right }, startup: { hidden: startupScreen.hidden, top: startupRect.top, left: startupRect.left, right: startupRect.right, bottom: startupRect.bottom, background: getComputedStyle(startupScreen).backgroundColor, stackingLevel: getStackingLevel(startupScreen), mapStackingLevel: getStackingLevel(mapElement), probeIsBlocked: Boolean(mapProbe && startupScreen.contains(mapProbe)), probeReachesMap: Boolean(mapProbe && mapElement.contains(mapProbe)), underlyingProbeReachesMap: Boolean(underlyingProbe && mapElement.contains(underlyingProbe)) } };
+          const brand = document.querySelector(".brand").getBoundingClientRect();
+          const brandTitle = document.querySelector(".brandTitle").getBoundingClientRect();
+          const headerActions = document.querySelector(".headerActions").getBoundingClientRect();
+          const version = document.getElementById("appVersion");
+          const versionRect = version.getBoundingClientRect();
+          return { mapHeight: map.height, viewportHeight: innerHeight, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, header: { brand: { left: brand.left, right: brand.right }, title: { left: brandTitle.left, right: brandTitle.right }, actions: { left: headerActions.left, right: headerActions.right }, version: { text: version.textContent, label: version.getAttribute("aria-label"), left: versionRect.left, right: versionRect.right, width: versionRect.width, height: versionRect.height, visible: getComputedStyle(version).display !== "none" && getComputedStyle(version).visibility !== "hidden" }, menuVersionCount: document.querySelectorAll(".utility-menu-panel .appVersion").length }, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height, left: mapLocate.left, right: mapLocate.right }, zoomButtons, compass: { top: compassRect.top, bottom: compassRect.bottom, left: compassRect.left, right: compassRect.right }, panel: { top: panel.top, bottom: panel.bottom, left: panel.left, right: panel.right }, startup: { hidden: startupScreen.hidden, top: startupRect.top, left: startupRect.left, right: startupRect.right, bottom: startupRect.bottom, background: getComputedStyle(startupScreen).backgroundColor, stackingLevel: getStackingLevel(startupScreen), mapStackingLevel: getStackingLevel(mapElement), probeIsBlocked: Boolean(mapProbe && startupScreen.contains(mapProbe)), probeReachesMap: Boolean(mapProbe && mapElement.contains(mapProbe)), underlyingProbeReachesMap: Boolean(underlyingProbe && mapElement.contains(underlyingProbe)) } };
         })()`);
         assert.ok(Math.abs(result.mapHeight - baselineMapHeight) < 1, `${width}x${height} ${scenario.name}: controls changed map height`);
         assert.ok(result.scrollHeight <= result.viewportHeight + 1, `${width}x${height} ${scenario.name}: page gained vertical scroll`);
+        assert.equal(result.header.version.text, `v${htmlSource.match(/name="app-version" content="([^"]+)"/)[1]}`, `${width}x${height}: header version comes from app-version meta`);
+        assert.equal(result.header.version.visible, true, `${width}x${height}: version remains visible`);
+        assert.equal(result.header.menuVersionCount, 0, `${width}x${height}: menu has no duplicate version`);
+        assert.ok(result.header.version.width > 0 && result.header.version.height > 0, `${width}x${height}: version has a visible box`);
+        assert.ok(result.header.brand.right < result.header.actions.left, `${width}x${height}: brand and menu do not overlap`);
+        assert.ok(result.header.version.left >= result.header.title.left && result.header.version.right <= result.header.title.right, `${width}x${height}: version stays inside the brand title`);
         if (scenario.state.startup) {
           assert.equal(result.startup.hidden, false, `${width}x${height} ${scenario.name}: startup gate is open`);
           assert.ok(result.startup.top <= 0 && result.startup.left <= 0 && result.startup.right >= width && result.startup.bottom >= height, `${width}x${height} ${scenario.name}: GPS gate covers the full screen`);
@@ -295,7 +317,6 @@ test("mobile primary actions are actually visible over a full-height map at requ
           assert.ok(button.top >= button.hostTop - 1 && button.bottom <= button.hostBottom + 1, `${width}x${height} ${scenario.name}: #${button.id} is clipped by its action container`);
         }
       }
-      const appSource = fs.readFileSync(path.join(projectRoot, "app.js"), "utf8");
       const fallbackStart = appSource.indexOf("const showDiagnosticsFallback = ") + "const showDiagnosticsFallback = ".length;
       const fallbackEnd = appSource.indexOf("\n  const copyDiagnosticReport", fallbackStart);
       const fallbackFactory = appSource.slice(fallbackStart, fallbackEnd).trim().replace(/;$/, "");

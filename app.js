@@ -7,7 +7,8 @@
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   const expeditionCompassState = Expedition.createCompassState(Tracking.distanceMeters);
   let displayedCompassRotation = null;
-  $("appVersion").textContent = `Версия ${appVersion}`;
+  $("appVersion").textContent = `v${appVersion}`;
+  $("appVersion").setAttribute("aria-label", `Версия ${appVersion}`);
   const MUSIC_PREFERENCE_KEY = "the-walkers-music-muted";
   const backgroundMusic = $("backgroundMusic");
   let musicMuted = false;
