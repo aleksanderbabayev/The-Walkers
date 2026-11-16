@@ -26,7 +26,8 @@
           dashArray: "8 10",
           lineCap: "round",
           interactive: false,
-          bubblingMouseEvents: false
+          bubblingMouseEvents: false,
+          pane: "routePane"
         });
       }
       line.setLatLngs([[point.lat, point.lng], [target.lat, target.lng]]);

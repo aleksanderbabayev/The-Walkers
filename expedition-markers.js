@@ -32,7 +32,7 @@
         weight: MARKER_STROKE_WIDTH,
         fillColor,
         fillOpacity,
-        pane: "markerPane",
+        pane: "gameMarkerPane",
         interactive: false,
         bubblingMouseEvents: false
       }

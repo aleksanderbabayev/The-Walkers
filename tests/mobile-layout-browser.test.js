@@ -136,10 +136,11 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const appSource = fs.readFileSync(path.join(projectRoot, "app.js"), "utf8");
     const htmlSource = fs.readFileSync(path.join(projectRoot, "index.html"), "utf8");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.32">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.33">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
+    await evaluate(fs.readFileSync(path.join(projectRoot, "map-layer-panes.js"), "utf8"));
     await evaluate(fs.readFileSync(path.join(projectRoot, "map-follow.js"), "utf8"));
     await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
     await evaluate(`(() => {
@@ -234,6 +235,60 @@ test("mobile primary actions are actually visible over a full-height map at requ
       assert.equal(initial.height, height, `viewport height ${height}`);
       assert.ok(initial.mapHeight > 0, `${width}x${height}: map has a visible box`);
       assert.ok(Math.abs(initial.mapHeight - initial.tileMapHeight) < 1, `${width}x${height}: map tiles fill the full map container`);
+      const layerStack = await evaluate(`(() => {
+        const mapElement = document.getElementById("map");
+        const mapRect = mapElement.getBoundingClientRect();
+        const startup = document.getElementById("locationStartupScreen");
+        const startupWasHidden = startup.hidden;
+        startup.hidden = true;
+        const panes = window.WalkMapLayerPanes.createMapPanes({
+          createPane(name) {
+            const pane = document.createElement("div");
+            pane.dataset.testPane = name;
+            Object.assign(pane.style, { position: "absolute", inset: "0", pointerEvents: "none" });
+            mapElement.append(pane);
+            return pane;
+          }
+        });
+        const x = mapRect.left + 60, y = mapRect.top + 70;
+        const markers = [
+          [panes.territory, "territory", 70, 70, "#2f874d"],
+          [panes.route, "route", 70, 5, "#e78248"],
+          [panes.gameOverlay, "checkpoint", 64, 64, "#2877df33"],
+          [panes.gameMarker, "game-marker", 24, 24, "#f0d23c"],
+          [panes.accuracy, "accuracy", 56, 56, "#2877df22"],
+          [panes.currentLocation, "current-location", 18, 18, "#2877df"]
+        ];
+        const elements = [];
+        for (const [paneName, kind, width, height, color] of markers) {
+          const pane = mapElement.querySelector('[data-test-pane="' + paneName + '"]');
+          const element = document.createElement("div");
+          element.dataset.layerKind = kind;
+          Object.assign(element.style, {
+            position: "absolute", left: (x - mapRect.left - width / 2) + "px", top: (y - mapRect.top - height / 2) + "px",
+            width: width + "px", height: height + "px", boxSizing: "border-box", borderRadius: "50%",
+            background: color, border: kind === "current-location" ? "3px solid white" : "1px solid #172019", pointerEvents: "auto"
+          });
+          pane.append(element); elements.push(element);
+        }
+        const mapHit = document.elementFromPoint(x, y)?.dataset.layerKind;
+        const header = document.querySelector("header"), headerRect = header.getBoundingClientRect();
+        const headerHit = document.elementFromPoint(headerRect.left + headerRect.width / 2, headerRect.top + headerRect.height / 2);
+        const panel = document.querySelector(".panel"), panelRect = panel.getBoundingClientRect();
+        const panelHit = document.elementFromPoint(panelRect.left + panelRect.width / 2, panelRect.top + Math.min(20, panelRect.height / 2));
+        document.body.classList.add("walks-open");
+        const drawer = document.getElementById("walksDrawer"), drawerRect = drawer.getBoundingClientRect();
+        const drawerHit = document.elementFromPoint(drawerRect.left + drawerRect.width / 2, drawerRect.top + Math.min(70, drawerRect.height / 2));
+        const drawerOwnsHit = drawer === drawerHit || drawer.contains(drawerHit);
+        document.body.classList.remove("walks-open");
+        elements.forEach((element) => element.closest("[data-test-pane]").remove());
+        startup.hidden = startupWasHidden;
+        return { mapHit, headerOwnsHit: header === headerHit || header.contains(headerHit), panelOwnsHit: panel === panelHit || panel.contains(panelHit), drawerOwnsHit };
+      })()`);
+      assert.equal(layerStack.mapHit, "current-location", `${width}x${height}: current GPS dot wins hit-testing over territory, route, checkpoint, game marker and accuracy circle`);
+      assert.equal(layerStack.headerOwnsHit, true, `${width}x${height}: GPS map pane cannot cover the header`);
+      assert.equal(layerStack.panelOwnsHit, true, `${width}x${height}: GPS map pane cannot cover the action panel`);
+      assert.equal(layerStack.drawerOwnsHit, true, `${width}x${height}: GPS map pane stays below the open history drawer`);
       const baselineMapHeight = initial.mapHeight;
       for (const scenario of scenarios) {
         await evaluate(stateScript(scenario.state));

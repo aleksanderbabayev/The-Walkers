@@ -2,7 +2,7 @@
   "use strict";
   const DB_NAME = "the-walkers", DB_VERSION = 2;
   const AUTOSAVE_MS = 5000;
-  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl, MapFollow = window.WalkMapFollow, Expedition = window.WalkExpedition, ExpeditionLine = window.WalkExpeditionLine, ExpeditionMarkers = window.WalkExpeditionMarkers, WALK_COLORS = window.WalkColors, UtilityMenu = window.WalkUtilityMenu;
+  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl, MapFollow = window.WalkMapFollow, Expedition = window.WalkExpedition, ExpeditionLine = window.WalkExpeditionLine, ExpeditionMarkers = window.WalkExpeditionMarkers, MapLayerPanes = window.WalkMapLayerPanes, WALK_COLORS = window.WalkColors, UtilityMenu = window.WalkUtilityMenu;
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   const expeditionCompassState = Expedition.createCompassState(Tracking.distanceMeters);
@@ -96,6 +96,7 @@
     rotateControl: { position: "topright", behavior: "reset", closeOnZeroBearing: false },
     preventPageGestures: true
   }).setView([0, 0], 2);
+  const mapPanes = MapLayerPanes.createMapPanes(map);
   let mapInitialPositionSet = false, mapViewInteracted = false;
   map.on("dragstart zoomstart click", () => { mapViewInteracted = true; });
   const compassButton = map.getContainer().querySelector(".leaflet-control-rotate a");
@@ -169,7 +170,7 @@
   const updateLocationMarker = (point) => {
     const latlng = [point.lat, point.lng];
     if (currentLocationMarker) currentLocationMarker.setLatLng(latlng);
-    else currentLocationMarker = L.circleMarker(latlng, { radius: 8, color: "#fff", weight: 3, fillColor: WALK_COLORS.currentLocation, fillOpacity: 1 }).addTo(map);
+    else currentLocationMarker = L.circleMarker(latlng, { radius: 8, color: "#fff", weight: 3, fillColor: WALK_COLORS.currentLocation, fillOpacity: 1, pane: mapPanes.currentLocation }).addTo(map);
   };
   const clearLocationMarker = () => {
     if (currentLocationMarker) map.removeLayer(currentLocationMarker);
@@ -182,7 +183,8 @@
     const latlng = [point.lat, point.lng];
     if (accuracyCircle) accuracyCircle.setLatLng(latlng).setRadius(point.accuracy);
     else accuracyCircle = L.circle(latlng, {
-      radius: point.accuracy, color: WALK_COLORS.currentLocation, weight: 1, fillColor: WALK_COLORS.currentLocation, fillOpacity: 0.14, interactive: false
+      radius: point.accuracy, color: WALK_COLORS.currentLocation, weight: 1, fillColor: WALK_COLORS.currentLocation, fillOpacity: 0.14, interactive: false,
+      pane: mapPanes.accuracy
     }).addTo(map);
     const stable = startupGpsStabilizer.add({ timestamp: point.timestamp, coords: { latitude: point.lat, longitude: point.lng, accuracy: point.accuracy } }, Date.now()).stable;
     if (stable) {
@@ -194,9 +196,8 @@
   const updateAccuracyDisplay = (point) => {
     const latlng = [point.lat, point.lng];
     if (currentLocationMarker) currentLocationMarker.setLatLng(latlng);
-    else currentLocationMarker = L.circleMarker(latlng, { radius: 8, color: "#fff", weight: 3, fillColor: WALK_COLORS.currentLocation, fillOpacity: 1 }).addTo(map);
+    else currentLocationMarker = L.circleMarker(latlng, { radius: 8, color: "#fff", weight: 3, fillColor: WALK_COLORS.currentLocation, fillOpacity: 1, pane: mapPanes.currentLocation }).addTo(map);
     updateAccuracyCircle(point);
-    currentLocationMarker.bringToFront();
   };
   const completeLocationStartup = (point) => {
     if (startupPositionReady) return;
@@ -233,11 +234,11 @@
     else routeRecoveryRadius = L.circle(latlng, {
       radius: Tracking.ROUTE_RECOVERY_RADIUS_METERS,
       color: "#1b64c8", weight: 2, opacity: 0.95,
-      fillColor: "#2877df", fillOpacity: 0.17, interactive: false
+      fillColor: "#2877df", fillOpacity: 0.17, interactive: false, pane: mapPanes.gameOverlay
     }).addTo(map);
     if (routeRecoveryMarker) routeRecoveryMarker.setLatLng(latlng);
     else routeRecoveryMarker = L.circleMarker(latlng, {
-      radius: 10, color: "#fff", weight: 3, fillColor: "#1769d2", fillOpacity: 1,
+      radius: 10, color: "#fff", weight: 3, fillColor: "#1769d2", fillOpacity: 1, pane: mapPanes.gameMarker,
       title: "Точка восстановления маршрута", interactive: false
     }).addTo(map);
   };
@@ -255,7 +256,8 @@
       opacity: 0.85,
       fillColor: "#59a978",
       fillOpacity: 0.14,
-      interactive: false
+      interactive: false,
+      pane: mapPanes.gameOverlay
     }).addTo(map);
   };
   const updateRouteStartMarker = (point) => {
@@ -267,7 +269,7 @@
       html: '<span class="route-start-content"><svg viewBox="0 0 24 32" aria-hidden="true"><path d="M5 29V3"/><path d="M6 4h16v12H6z" class="route-start-cloth"/><path d="M6 4h5v4H6zM16 4h6v4h-6zM11 8h5v4h-5zM6 12h5v4H6zM16 12h6v4h-6z" class="route-start-checks"/></svg><span>Старт</span></span>'
     });
     if (routeStartMarker) routeStartMarker.setLatLng([point.lat, point.lng]).setIcon(icon);
-    else routeStartMarker = L.marker([point.lat, point.lng], { icon, title: "Старт маршрута", keyboard: false, interactive: false, zIndexOffset: 1200 }).addTo(map);
+    else routeStartMarker = L.marker([point.lat, point.lng], { icon, title: "Старт маршрута", keyboard: false, interactive: false, zIndexOffset: 1200, pane: mapPanes.gameMarker }).addTo(map);
   };
   const updateExpeditionStartMarker = (point) => expeditionMarkers.updateStart(point);
   const clearExpeditionStartMarker = () => expeditionMarkers.clearStart();
@@ -1052,7 +1054,7 @@
     currentLines.forEach((line) => map.removeLayer(line));
     currentLines = Tracking.splitSegments(points).filter((segment) => segment.length > 1).map((segment) => {
       const color = ExpeditionMarkers.getActiveRouteColor(activeMode);
-      return L.polyline(segment.map((point) => [point.lat, point.lng]), { color, weight: 4 }).addTo(map);
+      return L.polyline(segment.map((point) => [point.lat, point.lng]), { color, weight: 4, pane: mapPanes.route }).addTo(map);
     });
   };
   const redrawSaved = async ({ focusWalkId = null } = {}) => {
@@ -1081,13 +1083,13 @@
       const displayWalk = (expedition && retreated) || Tracking.shouldDisplayWalkOnMap(walk);
       const historyRouteStyle = ExpeditionMarkers.getHistoryRouteStyle(walk);
       const layers = !displayWalk ? [] : walk.closed && !expedition
-        ? [L.polygon((walk.points || []).map((point) => [point.lat, point.lng]), { color: WALK_COLORS.capturedTerritoryOutline, weight: 3, fillColor: WALK_COLORS.capturedTerritoryFill, fillOpacity: 0.35 })]
+        ? [L.polygon((walk.points || []).map((point) => [point.lat, point.lng]), { color: WALK_COLORS.capturedTerritoryOutline, weight: 3, fillColor: WALK_COLORS.capturedTerritoryFill, fillOpacity: 0.35, pane: mapPanes.territory })]
         : segments.filter((segment) => segment.length > 1).flatMap((segment) => {
           const coordinates = segment.map((point) => [point.lat, point.lng]);
           const routeLayers = historyRouteStyle.outlineColor
-            ? [L.polyline(coordinates, { color: historyRouteStyle.outlineColor, weight: historyRouteStyle.outlineWeight })]
+            ? [L.polyline(coordinates, { color: historyRouteStyle.outlineColor, weight: historyRouteStyle.outlineWeight, pane: mapPanes.route })]
             : [];
-          routeLayers.push(L.polyline(coordinates, { color: historyRouteStyle.color, weight: historyRouteStyle.weight }));
+          routeLayers.push(L.polyline(coordinates, { color: historyRouteStyle.color, weight: historyRouteStyle.weight, pane: mapPanes.route }));
           return routeLayers;
         });
       if (displayWalk && expedition) layers.push(...expeditionMarkers.createHistoryMarkers(walk));

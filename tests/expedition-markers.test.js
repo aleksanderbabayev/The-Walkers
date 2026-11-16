@@ -38,7 +38,7 @@ test("current expedition target is yellow, centered on its coordinates, and reus
   assert.equal(marker.options.fillColor, Colors.expeditionGoal);
   assert.equal(marker.options.weight, 1);
   assert.equal(marker.options.color, "#fff");
-  assert.equal(marker.options.pane, "markerPane");
+  assert.equal(marker.options.pane, "gameMarkerPane");
   assert.equal(marker.options.interactive, false);
   markers.updateTarget({ lat: 48.16, lng: 17.12 });
   assert.equal(created.length, 1);
@@ -57,7 +57,7 @@ test("current start marker appears only after a valid point and reuses its layer
   assert.equal(2 * marker.options.radius + marker.options.weight, 8);
   assert.equal(marker.options.fillColor, Colors.startMarker);
   assert.equal(marker.options.weight, 1);
-  assert.equal(marker.options.pane, "markerPane");
+  assert.equal(marker.options.pane, "gameMarkerPane");
   markers.updateStart({ lat: 48.141, lng: 17.101 });
   assert.equal(created.length, 1);
   assert.equal(layers.size, 1);
@@ -125,10 +125,10 @@ test("app draws expedition start only from accepted route data and restores save
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
   const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
   const bootstrap = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
-  assert.match(html, /name="app-version" content="0\.2\.32"/);
+  assert.match(html, /name="app-version" content="0\.2\.33"/);
   assert.ok(bootstrap.includes('"walk-colors.js?v=0.2.25"'));
   assert.ok(bootstrap.includes('"expedition-markers.js?v=0.2.7"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.32"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.33"'));
   assert.ok(app.includes("if (activeMode === \"expedition\") updateExpeditionStartMarker(recordedStartPoint)"));
   assert.ok(app.includes("if (activeMode === \"expedition\") updateExpeditionStartMarker(restoredValidatedPoints[0])"));
   assert.ok(app.includes("if (activeMode === \"expedition\" && points[0]) updateExpeditionStartMarker(points[0])"));

@@ -16,6 +16,7 @@ test("startup screen covers the map until the first fresh usable GPS coordinate"
   assert.match(html, /Определяем местоположение/);
   assert.match(html, /<section class="location-access-card">[\s\S]*?id="locationStartupRetry"/);
   assert.match(app, /const completeLocationStartup = \(point\) => \{[\s\S]*?map\.setView\(\[point\.lat, point\.lng\], 15\);[\s\S]*?locationStartupScreen"\)\.hidden = true/);
+  assert.match(app, /MapLayerPanes\.createMapPanes\(map\)/);
   assert.match(app, /const onLocationError = \(error\) => \{[\s\S]*?showLocationStartupError/);
   assert.match(css, /\.location-access-screen \{ position: fixed; z-index: 5000/);
   const mobileStyles = css.slice(css.lastIndexOf("@media (max-width: 760px)"));
@@ -42,6 +43,9 @@ test("GPS display uses one reusable Leaflet accuracy circle with radius in meter
   assert.match(app, /accuracyCircle\.setLatLng\(latlng\)\.setRadius\(point\.accuracy\)/);
   assert.match(app, /interactive: false/);
   assert.match(app, /const displayResult = Tracking\.evaluateDisplayPosition\(position, processedAt\)/);
+  assert.match(app, /pane: mapPanes\.currentLocation/);
+  assert.match(app, /pane: mapPanes\.accuracy/);
+  assert.doesNotMatch(app, /currentLocationMarker\.bringToFront\(\)/);
   assert.match(app, /if \(Tracking\.shouldUpdateGpsMarker\("preliminary", recordingActive\)\) updateAccuracyDisplay\(displayResult\.point\);\s*else updateAccuracyCircle\(displayResult\.point\)/);
 });
 
@@ -102,7 +106,8 @@ test("mobile controls overlay the full-height map and live in compact action and
   for (const id of ["musicToggle", "walksToggle", "openLocationDiagnostics", "copyActiveDiagnostics"]) {
     assert.match(utilityMenu, new RegExp(`id="${id}"`));
   }
-  assert.match(bootstrap, /"utility-menu\.js\?v=0\.1\.0",[\s\S]*?"app\.js\?v=0\.2\.32"/);
+  assert.match(bootstrap, /"utility-menu\.js\?v=0\.1\.0",[\s\S]*?"app\.js\?v=0\.2\.33"/);
+  assert.match(bootstrap, /"map-layer-panes\.js\?v=0\.1\.0",[\s\S]*?"app\.js\?v=0\.2\.33"/);
   assert.match(app, /const appVersion = document\.querySelector\('meta\[name="app-version"\]'\)\.content/);
   assert.match(app, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
   assert.doesNotMatch(css, /@media \(max-width: 760px\) and \(max-height:/);
