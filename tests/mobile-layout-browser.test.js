@@ -135,8 +135,10 @@ test("mobile primary actions are actually visible over a full-height map at requ
     };
     const appSource = fs.readFileSync(path.join(projectRoot, "app.js"), "utf8");
     const htmlSource = fs.readFileSync(path.join(projectRoot, "index.html"), "utf8");
+    const recoveryCheckpointSvg = appSource.match(/const recoveryCheckpointIcon = L\.divIcon\(\{[\s\S]*?html: '(<svg[\s\S]*?<\/svg>)'/)?.[1];
+    assert.ok(recoveryCheckpointSvg, "browser check uses the production recovery checkpoint SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.33">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.34">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -255,7 +257,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
           [panes.territory, "territory", 70, 70, "#2f874d"],
           [panes.route, "route", 70, 5, "#e78248"],
           [panes.gameOverlay, "checkpoint", 64, 64, "#2877df33"],
-          [panes.gameMarker, "game-marker", 24, 24, "#f0d23c"],
+          [panes.gameMarker, "game-marker", 32, 32, "transparent"],
           [panes.accuracy, "accuracy", 56, 56, "#2877df22"],
           [panes.currentLocation, "current-location", 18, 18, "#2877df"]
         ];
@@ -264,14 +266,22 @@ test("mobile primary actions are actually visible over a full-height map at requ
           const pane = mapElement.querySelector('[data-test-pane="' + paneName + '"]');
           const element = document.createElement("div");
           element.dataset.layerKind = kind;
+          if (kind === "game-marker") {
+            element.className = "recovery-checkpoint-icon";
+            element.innerHTML = ${JSON.stringify(recoveryCheckpointSvg)};
+          }
           Object.assign(element.style, {
             position: "absolute", left: (x - mapRect.left - width / 2) + "px", top: (y - mapRect.top - height / 2) + "px",
             width: width + "px", height: height + "px", boxSizing: "border-box", borderRadius: "50%",
-            background: color, border: kind === "current-location" ? "3px solid white" : "1px solid #172019", pointerEvents: "auto"
+            background: color, border: kind === "current-location" ? "3px solid white" : kind === "game-marker" ? "0" : "1px solid #172019", pointerEvents: "auto"
           });
           pane.append(element); elements.push(element);
         }
         const mapHit = document.elementFromPoint(x, y)?.dataset.layerKind;
+        const checkpoint = mapElement.querySelector(".recovery-checkpoint-icon");
+        const checkpointRect = checkpoint.getBoundingClientRect();
+        const checkpointCircle = checkpoint.querySelector("circle");
+        const checkpointFlag = checkpoint.querySelector("path");
         const header = document.querySelector("header"), headerRect = header.getBoundingClientRect();
         const headerHit = document.elementFromPoint(headerRect.left + headerRect.width / 2, headerRect.top + headerRect.height / 2);
         const panel = document.querySelector(".panel"), panelRect = panel.getBoundingClientRect();
@@ -283,9 +293,18 @@ test("mobile primary actions are actually visible over a full-height map at requ
         document.body.classList.remove("walks-open");
         elements.forEach((element) => element.closest("[data-test-pane]").remove());
         startup.hidden = startupWasHidden;
-        return { mapHit, headerOwnsHit: header === headerHit || header.contains(headerHit), panelOwnsHit: panel === panelHit || panel.contains(panelHit), drawerOwnsHit };
+        return {
+          mapHit,
+          checkpoint: { width: checkpointRect.width, height: checkpointRect.height, fill: checkpointCircle.getAttribute("fill"), stroke: checkpointCircle.getAttribute("stroke"), hasFlag: Boolean(checkpointFlag) },
+          headerOwnsHit: header === headerHit || header.contains(headerHit), panelOwnsHit: panel === panelHit || panel.contains(panelHit), drawerOwnsHit
+        };
       })()`);
       assert.equal(layerStack.mapHit, "current-location", `${width}x${height}: current GPS dot wins hit-testing over territory, route, checkpoint, game marker and accuracy circle`);
+      assert.equal(layerStack.checkpoint.width, 32, `${width}x${height}: recovery checkpoint uses the intended marker size`);
+      assert.equal(layerStack.checkpoint.height, 32, `${width}x${height}: recovery checkpoint remains circular and centered`);
+      assert.equal(layerStack.checkpoint.fill, "#f7fbff", `${width}x${height}: recovery checkpoint has a light center`);
+      assert.equal(layerStack.checkpoint.stroke, "#1769d2", `${width}x${height}: recovery checkpoint uses a blue outline`);
+      assert.equal(layerStack.checkpoint.hasFlag, true, `${width}x${height}: recovery checkpoint includes its return flag`);
       assert.equal(layerStack.headerOwnsHit, true, `${width}x${height}: GPS map pane cannot cover the header`);
       assert.equal(layerStack.panelOwnsHit, true, `${width}x${height}: GPS map pane cannot cover the action panel`);
       assert.equal(layerStack.drawerOwnsHit, true, `${width}x${height}: GPS map pane stays below the open history drawer`);

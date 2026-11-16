@@ -227,6 +227,11 @@
     routeRecoveryMarker = null;
     routeRecoveryRadius = null;
   };
+  const recoveryCheckpointIcon = L.divIcon({
+    className: "recovery-checkpoint-icon",
+    iconSize: [32, 32], iconAnchor: [16, 16],
+    html: '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="#f7fbff" stroke="#1769d2" stroke-width="3"/><path d="M15.5 22V10" fill="none" stroke="#174d8c" stroke-width="1.8" stroke-linecap="round"/><path d="M16.5 10h7l-2.3 2 2.3 2h-7z" fill="#2877df" stroke="#174d8c" stroke-width=".8" stroke-linejoin="round"/></svg>'
+  });
   const updateRouteRecoveryMarker = (point) => {
     if (!point) { clearRouteRecoveryMarker(); return; }
     const latlng = [point.lat, point.lng];
@@ -237,9 +242,9 @@
       fillColor: "#2877df", fillOpacity: 0.17, interactive: false, pane: mapPanes.gameOverlay
     }).addTo(map);
     if (routeRecoveryMarker) routeRecoveryMarker.setLatLng(latlng);
-    else routeRecoveryMarker = L.circleMarker(latlng, {
-      radius: 10, color: "#fff", weight: 3, fillColor: "#1769d2", fillOpacity: 1, pane: mapPanes.gameMarker,
-      title: "Точка восстановления маршрута", interactive: false
+    else routeRecoveryMarker = L.marker(latlng, {
+      icon: recoveryCheckpointIcon, pane: mapPanes.gameMarker,
+      title: "Точка возврата на маршрут", keyboard: false, interactive: false
     }).addTo(map);
   };
   const updateTerritoryFinishZone = (point) => {
