@@ -1004,12 +1004,15 @@
     if (!active || activeMode !== "expedition" || finishing || expeditionCompletionPending) hideExpeditionCompass();
     const inProgress = active || warmingUp || starting || cancelling;
     document.querySelector(".status").classList.toggle("recording", active);
-    $("statusTitle").textContent = active ? activeMode === "expedition" ? "Идёт экспедиция" : "Идёт захват территории" : warmingUp ? "Стабилизация GPS" : cancelling ? "Отступление" : "Готовы к прогулке?";
+    const statusTitle = active ? activeMode === "expedition" ? "Идёт экспедиция" : "Идёт захват территории" : warmingUp ? "Стабилизация GPS" : cancelling ? "Отступление" : "";
+    $("statusTitle").textContent = statusTitle;
     const manualStartAvailable = warmingUp && warmupStartedAt !== null && Date.now() - warmupStartedAt >= Tracking.GPS_WARMUP_DEFAULTS.manualStartAfterMs;
-    $("statusText").textContent = active ? activeMode === "expedition" && Number.isFinite(expeditionDistanceMeters)
+    const statusText = active ? activeMode === "expedition" && Number.isFinite(expeditionDistanceMeters)
       ? `До цели: ${expeditionDistanceMeters < 1000 ? `${Math.round(expeditionDistanceMeters)} м` : formatKilometers(expeditionDistanceMeters)}` : activeMode === "expedition" ? "Записываем путь к цели" : "Точки сохраняются на устройстве" : warmingUp ? manualStartAvailable
       ? "GPS всё ещё стабилизируется. Можно начать с предупреждением, если доступна надёжная позиция."
-      : "Стабилизация GPS. Подождите перед началом движения…" : cancelling ? "Останавливаем GPS и удаляем черновик…" : 'Нажмите "Начать прогулку", чтобы начать захват территории.';
+      : "Стабилизация GPS. Подождите перед началом движения…" : cancelling ? "Останавливаем GPS и удаляем черновик…" : "";
+    $("statusText").textContent = statusText;
+    $("statusCopy").hidden = !statusTitle && !statusText;
     updateStartAvailability();
     $("start").hidden = inProgress || selectedMode !== "territory";
     $("startExpedition").hidden = inProgress || selectedMode !== "expedition";

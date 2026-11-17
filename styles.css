@@ -84,6 +84,7 @@ main {
   box-shadow: 0 10px 30px #2536240b;
 }
 .status { display: flex; align-items: center; gap: 12px; padding-bottom: 20px; border-bottom: 1px solid #edf0eb; }
+.statusCopy[hidden] { display: none; }
 .status b { font-size: 15px; }
 .status small { font-size: 12px; line-height: 1.4; }
 .status #statusDot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: #aab2a8; }
@@ -423,9 +424,10 @@ button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
   @supports (height: 100dvh) { .panel { max-height: min(52dvh, 360px); } }
   .status { min-width: 0; display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 6px; padding: 0; border: 0; }
   .status #statusDot { width: 8px; height: 8px; }
-  .status > div:not(.stopwatch) { min-width: 0; display: flex; align-items: baseline; gap: 5px; }
-  .status b { min-width: 0; font-size: 12px; white-space: nowrap; }
-  .status small { min-width: 0; margin: 0; overflow: hidden; color: #68756a; font-size: 10px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+  .statusCopy[hidden] { display: none; }
+  .status > .statusCopy:not([hidden]) { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+  .status b { min-width: 0; font-size: 12px; line-height: 1.2; overflow-wrap: anywhere; }
+  .status small { min-width: 0; margin: 0; color: #68756a; font-size: 10px; line-height: 1.2; overflow-wrap: anywhere; }
   .stopwatch { margin-left: 0; display: flex; align-items: center; flex-direction: row; gap: 6px; }
   .stopwatch b { font-size: 11px; }
   .stopwatch small { font-size: 10px; }

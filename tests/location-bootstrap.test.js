@@ -87,7 +87,9 @@ test("mobile controls overlay the full-height map and live in compact action and
   assert.match(mobileLayout, /\.panel \{[\s\S]*?position: absolute;[\s\S]*?max-height: min\(52vh, 360px\)/);
   assert.match(mobileLayout, /env\(safe-area-inset-top\)/);
   assert.match(mobileLayout, /env\(safe-area-inset-bottom\)/);
-  assert.match(mobileLayout, /\.status small \{[\s\S]*?text-overflow: ellipsis/);
+  assert.match(mobileLayout, /\.statusCopy\[hidden\] \{ display: none; \}/);
+  assert.match(mobileLayout, /\.status > \.statusCopy:not\(\[hidden\]\) \{[\s\S]*?flex-direction: column/);
+  assert.match(mobileLayout, /\.status small \{[\s\S]*?overflow-wrap: anywhere/);
   assert.match(mobileLayout, /\.stopwatch \{[\s\S]*?flex-direction: row/);
   assert.match(mobileLayout, /\.mode-selector button, \.expeditionMethods button \{ min-height: 44px/);
   assert.match(mobileLayout, /\.actions button \{[\s\S]*?min-height: 44px/);
@@ -106,8 +108,8 @@ test("mobile controls overlay the full-height map and live in compact action and
   for (const id of ["musicToggle", "walksToggle", "openLocationDiagnostics", "copyActiveDiagnostics"]) {
     assert.match(utilityMenu, new RegExp(`id="${id}"`));
   }
-  assert.match(bootstrap, /"utility-menu\.js\?v=0\.1\.0",[\s\S]*?"app\.js\?v=0\.2\.34"/);
-  assert.match(bootstrap, /"map-layer-panes\.js\?v=0\.1\.0",[\s\S]*?"app\.js\?v=0\.2\.34"/);
+  assert.match(bootstrap, /"utility-menu\.js\?v=0\.1\.0",[\s\S]*?"app\.js\?v=0\.2\.35"/);
+  assert.match(bootstrap, /"map-layer-panes\.js\?v=0\.1\.0",[\s\S]*?"app\.js\?v=0\.2\.35"/);
   assert.match(app, /const appVersion = document\.querySelector\('meta\[name="app-version"\]'\)\.content/);
   assert.match(app, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
   assert.doesNotMatch(css, /@media \(max-width: 760px\) and \(max-height:/);

@@ -138,7 +138,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const recoveryCheckpointSvg = appSource.match(/const recoveryCheckpointIcon = L\.divIcon\(\{[\s\S]*?html: '(<svg[\s\S]*?<\/svg>)'/)?.[1];
     assert.ok(recoveryCheckpointSvg, "browser check uses the production recovery checkpoint SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.34">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.35">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -195,12 +195,18 @@ test("mobile primary actions are actually visible over a full-height map at requ
     })()`);
 
     const viewports = [[320, 568], [360, 640], [375, 667], [390, 844], [375, 500]];
+    const initialStatus = await evaluate(`(() => ({ title: document.getElementById("statusTitle").textContent, text: document.getElementById("statusText").textContent, hidden: document.getElementById("statusCopy").hidden }))()`);
+    assert.deepEqual(initialStatus, { title: "", text: "", hidden: true }, "initial document has no redundant idle status copy");
     const stateScript = (state) => `(() => {
       const s = ${JSON.stringify(state)};
       const hide = (id, value) => { document.getElementById(id).hidden = value; };
       document.body.classList.toggle("expedition-mode", Boolean(s.expedition));
       document.querySelector(".status").classList.toggle("recording", Boolean(s.active));
-      document.getElementById("statusTitle").textContent = s.warmup ? "Стабилизация GPS" : s.active ? (s.expedition ? "Идёт экспедиция" : "Идёт захват территории") : "Готовы к прогулке?";
+      const statusTitle = s.warmup ? "Стабилизация GPS" : s.active ? (s.expedition ? "Идёт экспедиция" : "Идёт захват территории") : "";
+      document.getElementById("statusTitle").textContent = statusTitle;
+      const statusText = s.warmup ? "Стабилизация GPS. Подождите перед началом движения…" : s.active ? (s.expedition ? "Записываем путь к цели" : s.recovery ? "До точки восстановления: 24 м" : "Точки сохраняются на устройстве") : "";
+      document.getElementById("statusText").textContent = statusText;
+      document.getElementById("statusCopy").hidden = !statusTitle && !statusText;
       document.getElementById("locationStartupTitle").textContent = s.startupError ? "Геолокация недоступна" : "Определяем местоположение…";
       document.getElementById("locationStartupMessage").textContent = s.startupError ? "Проверьте GPS и повторите попытку." : "Получаем координаты GPS.";
       hide("locationStartupScreen", !s.startup);
@@ -237,6 +243,9 @@ test("mobile primary actions are actually visible over a full-height map at requ
       assert.equal(initial.height, height, `viewport height ${height}`);
       assert.ok(initial.mapHeight > 0, `${width}x${height}: map has a visible box`);
       assert.ok(Math.abs(initial.mapHeight - initial.tileMapHeight) < 1, `${width}x${height}: map tiles fill the full map container`);
+      await evaluate(stateScript({}));
+      const idleStatus = await evaluate(`(() => ({ title: document.getElementById("statusTitle").textContent, text: document.getElementById("statusText").textContent, hidden: document.getElementById("statusCopy").hidden, startVisible: !document.getElementById("start").hidden }))()`);
+      assert.deepEqual(idleStatus, { title: "", text: "", hidden: true, startVisible: true }, `${width}x${height}: idle state omits redundant copy and keeps the start action`);
       const layerStack = await evaluate(`(() => {
         const mapElement = document.getElementById("map");
         const mapRect = mapElement.getBoundingClientRect();
@@ -308,6 +317,19 @@ test("mobile primary actions are actually visible over a full-height map at requ
       assert.equal(layerStack.headerOwnsHit, true, `${width}x${height}: GPS map pane cannot cover the header`);
       assert.equal(layerStack.panelOwnsHit, true, `${width}x${height}: GPS map pane cannot cover the action panel`);
       assert.equal(layerStack.drawerOwnsHit, true, `${width}x${height}: GPS map pane stays below the open history drawer`);
+      await evaluate(stateScript({ warmup: true, manual: true }));
+      const enlargedStatus = await evaluate(`(() => {
+        const style = document.createElement("style");
+        style.textContent = ".statusCopy b,.statusCopy small{font-size:200%!important;line-height:1.3!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important}";
+        document.head.append(style);
+        const copy = document.getElementById("statusCopy"), stopwatch = document.querySelector(".stopwatch"), panel = document.querySelector(".panel"), action = document.getElementById("manualWarmupStart");
+        const copyRect = copy.getBoundingClientRect(), stopwatchRect = stopwatch.getBoundingClientRect(), panelRect = panel.getBoundingClientRect(), actionRect = action.getBoundingClientRect();
+        return { visible: !copy.hidden, title: document.getElementById("statusTitle").textContent, text: document.getElementById("statusText").textContent, separated: copyRect.right <= stopwatchRect.left, noHorizontalOverflow: document.documentElement.scrollWidth <= innerWidth, actionVisible: !action.hidden && actionRect.width > 0 && actionRect.top >= panelRect.top && actionRect.bottom <= panelRect.bottom };
+      })()`);
+      assert.equal(enlargedStatus.visible, true, `${width}x${height}: warm-up status remains visible at enlarged text size`);
+      assert.equal(enlargedStatus.separated, true, `${width}x${height}: enlarged status does not overlap timer and distance`);
+      assert.equal(enlargedStatus.noHorizontalOverflow, true, `${width}x${height}: enlarged text does not create horizontal page scrolling`);
+      assert.equal(enlargedStatus.actionVisible, true, `${width}x${height}: enlarged text leaves the manual start action visible in the panel`);
       const baselineMapHeight = initial.mapHeight;
       for (const scenario of scenarios) {
         await evaluate(stateScript(scenario.state));
@@ -336,7 +358,8 @@ test("mobile primary actions are actually visible over a full-height map at requ
           const compassRect = document.querySelector(".leaflet-control-rotate a").getBoundingClientRect();
           const modeButtons = [...document.querySelectorAll(".mode-selector button, .expeditionMethods button")].map((element) => {
             const rect = element.getBoundingClientRect();
-            return { id: element.id, hidden: element.hidden, displayed: getComputedStyle(element).display !== "none", top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
+            const group = element.closest(".mode-selector, .expeditionMethods");
+            return { id: element.id, hidden: element.hidden || group.hidden, displayed: getComputedStyle(element).display !== "none", top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
           }).filter((button) => !button.hidden && button.displayed && button.width > 0 && button.height > 0);
           const probeX = 10;
           const probeY = document.querySelector("header").getBoundingClientRect().bottom + 10;
