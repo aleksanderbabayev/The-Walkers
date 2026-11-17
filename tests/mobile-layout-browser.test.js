@@ -138,7 +138,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const recoveryCheckpointSvg = appSource.match(/const recoveryCheckpointIcon = L\.divIcon\(\{[\s\S]*?html: '(<svg[\s\S]*?<\/svg>)'/)?.[1];
     assert.ok(recoveryCheckpointSvg, "browser check uses the production recovery checkpoint SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.35">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.36">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);

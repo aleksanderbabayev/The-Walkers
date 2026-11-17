@@ -1412,6 +1412,13 @@
         return;
       }
     }
+    if (!bufferingInitial && activeMode === "territory" && result.reason === "confirmed-gap" && result.accepted) {
+      const gapStart = acceptedRoutePoints.find((point) => point?.segmentStart);
+      if (gapStart && !Tracking.evaluateSegmentContinuity(points.at(-1), gapStart).continuous) {
+        await beginRouteRecovery(gapStart, gpsEvent);
+        return;
+      }
+    }
     if (!result.accepted) {
       if (decision === "rejected" && gpsEvent) gpsEvent.includedInRoute = false;
       persistDiagnosticEvent(gpsEvent);

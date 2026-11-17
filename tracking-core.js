@@ -65,14 +65,28 @@
       }
 
       const movementThreshold = Math.max(config.minMovementMeters, Math.min(config.maxDriftMeters, (pendingGapPoint.accuracy + accuracy) / 2));
+      const gapConfirmation = {
+        confirmed: true,
+        gapTimestamp: pendingGapPoint.timestamp,
+        gapPauseMs: pendingGapPoint.timestamp - previousPoint.timestamp,
+        gapDistanceMeters: distanceMeters(previousPoint, pendingGapPoint),
+        candidateAccuracy: pendingGapPoint.accuracy,
+        confirmationTimestamp: timestamp,
+        confirmationElapsedMs: confirmationElapsed,
+        confirmationDistanceMeters: confirmationDistance,
+        confirmationAccuracy: accuracy
+      };
       if (confirmationDistance >= movementThreshold) {
-        const segmentStart = { ...pendingGapPoint, segmentStart: true };
+        const segmentStart = { ...pendingGapPoint, segmentStart: true, gapConfirmation };
         point.segmentStart = false;
-        return { accepted: true, point, points: [segmentStart, point], distanceMeters: confirmationDistance, newSegment: true, reason: "confirmed-gap" };
+        const continuity = evaluateSegmentContinuity(previousPoint, segmentStart, config);
+        return { accepted: true, point, points: [segmentStart, point], distanceMeters: confirmationDistance, newSegment: !continuity.continuous, reason: "confirmed-gap" };
       }
 
       point.segmentStart = true;
-      return { accepted: true, point, points: [point], distanceMeters: 0, newSegment: true, reason: "confirmed-gap" };
+      point.gapConfirmation = gapConfirmation;
+      const continuity = evaluateSegmentContinuity(previousPoint, point, config);
+      return { accepted: true, point, points: [point], distanceMeters: 0, newSegment: !continuity.continuous, reason: "confirmed-gap" };
     }
 
     const movementThreshold = Math.max(config.minMovementMeters, Math.min(config.maxDriftMeters, (previousPoint.accuracy + accuracy) / 2));
@@ -291,11 +305,12 @@
 
   const splitSegments = (points = []) => {
     const segments = [];
-    for (const point of points) {
+    for (let index = 0; index < points.length; index += 1) {
+      const point = points[index];
       const previous = segments.at(-1)?.at(-1);
-      const recoveredJoin = point.segmentStart && previous
-        && evaluateSegmentContinuity(previous, point).reason === "recovered-gap";
-      if (!segments.length || point.segmentStart && !recoveredJoin) segments.push([]);
+      const safeJoin = point.segmentStart && previous
+        && evaluateSegmentContinuity(previous, point, DEFAULTS, points[index + 1]).continuous;
+      if (!segments.length || point.segmentStart && !safeJoin) segments.push([]);
       segments.at(-1).push(point);
     }
     return segments;
@@ -307,7 +322,7 @@
     return Number.isFinite(resumedDistance) && resumedDistance > 0 ? total + resumedDistance : total;
   }, 0);
 
-  const evaluateSegmentContinuity = (previous, current, options = DEFAULTS) => {
+  const evaluateSegmentContinuity = (previous, current, options = DEFAULTS, followingPoint = null) => {
     if (![previous?.lat, previous?.lng, current?.lat, current?.lng].every(Number.isFinite)) {
       return { continuous: false, reason: "invalid-route-point", distanceMeters: null, maxGapMeters: 0 };
     }
@@ -317,6 +332,8 @@
     const accuracyLimit = Math.max(options.minMovementMeters, (previous.accuracy + current.accuracy) / 2);
     const maxGapMeters = Math.min(MAX_SAFE_SEGMENT_GAP_METERS, accuracyLimit);
     const gapMeters = distanceMeters(previous, current);
+    const gapPauseMs = current.timestamp - previous.timestamp;
+    const maxConfirmedPauseMs = options.maxGapMs + options.maxAgeMs;
     const recovery = current.recoveryResume;
     if (recovery?.confirmed === true
       && recovery.confirmationCount >= ROUTE_RECOVERY_CONFIRMATIONS
@@ -327,7 +344,46 @@
       && gapMeters <= recovery.checkpointDistanceMeters + recovery.segmentDistanceMeters + Math.max(2, current.accuracy)) {
       return { continuous: true, reason: "recovered-gap", distanceMeters: gapMeters, maxGapMeters };
     }
-    return { continuous: gapMeters <= maxGapMeters, reason: gapMeters <= maxGapMeters ? "continuous" : "unsafe-gap", distanceMeters: gapMeters, maxGapMeters };
+    if (gapPauseMs <= 0) return { continuous: false, reason: "unsafe-gap", distanceMeters: gapMeters, maxGapMeters };
+
+    const proof = current.gapConfirmation;
+    if (proof?.confirmed === true) {
+      const pauseMatches = proof.gapTimestamp > previous.timestamp
+        && proof.gapTimestamp - previous.timestamp === proof.gapPauseMs
+        && proof.gapPauseMs > options.maxGapMs && proof.gapPauseMs <= maxConfirmedPauseMs;
+      const confirmationMatches = proof.confirmationTimestamp > proof.gapTimestamp
+        && proof.confirmationTimestamp - proof.gapTimestamp === proof.confirmationElapsedMs
+        && proof.confirmationElapsedMs <= options.maxAgeMs
+        && [proof.candidateAccuracy, proof.confirmationAccuracy].every((accuracy) => Number.isFinite(accuracy)
+          && accuracy > 0 && accuracy <= options.maxAccuracyMeters)
+        && Number.isFinite(proof.confirmationDistanceMeters) && proof.confirmationDistanceMeters >= 0
+        && proof.confirmationDistanceMeters / (proof.confirmationElapsedMs / 1000) <= options.maxSpeedMetersPerSecond;
+      const storedFixMatches = current.timestamp === proof.gapTimestamp || current.timestamp === proof.confirmationTimestamp;
+      const measuredGapMatches = current.timestamp !== proof.gapTimestamp || Math.abs(gapMeters - proof.gapDistanceMeters) <= 0.01;
+      const continuous = gapMeters <= maxGapMeters && Number.isFinite(proof.gapDistanceMeters)
+        && proof.gapDistanceMeters <= maxGapMeters && pauseMatches && confirmationMatches
+        && storedFixMatches && measuredGapMatches;
+      return { continuous, reason: continuous ? "confirmed-gap" : "unsafe-gap", distanceMeters: gapMeters, maxGapMeters };
+    }
+
+    const spatiallySafe = gapMeters <= maxGapMeters;
+    if (current.segmentStart === true && followingPoint?.segmentStart !== true) {
+      const confirmationElapsedMs = followingPoint?.timestamp - current.timestamp;
+      const confirmationDistance = followingPoint && distanceMeters(current, followingPoint);
+      const confirmed = gapPauseMs > options.maxGapMs && gapPauseMs <= maxConfirmedPauseMs
+        && confirmationElapsedMs > 0 && confirmationElapsedMs <= options.maxAgeMs
+        && Number.isFinite(followingPoint?.accuracy) && followingPoint.accuracy > 0
+        && followingPoint.accuracy <= options.maxAccuracyMeters
+        && confirmationDistance / (confirmationElapsedMs / 1000) <= options.maxSpeedMetersPerSecond;
+      if (confirmed) {
+        return { continuous: spatiallySafe, reason: spatiallySafe ? "confirmed-gap" : "unsafe-gap", distanceMeters: gapMeters, maxGapMeters };
+      }
+    }
+    if (current.segmentStart !== true && gapPauseMs > options.maxGapMs && gapPauseMs <= maxConfirmedPauseMs && spatiallySafe) {
+      return { continuous: true, reason: "pending-confirmation", distanceMeters: gapMeters, maxGapMeters };
+    }
+    const continuous = spatiallySafe && gapPauseMs <= options.maxGapMs;
+    return { continuous, reason: continuous ? "continuous" : "unsafe-gap", distanceMeters: gapMeters, maxGapMeters };
   };
 
   const evaluateTrackClosure = (points = [], options = DEFAULTS) => {
@@ -345,7 +401,7 @@
     for (let index = 1; index < points.length; index += 1) {
       if (!points[index].segmentStart) continue;
       const previous = points[index - 1], current = points[index];
-      if (!evaluateSegmentContinuity(previous, current, options).continuous) return { eligible: false, reason: "unsafe-gap" };
+      if (!evaluateSegmentContinuity(previous, current, options, points[index + 1]).continuous) return { eligible: false, reason: "unsafe-gap" };
     }
     if (distanceMeters(points[0], points.at(-1)) > options.closeMeters) return { eligible: false, reason: "not-closed" };
     return { eligible: true, reason: "closed" };

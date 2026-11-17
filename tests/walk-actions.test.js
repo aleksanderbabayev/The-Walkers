@@ -50,8 +50,8 @@ test("Finish and Retreat button dispatch call their actions without passing the 
   assert.doesNotMatch(resumeFailure, /positionFilter\.reset|gpsWarmup\.reset/);
   assert.match(appSource, /const receivePosition = Actions\.createPositionReceiver\(/);
   assert.ok(bootstrapSource.includes('"walk-actions.js?v=0.1.48"'));
-  assert.ok(bootstrapSource.includes('"app.js?v=0.2.35"'));
-  assert.ok(bootstrapSource.includes('"tracking-core.js?v=0.2.13"'));
+  assert.ok(bootstrapSource.includes('"app.js?v=0.2.36"'));
+  assert.ok(bootstrapSource.includes('"tracking-core.js?v=0.2.14"'));
   assert.match(appSource, /const evaluateCaptureReadiness = \(routePoints = initialRouteBuffer\.pending \? \[\] : points, allowFinishing = false\) => \{[\s\S]*?Tracking\.evaluateTerritoryCapture\(routePoints, capturePosition\)[\s\S]*?\(allowFinishing \|\| !finishing\).*?readiness\.eligible/);
   assert.match(appSource, /const updateCaptureAvailability = \(readiness = evaluateCaptureReadiness\(\)\) => \{\s*\$\("finish"\)\.disabled = !readiness\.eligible/);
   assert.match(appSource, /const finishPositionFilter = Tracking\.createFinishPositionFilter\(\)/);
@@ -100,6 +100,7 @@ test("only unsafe territory gaps enter persisted recovery; return never enters t
   assert.match(appSource, /const routeRecovery = Tracking\.createRouteRecovery\(\)/);
   assert.match(appSource, /activeMode === "territory" && result\.reason === "confirm" && result\.candidate/);
   assert.match(appSource, /Tracking\.evaluateSegmentContinuity\(points\.at\(-1\), result\.candidate\)/);
+  assert.match(appSource, /result\.reason === "confirmed-gap" && result\.accepted[\s\S]*?Tracking\.evaluateSegmentContinuity\(points\.at\(-1\), gapStart\)/);
   assert.match(appSource, /if \(routeRecovery\.active\) \{\s*await processRecoveryPosition\(position, processedAt\);\s*return;/);
   assert.match(appSource, /eligible: false, reason: "recovery-required"/);
   assert.match(appSource, /routeRecovery\.snapshot\(\)/);

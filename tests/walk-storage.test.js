@@ -101,6 +101,27 @@ test("an active route-recovery checkpoint and filter baseline survive draft relo
   assert.deepEqual(restored.routeFilterPrevious, filterBaseline);
 });
 
+test("a confirmed safe-gap proof survives draft reload and completed route history", async () => {
+  const db = new MemoryDatabase();
+  const gapConfirmation = {
+    confirmed: true, gapTimestamp: 2000, gapPauseMs: 35900, gapDistanceMeters: 10,
+    candidateAccuracy: 20, confirmationTimestamp: 7000, confirmationElapsedMs: 5000,
+    confirmationDistanceMeters: 8.5, confirmationAccuracy: 20
+  };
+  const points = [
+    { lat: 48.9, lng: 21.2, accuracy: 20, timestamp: 1000, segmentStart: true },
+    { lat: 48.9001, lng: 21.2, accuracy: 20, timestamp: 2000, segmentStart: true, gapConfirmation }
+  ];
+  await Storage.createDraft(db, { id: "active", mode: "territory", startedAt: 900, points });
+  const restoredDraft = await Storage.readDraft(db);
+  assert.deepEqual(restoredDraft.points[1].gapConfirmation, gapConfirmation);
+
+  const walk = { id: "walk-safe-gap", mode: "territory", points: restoredDraft.points, startedAt: 900, finishedAt: 8000, durationMs: 7100, distanceMeters: 0, closed: false };
+  await Storage.completeWalk(db, walk);
+  const restoredWalk = (await Storage.readWalks(db)).find((item) => item.id === walk.id);
+  assert.deepEqual(restoredWalk.points[1].gapConfirmation, gapConfirmation);
+});
+
 test("the first accepted segment after returning to a recovery checkpoint survives draft reload", async () => {
   const db = new MemoryDatabase();
   const recoveryResumeProof = {

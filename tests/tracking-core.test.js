@@ -157,6 +157,94 @@ test("confirms a post-gap position before accepting it as a new segment", () => 
   assert.equal(Tracking.canCloseTrack(points), false);
 });
 
+test("a safely confirmed 35.9 second GPS pause stays one route without counting the unobserved gap", () => {
+  const meters = (value) => value / 111194.9266;
+  const accuracy = 20;
+  const previous = point(0, meters(11.5), now - 200000, false, accuracy);
+  const filter = Tracking.createPositionFilter();
+  const candidateTime = now - 164100;
+  const candidate = filter.evaluate(position(0, 0, candidateTime, accuracy), previous, candidateTime);
+  assert.equal(candidate.reason, "confirm");
+  assert.equal(candidate.candidate.timestamp - previous.timestamp, 35900);
+  assert.equal(Tracking.evaluateSegmentContinuity(previous, candidate.candidate).reason, "pending-confirmation");
+
+  const confirmedTime = candidateTime + 5000;
+  const confirmed = filter.evaluate(position(0, meters(8.5), confirmedTime, accuracy), previous, confirmedTime);
+  assert.equal(confirmed.reason, "confirmed-gap");
+  assert.equal(confirmed.accepted, true);
+  assert.equal(confirmed.newSegment, false, "the filter and route geometry agree that the confirmed pause is safe");
+  assert.equal(confirmed.points[0].segmentStart, true, "the GPS segment boundary remains explicit for distance accounting");
+  assert.ok(Math.abs(confirmed.points[0].gapConfirmation.gapDistanceMeters - 11.5) < 0.1);
+
+  const route = [
+    point(0, 0, now - 400000, true, accuracy),
+    point(0, meters(100), now - 350000, false, accuracy),
+    point(meters(100), meters(100), now - 300000, false, accuracy),
+    point(meters(100), 0, now - 250000, false, accuracy),
+    previous,
+    ...confirmed.points
+  ];
+  assert.equal(route.length, 7, "the filter records only the accepted GPS fixes and invents no points");
+  const measuredBeforePause = Tracking.distanceForPoints(route.slice(0, 5));
+  assert.equal(Tracking.splitSegments(route).length, 1, "the active map draws a continuous line after confirmation");
+  assert.equal(Tracking.evaluateTrackClosure(route).eligible, true, "capture uses the same confirmed continuity rule");
+  assert.ok(Math.abs(Tracking.distanceForPoints(route) - measuredBeforePause - confirmed.distanceMeters) < 0.01,
+    "the unobserved 11.5 m gap is omitted from walking distance");
+
+  const restoredRoute = JSON.parse(JSON.stringify(route));
+  assert.equal(Tracking.splitSegments(restoredRoute).length, 1, "the visual join persists through draft reload and history serialization");
+  assert.equal(Tracking.evaluateTrackClosure(restoredRoute).eligible, true);
+  const legacyRoute = JSON.parse(JSON.stringify(restoredRoute));
+  delete legacyRoute[5].gapConfirmation;
+  assert.equal(Tracking.splitSegments(legacyRoute).length, 1, "legacy routes can recover confirmation from their saved next GPS fix");
+  assert.equal(Tracking.evaluateTrackClosure(legacyRoute).eligible, true);
+  assert.equal(Tracking.evaluateTrackClosure(legacyRoute.slice(0, 6)).reason, "unsafe-gap",
+    "an unconfirmed link with no corroborating GPS fix cannot enable capture");
+});
+
+test("sequential short GPS pauses keep confirmed segments together and exclude both gap distances", () => {
+  const meters = (value) => value / 111194.9266;
+  const filter = Tracking.createPositionFilter();
+  const accuracy = 30;
+  let previous = point(0, 0, now - 120000, true, accuracy);
+  const route = [previous];
+  for (let index = 0; index < 2; index += 1) {
+    const candidateTime = previous.timestamp + 35900;
+    const candidateOffset = index * 18.5 + 10;
+    const pending = filter.evaluate(position(0, meters(candidateOffset), candidateTime, accuracy), previous, candidateTime);
+    assert.equal(pending.reason, "confirm");
+    assert.equal(Tracking.evaluateSegmentContinuity(previous, pending.candidate).continuous, true);
+    const confirmationTime = candidateTime + 5000;
+    const confirmed = filter.evaluate(position(0, meters(candidateOffset + 8.5), confirmationTime, accuracy), previous, confirmationTime);
+    assert.equal(confirmed.reason, "confirmed-gap");
+    assert.equal(confirmed.newSegment, false);
+    route.push(...confirmed.points);
+    previous = confirmed.points.at(-1);
+  }
+  assert.equal(route.length, 5, "two pauses add only four measured GPS fixes");
+  assert.equal(Tracking.splitSegments(route).length, 1);
+  assert.ok(Math.abs(Tracking.distanceForPoints(route) - 17) < 0.1,
+    "only the two confirmed post-gap movements count toward route distance");
+});
+
+test("a spatially unsafe or overlong confirmed pause still requires checkpoint recovery", () => {
+  const meters = (value) => value / 111194.9266;
+  const anchor = point(0, 0, now - 35900, true, 5);
+  const filter = Tracking.createPositionFilter();
+  const unsafe = filter.evaluate(position(0, meters(25), now, 5), anchor, now);
+  assert.equal(unsafe.reason, "confirm");
+  assert.equal(Tracking.evaluateSegmentContinuity(anchor, unsafe.candidate).reason, "unsafe-gap");
+  assert.equal(Tracking.splitSegments([anchor, { ...unsafe.candidate, segmentStart: true }]).length, 2);
+
+  const oldAnchor = point(0, 0, now - 60000, true, 30);
+  const stalePauseCandidate = { ...point(0, meters(10), now, false, 30) };
+  assert.equal(Tracking.evaluateSegmentContinuity(oldAnchor, stalePauseCandidate).continuous, false,
+    "a pause longer than the confirmation window cannot be joined by distance alone");
+  const recovery = Tracking.createRouteRecovery();
+  assert.ok(recovery.start(anchor, "unsafe-gap"));
+  assert.equal(recovery.active, true, "the existing 15 m return-checkpoint flow remains available");
+});
+
 test("does not accept an isolated jump after an interruption", () => {
   const previous = point(0, 0, now - 60000, true);
   const isolatedJump = Tracking.evaluatePosition(position(0, 0.01, now - 3000), previous, now - 3000);
