@@ -269,9 +269,9 @@
     if (!point) return;
     const icon = L.divIcon({
       className: "route-start-marker",
-      iconSize: [82, 32],
+      iconSize: [24, 32],
       iconAnchor: [5, 30],
-      html: '<span class="route-start-content"><svg viewBox="0 0 24 32" aria-hidden="true"><path d="M5 29V3"/><path d="M6 4h16v12H6z" class="route-start-cloth"/><path d="M6 4h5v4H6zM16 4h6v4h-6zM11 8h5v4h-5zM6 12h5v4H6zM16 12h6v4h-6z" class="route-start-checks"/></svg><span>Старт</span></span>'
+      html: '<svg class="route-start-flag" viewBox="0 0 24 32" role="img" aria-label="Старт маршрута"><path d="M5 29V3"/><path d="M6 4h16v12H6z" class="route-start-cloth"/><path d="M6 4h5v4H6zM16 4h6v4h-6zM11 8h5v4h-5zM6 12h5v4H6zM16 12h6v4h-6z" class="route-start-checks"/></svg>'
     });
     if (routeStartMarker) routeStartMarker.setLatLng([point.lat, point.lng]).setIcon(icon);
     else routeStartMarker = L.marker([point.lat, point.lng], { icon, title: "Старт маршрута", keyboard: false, interactive: false, zIndexOffset: 1200, pane: mapPanes.gameMarker }).addTo(map);

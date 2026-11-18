@@ -137,8 +137,10 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const htmlSource = fs.readFileSync(path.join(projectRoot, "index.html"), "utf8");
     const recoveryCheckpointSvg = appSource.match(/const recoveryCheckpointIcon = L\.divIcon\(\{[\s\S]*?html: '(<svg[\s\S]*?<\/svg>)'/)?.[1];
     assert.ok(recoveryCheckpointSvg, "browser check uses the production recovery checkpoint SVG");
+    const routeStartSvg = appSource.match(/const updateRouteStartMarker = \(point\) => \{[\s\S]*?html: '(<svg class="route-start-flag"[\s\S]*?<\/svg>)'/)?.[1];
+    assert.ok(routeStartSvg, "browser check uses the production territory start flag SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.36">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.37">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -246,6 +248,31 @@ test("mobile primary actions are actually visible over a full-height map at requ
       await evaluate(stateScript({}));
       const idleStatus = await evaluate(`(() => ({ title: document.getElementById("statusTitle").textContent, text: document.getElementById("statusText").textContent, hidden: document.getElementById("statusCopy").hidden, startVisible: !document.getElementById("start").hidden }))()`);
       assert.deepEqual(idleStatus, { title: "", text: "", hidden: true, startVisible: true }, `${width}x${height}: idle state omits redundant copy and keeps the start action`);
+      const startMarker = await evaluate(`(() => {
+        const map = document.getElementById("map"), mapRect = map.getBoundingClientRect();
+        const marker = document.createElement("div");
+        marker.className = "route-start-marker";
+        marker.title = "Старт маршрута";
+        marker.style.cssText = "position:absolute;left:85px;top:90px;width:24px;height:32px";
+        marker.innerHTML = ${JSON.stringify(routeStartSvg)};
+        map.append(marker);
+        const svg = marker.querySelector("svg"), markerRect = marker.getBoundingClientRect(), flagRect = svg.getBoundingClientRect();
+        const result = {
+          markerWidth: markerRect.width, markerHeight: markerRect.height,
+          flagWidth: flagRect.width, flagHeight: flagRect.height,
+          title: marker.title, role: svg.getAttribute("role"), label: svg.getAttribute("aria-label"),
+          visibleText: marker.textContent.trim(), hasFlag: Boolean(svg.querySelector(".route-start-cloth")),
+          borderWidth: getComputedStyle(marker).borderWidth, background: getComputedStyle(marker).backgroundColor,
+          insideMap: markerRect.left >= mapRect.left && markerRect.right <= mapRect.right && markerRect.top >= mapRect.top && markerRect.bottom <= mapRect.bottom
+        };
+        marker.remove();
+        return result;
+      })()`);
+      assert.deepEqual(startMarker, {
+        markerWidth: 24, markerHeight: 32, flagWidth: 24, flagHeight: 32,
+        title: "Старт маршрута", role: "img", label: "Старт маршрута", visibleText: "", hasFlag: true,
+        borderWidth: "0px", background: "rgba(0, 0, 0, 0)", insideMap: true
+      }, `${width}x${height}: start flag has no label plate or reserved space and keeps its accessible name`);
       const layerStack = await evaluate(`(() => {
         const mapElement = document.getElementById("map");
         const mapRect = mapElement.getBoundingClientRect();

@@ -325,12 +325,10 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
 .route-start-marker { border: 0; background: transparent; }
 .recovery-checkpoint-icon { display: block; border: 0; background: transparent; filter: drop-shadow(0 1px 2px #0005); }
 .recovery-checkpoint-icon svg { display: block; width: 32px; height: 32px; }
-.route-start-content { width: 82px; height: 32px; display: flex; align-items: center; gap: 2px; filter: drop-shadow(0 1px 2px #0005); }
-.route-start-content svg { width: 24px; height: 32px; flex: none; overflow: visible; }
-.route-start-content svg > path:first-child { fill: none; stroke: #243b63; stroke-width: 2.5; stroke-linecap: round; }
+.route-start-flag { display: block; width: 24px; height: 32px; overflow: visible; filter: drop-shadow(0 1px 2px #0005); }
+.route-start-flag > path:first-child { fill: none; stroke: #243b63; stroke-width: 2.5; stroke-linecap: round; }
 .route-start-cloth { fill: #fff; stroke: #243b63; stroke-width: 1; }
 .route-start-checks { fill: #111820; }
-.route-start-content > span { padding: 3px 6px; border-radius: 9px; background: #fff; color: #26372a; font-size: 11px; font-weight: 700; line-height: 1; white-space: nowrap; }
 @keyframes locate-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   .mapLocate { transition: none; }
