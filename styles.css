@@ -293,6 +293,7 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
   z-index: 1000;
   top: 10px;
   left: 10px;
+  box-sizing: border-box;
   width: 44px;
   height: 44px;
   min-width: 44px;
@@ -300,14 +301,14 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
   padding: 0;
   display: grid;
   place-items: center;
-  border: 2px solid #0003;
-  border-radius: 4px;
+  border: 1px solid #d8e1d5;
+  border-radius: 12px;
   background: #fff;
   color: #25362a;
   font-family: inherit;
-  font-size: 26px;
+  font-size: 22px;
   line-height: 1;
-  box-shadow: 0 1px 5px #0006;
+  box-shadow: 0 1px 5px #25362a33;
   cursor: pointer;
   transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
@@ -322,10 +323,10 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
   content: "";
   animation: locate-spin 800ms linear infinite;
 }
-.mapLocate.is-ready { border-color: #d7eddd; background: #e7f4e9; color: #2f7440; box-shadow: 0 1px 5px #0003, inset 0 0 0 1px #2f74401a; }
-.mapLocate.is-error { border-color: #f1d5c7; background: #fff5ee; color: #a54b31; }
-.mapLocate.is-following { border-color: #2877df; background: #e4efff; color: #1559b4; box-shadow: 0 0 0 3px #2877df35, 0 1px 6px #0004; }
-.mapLocate:active { background: #edf2e8; }
+.mapLocate.is-ready { border-color: #65a574; background: #fff; color: #2f7440; }
+.mapLocate.is-error { border-color: #cf8067; background: #fff; color: #a54b31; }
+.mapLocate.is-following { border-color: #2877df; background: #fff; color: #1559b4; }
+.mapLocate:active, #map .leaflet-control-zoom a:active, #map .leaflet-control-rotate a:active { background: #f1f6ef; }
 .route-start-marker { border: 0; background: transparent; }
 .recovery-checkpoint-icon { display: block; border: 0; background: transparent; filter: drop-shadow(0 1px 2px #0005); }
 .recovery-checkpoint-icon svg { display: block; width: 32px; height: 32px; }
@@ -338,7 +339,32 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
   .mapLocate { transition: none; }
   .mapLocate.is-locating::after, .is-loading .locationNoticeDot { animation: none; }
 }
-.leaflet-control-rotate a { min-width: 44px; min-height: 44px; }
+#map .leaflet-control-rotate, #map .leaflet-control-zoom { margin: 10px; }
+#map .leaflet-control-rotate a, #map .leaflet-control-zoom a {
+  box-sizing: border-box;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d8e1d5;
+  border-radius: 12px;
+  background: #fff;
+  color: #25362a;
+  box-shadow: 0 1px 5px #25362a33;
+  font-family: inherit;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: center;
+  text-decoration: none;
+  text-indent: 0;
+}
+#map .leaflet-control-rotate a:focus-visible, #map .leaflet-control-zoom a:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
+#map .leaflet-control-rotate a svg, #map .leaflet-control-zoom a svg { display: block; width: 22px; height: 22px; }
+#map .leaflet-control-zoom.leaflet-bar { display: grid; gap: 6px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
 
 @media (max-width: 760px) {
@@ -381,6 +407,8 @@ button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
   .brandTitle { min-width: 0; gap: 5px; }
   .brandTitle strong { font-size: 15px; white-space: nowrap; }
   .brand .appVersion { padding: 2px 5px; font-size: 9px; }
+  .mapLocate { left: max(10px, env(safe-area-inset-left)); }
+  .leaflet-top.leaflet-right { right: max(0px, env(safe-area-inset-right)); }
   main {
     position: relative;
     width: 100%;
@@ -399,7 +427,7 @@ button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
   .leaflet-control-zoom a { width: 44px; height: 44px; line-height: 44px; }
   .leaflet-bottom.leaflet-right {
     top: auto;
-    right: max(10px, env(safe-area-inset-right));
+    right: max(0px, env(safe-area-inset-right));
     bottom: var(--mobile-zoom-control-bottom, 10px);
   }
   .panel {

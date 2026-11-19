@@ -140,7 +140,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const routeStartSvg = appSource.match(/const updateRouteStartMarker = \(point\) => \{[\s\S]*?html: '(<svg class="route-start-flag"[\s\S]*?<\/svg>)'/)?.[1];
     assert.ok(routeStartSvg, "browser check uses the production territory start flag SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.41">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.42">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -412,8 +412,58 @@ test("mobile primary actions are actually visible over a full-height map at requ
           const versionRect = version.getBoundingClientRect();
           return { mapHeight: map.height, viewportHeight: innerHeight, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, recoveryMessage: { text: recoveryMessage.textContent, visible: getComputedStyle(recoveryMessage).display !== "none" && recoveryMessage.getBoundingClientRect().height > 0, height: recoveryMessage.getBoundingClientRect().height, fullText: getComputedStyle(recoveryMessage).whiteSpace === "normal" }, captureDisabled: document.getElementById("finish").disabled, header: { brand: { left: brand.left, right: brand.right }, title: { left: brandTitle.left, right: brandTitle.right }, actions: { left: headerActions.left, right: headerActions.right }, menuButton: { left: menuButtonRect.left, right: menuButtonRect.right, width: menuButtonRect.width, height: menuButtonRect.height, background: getComputedStyle(menuButton).backgroundColor, borderWidth: getComputedStyle(menuButton).borderWidth, label: menuButton.getAttribute("aria-label"), visualWidth: menuVisualRect.width, visualHeight: menuVisualRect.height, iconWidth: menuIconRect.width, iconHeight: menuIconRect.height, iconColor: getComputedStyle(menuIcon).color, iconStrokeWidth: getComputedStyle(menuIcon).strokeWidth, lineCount: menuIcon.querySelectorAll("path").length, iconCenterX: menuIconRect.left + menuIconRect.width / 2, iconCenterY: menuIconRect.top + menuIconRect.height / 2, buttonCenterX: menuButtonRect.left + menuButtonRect.width / 2, buttonCenterY: menuButtonRect.top + menuButtonRect.height / 2 }, version: { text: version.textContent, label: version.getAttribute("aria-label"), left: versionRect.left, right: versionRect.right, width: versionRect.width, height: versionRect.height, visible: getComputedStyle(version).display !== "none" && getComputedStyle(version).visibility !== "hidden" }, menuVersionCount: document.querySelectorAll(".utility-menu-panel .appVersion").length }, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height, left: mapLocate.left, right: mapLocate.right }, zoomButtons, compass: { top: compassRect.top, bottom: compassRect.bottom, left: compassRect.left, right: compassRect.right }, panel: { top: panel.top, bottom: panel.bottom, left: panel.left, right: panel.right }, startup: { hidden: startupScreen.hidden, top: startupRect.top, left: startupRect.left, right: startupRect.right, bottom: startupRect.bottom, background: getComputedStyle(startupScreen).backgroundColor, stackingLevel: getStackingLevel(startupScreen), mapStackingLevel: getStackingLevel(mapElement), probeIsBlocked: Boolean(mapProbe && startupScreen.contains(mapProbe)), probeReachesMap: Boolean(mapProbe && mapElement.contains(mapProbe)), underlyingProbeReachesMap: Boolean(underlyingProbe && mapElement.contains(underlyingProbe)) } };
         })()`);
+        const mapControlStyles = await evaluate(`(() => {
+          const map = document.getElementById("map").getBoundingClientRect();
+          const header = document.querySelector("header").getBoundingClientRect();
+          const locate = document.getElementById("locate");
+          const compass = document.querySelector(".leaflet-control-rotate a");
+          const zoom = [...document.querySelectorAll(".leaflet-control-zoom a")];
+          const describe = (element) => {
+            const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
+            const range = document.createRange(); range.selectNodeContents(element);
+            const icon = range.getBoundingClientRect();
+            return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, radius: style.borderRadius, borderWidth: style.borderWidth, borderColor: style.borderColor, background: style.backgroundColor, shadow: style.boxShadow, display: style.display, justifyItems: style.justifyItems, alignItems: style.alignItems, fontSize: style.fontSize, icon: { left: icon.left, right: icon.right, top: icon.top, bottom: icon.bottom } };
+          };
+          const originalClass = locate.className;
+          const locationStates = ["", "is-locating", "is-ready", "is-error", "is-following"].map((state) => {
+            locate.className = "mapLocate" + (state ? " " + state : "");
+            const style = getComputedStyle(locate), spinner = getComputedStyle(locate, "::after");
+            return { state: state || "normal", borderColor: style.borderColor, color: style.color, background: style.backgroundColor, spinnerWidth: spinner.width, spinnerBorder: spinner.borderTopColor };
+          });
+          locate.className = originalClass;
+          return { map: { left: map.left, right: map.right, top: map.top }, headerBottom: header.bottom, locate: describe(locate), compass: describe(compass), zoom: zoom.map(describe), locationStates };
+        })()`);
         assert.ok(Math.abs(result.mapHeight - baselineMapHeight) < 1, `${width}x${height} ${scenario.name}: controls changed map height`);
         assert.ok(result.scrollHeight <= result.viewportHeight + 1, `${width}x${height} ${scenario.name}: page gained vertical scroll`);
+        const controls = [mapControlStyles.locate, mapControlStyles.compass, ...mapControlStyles.zoom];
+        for (const [index, control] of controls.entries()) {
+          const name = ["geolocation", "compass", "zoom in", "zoom out"][index];
+          assert.equal(control.width, 44, `${width}x${height} ${scenario.name}: ${name} is 44px wide`);
+          assert.equal(control.height, 44, `${width}x${height} ${scenario.name}: ${name} is 44px tall`);
+          assert.equal(control.radius, "12px", `${width}x${height} ${scenario.name}: ${name} has a 12px radius`);
+          assert.equal(control.borderWidth, "1px", `${width}x${height} ${scenario.name}: ${name} has a 1px border`);
+          assert.equal(control.borderColor, "rgb(216, 225, 213)", `${width}x${height} ${scenario.name}: ${name} shares the gray-green border`);
+          assert.equal(control.background, "rgb(255, 255, 255)", `${width}x${height} ${scenario.name}: ${name} has a white background`);
+          assert.equal(control.display, "grid", `${width}x${height} ${scenario.name}: ${name} uses centered grid layout`);
+          assert.equal(control.justifyItems, "center", `${width}x${height} ${scenario.name}: ${name} is centered horizontally`);
+          assert.equal(control.alignItems, "center", `${width}x${height} ${scenario.name}: ${name} is centered vertically`);
+          assert.equal(control.fontSize, "22px", `${width}x${height} ${scenario.name}: ${name} icon is proportioned consistently`);
+          assert.equal(control.shadow, mapControlStyles.locate.shadow, `${width}x${height} ${scenario.name}: ${name} shares the common shadow`);
+          assert.ok(Math.abs((control.icon.left + control.icon.right) / 2 - (control.left + control.right) / 2) <= 3, `${width}x${height} ${scenario.name}: ${name} icon is centered horizontally`);
+          assert.ok(Math.abs((control.icon.top + control.icon.bottom) / 2 - (control.top + control.bottom) / 2) <= 3, `${width}x${height} ${scenario.name}: ${name} icon is centered vertically`);
+        }
+        assert.equal(mapControlStyles.locate.left - mapControlStyles.map.left, 10, `${width}x${height}: geolocation control is inset 10px from the map's left edge`);
+        assert.equal(mapControlStyles.locate.top - mapControlStyles.map.top, 10, `${width}x${height}: geolocation control is inset 10px from the map's top edge`);
+        assert.equal(mapControlStyles.compass.right, mapControlStyles.map.right - 10, `${width}x${height}: compass is inset 10px from the map's right edge`);
+        assert.equal(mapControlStyles.compass.top - mapControlStyles.map.top, 10, `${width}x${height}: compass is inset 10px from the map's top edge`);
+        assert.equal(mapControlStyles.zoom[0].right, mapControlStyles.map.right - 10, `${width}x${height}: zoom group is inset 10px from the map's right edge`);
+        assert.equal(mapControlStyles.zoom[1].top - mapControlStyles.zoom[0].bottom, 6, `${width}x${height}: zoom buttons remain a separated vertical group`);
+        assert.ok(mapControlStyles.headerBottom <= mapControlStyles.locate.top && mapControlStyles.headerBottom <= mapControlStyles.compass.top, `${width}x${height}: top map controls do not overlap the header`);
+        assert.ok(mapControlStyles.locate.right <= mapControlStyles.compass.left || mapControlStyles.compass.right <= mapControlStyles.locate.left, `${width}x${height}: geolocation and compass controls do not overlap`);
+        const locationStates = mapControlStyles.locationStates;
+        assert.ok(new Set([locationStates[0].borderColor, locationStates[2].borderColor, locationStates[3].borderColor, locationStates[4].borderColor]).size === 4, `${width}x${height}: ready, error and following states remain visually distinct`);
+        assert.equal(locationStates[1].spinnerWidth, "20px", `${width}x${height}: GPS waiting state keeps its spinner`);
+        assert.ok(locationStates.every((state) => state.background === "rgb(255, 255, 255)"), `${width}x${height}: GPS states preserve the common white button background`);
         if (scenario.state.recovery) {
           assert.equal(result.recoveryMessage.text, "Маршрут прерван. Вернитесь к отмеченной точке, чтобы продолжить захват территории", `${width}x${height}: recovery instructions remain complete`);
           assert.equal(result.recoveryMessage.visible, true, `${width}x${height}: recovery instructions are visible`);
