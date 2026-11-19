@@ -27,5 +27,5 @@ test("recording, accepted positions, and restored territory drafts reuse the sam
   assert.match(beginRecording, /updateRouteStartMarker\(recordedStartPoint\)/);
   assert.match(acceptedPosition, /updateRouteStartMarker\(points\[0\]\)/);
   assert.match(restoredDraft, /else updateRouteStartMarker\(restoredValidatedPoints\[0\]\)/);
-  assert.match(core, /const FINISH_ZONE_RADIUS_METERS = 25/);
+  assert.match(core, /const FINISH_ZONE_RADIUS_METERS = 13/);
 });

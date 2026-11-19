@@ -125,7 +125,7 @@ test("app draws expedition start only from accepted route data and restores save
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
   const html = fs.readFileSync(require.resolve("../index.html"), "utf8");
   const bootstrap = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
-  assert.match(html, /name="app-version" content="0\.2\.39"/);
+  assert.match(html, /name="app-version" content="0\.2\.40"/);
   assert.ok(bootstrap.includes('"walk-colors.js?v=0.2.25"'));
   assert.ok(bootstrap.includes('"expedition-markers.js?v=0.2.7"'));
   assert.ok(bootstrap.includes('"app.js?v=0.2.37"'));
@@ -144,7 +144,7 @@ test("app draws expedition start only from accepted route data and restores save
 test("territory finish zone is created, centered, hidden, and restored with an active draft", () => {
   const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
   const core = fs.readFileSync(require.resolve("../tracking-core.js"), "utf8");
-  assert.match(core, /const FINISH_ZONE_RADIUS_METERS = 25/);
+  assert.match(core, /const FINISH_ZONE_RADIUS_METERS = 13/);
   assert.match(app, /const updateTerritoryFinishZone = \(point\) => \{[\s\S]*?if \(!recordingActive \|\| activeMode !== "territory" \|\| !point\) \{\s*clearTerritoryFinishZone\(\)/);
   assert.match(app, /territoryFinishZone = L\.circle\(latlng, \{\s*radius: Tracking\.FINISH_ZONE_RADIUS_METERS,[\s\S]*?fillOpacity: 0\.14,[\s\S]*?interactive: false/);
   assert.match(app, /const clearTerritoryFinishZone = \(\) => \{\s*if \(territoryFinishZone\) map\.removeLayer\(territoryFinishZone\);\s*territoryFinishZone = null/);
