@@ -140,7 +140,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const routeStartSvg = appSource.match(/const updateRouteStartMarker = \(point\) => \{[\s\S]*?html: '(<svg class="route-start-flag"[\s\S]*?<\/svg>)'/)?.[1];
     assert.ok(routeStartSvg, "browser check uses the production territory start flag SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.40">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.41">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -667,10 +667,15 @@ test("mobile primary actions are actually visible over a full-height map at requ
           subtract(other) { return new Point(this.x - other.x, this.y - other.y); }
           divideBy(value) { return new Point(this.x / value, this.y / value); }
         }
+        const handlers = new Map();
         const map = {
           zoom: 15,
           bearing: 37,
-          on() {}, off() {},
+          on(name, handler) { handlers.set(name, handler); },
+          off(name) { handlers.delete(name); },
+          fire(name) { handlers.get(name)?.(); },
+          getZoom() { return map.zoom; }, getMinZoom() { return 2; }, getMaxZoom() { return 19; },
+          setZoomAround(position, zoom) { map.fire("zoomstart"); map.zoom = zoom; map.fire("zoomend"); },
           getSize: () => new Point(mapElement.clientWidth, mapElement.clientHeight),
           latLngToContainerPoint: () => new Point(markerX, markerY),
           containerPointToLayerPoint(point) {
@@ -685,6 +690,9 @@ test("mobile primary actions are actually visible over a full-height map at requ
             markerX -= dx; markerY -= dy; setMarkerPoint();
           }
         };
+        const zoomControl = document.createElement("div");
+        zoomControl.innerHTML = '<button type="button" class="leaflet-control-zoom-in"></button><button type="button" class="leaflet-control-zoom-out"></button>';
+        document.body.append(zoomControl);
         const follow = window.WalkMapFollow.createMapFollow({
           map,
           storage: null,
@@ -695,22 +703,44 @@ test("mobile primary actions are actually visible over a full-height map at requ
             createPoint: (x, y) => new Point(x, y)
           })
         });
+        follow.bindZoomControl(zoomControl);
         follow.setEnabled(true);
         const checks = [];
         for (const expedition of [false, true]) {
           document.body.classList.toggle("expedition-mode", expedition);
           for (const panelHeight of [Math.max(140, Math.round(innerHeight * .28)), Math.max(170, Math.round(innerHeight * .4))]) {
             panel.style.height = panelHeight + "px";
-            follow.centerOn({ lat: 48.9, lng: 21.2 });
+            map.zoom = 15;
+            const position = { lat: 48.9, lng: 21.2, timestamp: Date.now() };
+            follow.centerOn(position);
             const mapRect = mapElement.getBoundingClientRect();
             const panelRect = panel.getBoundingClientRect();
             const markerRect = marker.getBoundingClientRect();
             const expected = { x: mapRect.left + mapRect.width / 2, y: (mapRect.top + Math.min(mapRect.bottom, Math.max(mapRect.top, panelRect.top))) / 2 };
             const actual = { x: markerRect.left + markerRect.width / 2, y: markerRect.top + markerRect.height / 2 };
-            checks.push({ mode: expedition ? "expedition" : "territory", panelHeight: Math.round(panelRect.height), actual, expected, zoom: map.zoom, bearing: map.bearing });
+            const markerPosition = () => { const rect = marker.getBoundingClientRect(); return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }; };
+            const controlButton = (direction) => zoomControl.querySelector(".leaflet-control-zoom-" + direction);
+            const zoomResults = [];
+            for (const direction of ["in", "in", "out"]) {
+              const allowedByBrowser = controlButton(direction).dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+              zoomResults.push({ direction, allowedByBrowser, point: markerPosition(), zoom: map.zoom });
+            }
+            map.fire("zoomstart");
+            markerX += 24; markerY -= 17; map.zoom -= 1; setMarkerPoint();
+            map.fire("zoomend");
+            const afterPinch = markerPosition();
+            follow.setEnabled(false);
+            const disabledFollowClickAllowed = controlButton("in").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+            if (disabledFollowClickAllowed) { map.zoom += 1; markerX += 9; markerY -= 6; setMarkerPoint(); }
+            const disabledFollowPoint = markerPosition();
+            follow.setEnabled(true);
+            follow.centerOn(position);
+            const resumedPoint = markerPosition();
+            checks.push({ mode: expedition ? "expedition" : "territory", panelHeight: Math.round(panelRect.height), actual, expected, zoom: map.zoom, bearing: map.bearing, zoomResults, afterPinch, disabledFollowClickAllowed, disabledFollowPoint, resumedPoint });
           }
         }
         panel.style.removeProperty("height");
+        zoomControl.remove();
         marker.remove();
         follow.dispose();
         return checks;
@@ -718,8 +748,16 @@ test("mobile primary actions are actually visible over a full-height map at requ
       for (const check of markerChecks) {
         assert.ok(Math.abs(check.actual.x - check.expected.x) <= 1, `${width}x${height} ${check.mode}: GPS marker x=${check.actual.x.toFixed(1)} expected ${check.expected.x.toFixed(1)}`);
         assert.ok(Math.abs(check.actual.y - check.expected.y) <= 1, `${width}x${height} ${check.mode} with ${check.panelHeight}px panel: GPS marker y=${check.actual.y.toFixed(1)} expected ${check.expected.y.toFixed(1)}`);
-        assert.equal(check.zoom, 15, `${width}x${height} ${check.mode}: zoom is preserved`);
+        assert.equal(check.zoom, 16, `${width}x${height} ${check.mode}: zoom controls and pinch completed at the expected level`);
         assert.equal(check.bearing, 37, `${width}x${height} ${check.mode}: bearing is preserved`);
+        for (const zoom of check.zoomResults) {
+          assert.equal(zoom.allowedByBrowser, false, `${width}x${height} ${check.mode}: follow zoom ${zoom.direction} uses the GPS anchor`);
+          assert.ok(Math.abs(zoom.point.x - check.expected.x) <= 1 && Math.abs(zoom.point.y - check.expected.y) <= 1, `${width}x${height} ${check.mode}: GPS stays fixed through sequential ${zoom.direction} zoom`);
+        }
+        assert.ok(Math.abs(check.afterPinch.x - check.expected.x) <= 1 && Math.abs(check.afterPinch.y - check.expected.y) <= 1, `${width}x${height} ${check.mode}: pinch zoom preserves GPS screen position`);
+        assert.equal(check.disabledFollowClickAllowed, true, `${width}x${height} ${check.mode}: disabled follow leaves Leaflet zoom click untouched`);
+        assert.ok(check.disabledFollowPoint.x !== check.expected.x || check.disabledFollowPoint.y !== check.expected.y, `${width}x${height} ${check.mode}: disabled follow does not recenter during zoom`);
+        assert.ok(Math.abs(check.resumedPoint.x - check.expected.x) <= 1 && Math.abs(check.resumedPoint.y - check.expected.y) <= 1, `${width}x${height} ${check.mode}: follow resumes at the current visible-area center`);
       }
       await evaluate(stateScript({ active: true }));
       const territoryFitChecks = await evaluate(`(() => {

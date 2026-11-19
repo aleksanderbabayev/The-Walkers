@@ -37,9 +37,14 @@
     };
   };
 
-  const createMapFollow = ({ map, storage, onChange = () => {}, getTargetPoint = () => map.getSize().divideBy(2) }) => {
+  const createMapFollow = ({ map, storage, onChange = () => {}, getTargetPoint = () => map.getSize().divideBy(2), isPositionFresh = () => true }) => {
     let enabled = false;
     let programmaticMove = false;
+    let zooming = false;
+    let pendingRecenter = false;
+    let lastPosition = null;
+    let zoomAnchor = null;
+    let requestedZoom = null;
     try { enabled = storage?.getItem(STORAGE_KEY) === "true"; } catch {}
 
     const setEnabled = (value) => {
@@ -49,30 +54,74 @@
       return enabled;
     };
     const toggle = () => setEnabled(!enabled);
-    const centerOn = (point, { force = false } = {}) => {
-      if ((!enabled && !force) || !point) return false;
+    const panPositionTo = (point, targetPoint) => {
+      const currentPoint = map.latLngToContainerPoint([point.lat, point.lng]);
+      const currentLayerPoint = map.containerPointToLayerPoint(currentPoint);
+      const targetLayerPoint = map.containerPointToLayerPoint(targetPoint);
       programmaticMove = true;
-      try {
-        const currentPoint = map.latLngToContainerPoint([point.lat, point.lng]);
-        const targetPoint = getTargetPoint();
-        const currentLayerPoint = map.containerPointToLayerPoint(currentPoint);
-        const targetLayerPoint = map.containerPointToLayerPoint(targetPoint);
-        map.panBy(currentLayerPoint.subtract(targetLayerPoint), { animate: false });
-      }
+      try { map.panBy(currentLayerPoint.subtract(targetLayerPoint), { animate: false }); }
       finally { programmaticMove = false; }
+    };
+    const centerOn = (point, { force = false } = {}) => {
+      if (point) lastPosition = point;
+      if ((!enabled && !force) || !point) return false;
+      if (zooming) { pendingRecenter = true; return true; }
+      panPositionTo(point, getTargetPoint());
       return true;
     };
     const handleManualDrag = () => {
-      if (enabled && !programmaticMove) setEnabled(false);
+      if (enabled && !programmaticMove && !zooming) setEnabled(false);
+    };
+    const handleZoomStart = () => {
+      zooming = true;
+      pendingRecenter = false;
+      zoomAnchor = enabled && lastPosition && isPositionFresh(lastPosition)
+        ? { position: lastPosition, containerPoint: map.latLngToContainerPoint([lastPosition.lat, lastPosition.lng]) }
+        : null;
+    };
+    const handleZoomEnd = () => {
+      zooming = false;
+      if (enabled && zoomAnchor) {
+        if (pendingRecenter && lastPosition && isPositionFresh(lastPosition)) panPositionTo(lastPosition, getTargetPoint());
+        else if (isPositionFresh(zoomAnchor.position)) panPositionTo(zoomAnchor.position, zoomAnchor.containerPoint);
+      }
+      zoomAnchor = null;
+      pendingRecenter = false;
+      requestedZoom = null;
+    };
+    const bindZoomControl = (control) => {
+      if (!control) return () => {};
+      const handleZoomClick = (event) => {
+        if (!enabled || !lastPosition || !isPositionFresh(lastPosition)) return;
+        const button = event.target.closest?.(".leaflet-control-zoom-in, .leaflet-control-zoom-out");
+        if (!button) return;
+        const direction = button.classList.contains("leaflet-control-zoom-in") ? 1 : -1;
+        const baseZoom = requestedZoom ?? map.getZoom();
+        const targetZoom = Math.max(map.getMinZoom?.() ?? -Infinity, Math.min(map.getMaxZoom?.() ?? Infinity, baseZoom + direction));
+        event.preventDefault();
+        event.stopPropagation();
+        if (targetZoom === baseZoom) return;
+        requestedZoom = targetZoom;
+        map.setZoomAround([lastPosition.lat, lastPosition.lng], targetZoom);
+      };
+      control.addEventListener("click", handleZoomClick, true);
+      return () => control.removeEventListener("click", handleZoomClick, true);
     };
 
     map.on("dragstart", handleManualDrag);
+    map.on("zoomstart", handleZoomStart);
+    map.on("zoomend", handleZoomEnd);
     return {
       get enabled() { return enabled; },
       setEnabled,
       toggle,
       centerOn,
-      dispose() { map.off("dragstart", handleManualDrag); }
+      bindZoomControl,
+      dispose() {
+        map.off("dragstart", handleManualDrag);
+        map.off("zoomstart", handleZoomStart);
+        map.off("zoomend", handleZoomEnd);
+      }
     };
   };
 

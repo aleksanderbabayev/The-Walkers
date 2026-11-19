@@ -806,8 +806,10 @@
     map,
     storage: mapFollowStorage,
     onChange: () => updateLocateButton(locationState),
-    getTargetPoint: getMapVisualCenter
+    getTargetPoint: getMapVisualCenter,
+    isPositionFresh: locationIsFresh
   });
+  mapFollow.bindZoomControl(zoomControl);
   let followLayoutFrame = 0;
   const recenterFollowingLocation = () => {
     if (!mapFollow.enabled || !locationIsFresh(latestLocation) || followLayoutFrame) return;

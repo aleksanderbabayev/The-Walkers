@@ -8,12 +8,33 @@ class FakeMap {
   off(name) { this.handlers.delete(name); }
   fire(name) { this.handlers.get(name)?.(); }
   getSize() { return new FakePoint(400, 600); }
+  getZoom() { return this.zoom; }
+  getMinZoom() { return 2; }
+  getMaxZoom() { return 19; }
   latLngToContainerPoint(center) { this.center = center; return this.markerPoint; }
   containerPointToLayerPoint(point) { return point; }
+  setZoomAround(center, zoom) {
+    this.fire("zoomstart");
+    this.center = center;
+    this.zoom = zoom;
+    this.fire("zoomend");
+  }
   panBy(offset, options) {
     this.markerPoint = this.markerPoint.subtract(offset);
     this.panOptions = options;
     this.fire("dragstart");
+  }
+}
+
+class FakeZoomControl {
+  constructor() { this.listeners = new Set(); }
+  addEventListener(type, listener, capture) { if (type === "click" && capture) this.listeners.add(listener); }
+  removeEventListener(type, listener, capture) { if (type === "click" && capture) this.listeners.delete(listener); }
+  click(direction) {
+    const button = { classList: { contains: (name) => name === `leaflet-control-zoom-${direction}` } };
+    const event = { target: { closest: () => button }, defaultPrevented: false, propagationStopped: false, preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.propagationStopped = true; } };
+    for (const listener of this.listeners) listener(event);
+    return event;
   }
 }
 
@@ -55,6 +76,55 @@ test("GPS movement cannot recenter the map when follow mode is off", () => {
   const map = new FakeMap(), follow = MapFollow.createMapFollow({ map, storage: makeStorage() });
   assert.equal(follow.centerOn({ lat: 48.9, lng: 21.2 }), false);
   assert.deepEqual(map.center, [0, 0]);
+});
+
+test("follow zoom controls anchor the current GPS point and pinch restores its screen position", () => {
+  const map = new FakeMap(), control = new FakeZoomControl();
+  const follow = MapFollow.createMapFollow({ map, storage: makeStorage() });
+  const unbind = follow.bindZoomControl(control);
+  const location = { lat: 48.9, lng: 21.2, timestamp: Date.now() };
+  follow.setEnabled(true);
+  follow.centerOn(location);
+  const originalPoint = map.markerPoint;
+
+  assert.equal(control.click("in").defaultPrevented, true);
+  assert.equal(map.zoom, 15);
+  assert.deepEqual(map.markerPoint, originalPoint);
+  assert.equal(control.click("in").defaultPrevented, true);
+  assert.equal(map.zoom, 16);
+  assert.deepEqual(map.markerPoint, originalPoint);
+  assert.equal(control.click("out").defaultPrevented, true);
+  assert.equal(map.zoom, 15);
+  assert.deepEqual(map.markerPoint, originalPoint);
+
+  map.fire("zoomstart");
+  map.markerPoint = new FakePoint(originalPoint.x + 31, originalPoint.y - 22);
+  map.fire("zoomend");
+  assert.deepEqual(map.markerPoint, originalPoint, "pinch zoom returns GPS to the same screen point after zooming");
+  assert.equal(follow.enabled, true, "zoom corrections do not count as a manual drag");
+  unbind();
+  follow.dispose();
+  assert.equal(control.listeners.size, 0);
+});
+
+test("zoom remains native when follow is disabled and following resumes at the visible-area center", () => {
+  const map = new FakeMap(), control = new FakeZoomControl();
+  let target = new FakePoint(200, 220);
+  const follow = MapFollow.createMapFollow({ map, storage: makeStorage(), getTargetPoint: () => target });
+  follow.bindZoomControl(control);
+  follow.setEnabled(true);
+  follow.centerOn({ lat: 48.9, lng: 21.2 });
+  follow.setEnabled(false);
+
+  const ordinaryZoom = control.click("in");
+  assert.equal(ordinaryZoom.defaultPrevented, false);
+  assert.equal(map.zoom, 14, "the module leaves disabled-follow zoom to Leaflet");
+
+  target = new FakePoint(200, 180);
+  follow.setEnabled(true);
+  assert.equal(follow.centerOn({ lat: 48.9, lng: 21.2 }), true);
+  assert.deepEqual(map.markerPoint, target, "follow can resume using the current visible-area center");
+  follow.dispose();
 });
 
 test("visual center uses the free map area above the panel and falls back on desktop", () => {
@@ -115,11 +185,13 @@ test("capture completion disables follow and GPS following reuses the shared wat
   const bootstrap = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
   assert.match(app, /if \(closed\) mapFollow\.setEnabled\(false\);/);
   assert.match(app, /mapFollow\.centerOn\(result\.point\)/);
+  assert.ok(app.includes("mapFollow.bindZoomControl(zoomControl)"));
+  assert.ok(app.includes("isPositionFresh: locationIsFresh"));
   assert.match(app, /button\.classList\.toggle\("is-following", mapFollow\?\.enabled === true\)/);
   assert.match(app, /button\.setAttribute\("aria-pressed", String\(mapFollow\?\.enabled === true\)\)/);
   assert.match(app, /Отключить следование за вашим местоположением/);
-  assert.ok(bootstrap.includes('"map-follow.js?v=0.1.74"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.37"'));
+  assert.ok(bootstrap.includes('"map-follow.js?v=0.1.75"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.41"'));
   assert.doesNotMatch(fs.readFileSync(require.resolve("../map-follow.js"), "utf8"), /watchPosition/);
 });
 
