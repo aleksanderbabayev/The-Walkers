@@ -276,7 +276,11 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
 .walkCount { min-width: 28px; padding: 4px 9px; border-radius: 14px; background: #fff; color: #50634e; font-size: 12px; text-align: center; }
 .walksChevron { font-size: 18px; line-height: 1; }
 .utility-menu { position: relative; }
-.utility-menu > summary { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 13px; background: #edf2e8; color: #315b39; font-size: 22px; font-weight: 700; letter-spacing: 2px; line-height: 1; list-style: none; cursor: pointer; }
+.utility-menu > summary { box-sizing: border-box; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid #d7e7d3; border-radius: 14px; background: #f6fbf4; color: #315b3b; line-height: 1; list-style: none; cursor: pointer; transition: background-color 120ms ease; }
+.utility-menu > summary:active { background: #e8f2e4; }
+.utility-menu > summary:focus-visible { outline: 2px solid #315b3b; outline-offset: 2px; }
+.utility-menu-icon { display: block; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.utility-menu-icon circle { fill: #f6fbf4; stroke: currentColor; stroke-width: 1.8; }
 .utility-menu > summary::-webkit-details-marker { display: none; }
 .utility-menu-panel { position: absolute; z-index: 1500; top: calc(100% + 6px); right: 0; width: min(300px, calc(100vw - 24px)); max-height: min(70vh, 680px); padding: 12px; display: none; gap: 8px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid #e3e8df; border-radius: 16px; background: #fff; box-shadow: 0 12px 32px #25362424; }
 .utility-menu[open] > .utility-menu-panel { display: grid; }
