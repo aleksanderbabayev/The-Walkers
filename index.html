@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.2.38">
+  <meta name="app-version" content="0.2.39">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=0.2.38">
+  <link rel="stylesheet" href="styles.css?v=0.2.39">
   <link rel="stylesheet" href="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.css">
 </head>
 <body>
@@ -23,12 +23,13 @@
     <div class="headerActions">
       <details id="utilityMenu" class="utility-menu">
         <summary aria-label="Меню" title="Меню">
-          <svg class="utility-menu-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M4 6h4m4 0h8M4 12h8m4 0h4M4 18h3m4 0h9" />
-            <circle cx="10" cy="6" r="1.5" />
-            <circle cx="14" cy="12" r="1.5" />
-            <circle cx="9" cy="18" r="1.5" />
-          </svg>
+          <span class="utility-menu-visual" aria-hidden="true">
+            <svg class="utility-menu-icon" viewBox="0 0 24 24" focusable="false">
+              <path d="M3 6h18" />
+              <path d="M3 12h18" />
+              <path d="M3 18h18" />
+            </svg>
+          </span>
         </summary>
         <div class="utility-menu-panel">
           <button id="musicToggle" class="icon soundToggle" type="button" data-menu-action="music" aria-label="Выключить фоновую музыку" aria-pressed="true" title="Выключить фоновую музыку">🔊 <span>Музыка</span></button>
