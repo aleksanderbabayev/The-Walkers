@@ -397,9 +397,10 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
   border: 0;
   border-radius: 0;
   background: transparent;
+  background-image: none;
   box-shadow: none;
 }
-#map .leaflet-control-zoom.leaflet-bar::before { position: absolute; z-index: -1; inset: 0 2px; border: 1px solid var(--map-control-border); border-radius: 10px; background: #fff; box-shadow: var(--map-control-shadow); content: ""; }
+#map .leaflet-control-zoom.leaflet-bar::before { position: absolute; z-index: -1; inset: 4px 2px; border: 1px solid var(--map-control-border); border-radius: 10px; background: #fff; box-shadow: var(--map-control-shadow); content: ""; }
 #map .leaflet-control-zoom a {
   box-sizing: border-box;
   justify-self: center;
@@ -414,11 +415,12 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
   border: 0;
   border-radius: 0;
   background: transparent;
+  background-image: none;
   color: #25362a;
   box-shadow: none;
   font-family: inherit;
-  font-size: 22px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 400;
   line-height: 1;
   text-align: center;
   text-decoration: none;

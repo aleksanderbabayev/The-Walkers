@@ -140,7 +140,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const routeStartSvg = appSource.match(/const updateRouteStartMarker = \(point\) => \{[\s\S]*?html: '(<svg class="route-start-flag"[\s\S]*?<\/svg>)'/)?.[1];
     assert.ok(routeStartSvg, "browser check uses the production territory start flag SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.43">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.44">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -434,7 +434,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
             const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
             const visualBorderX = parseFloat(visual.borderLeftWidth) + parseFloat(visual.borderRightWidth);
             const visualBorderY = parseFloat(visual.borderTopWidth) + parseFloat(visual.borderBottomWidth);
-            return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, borderWidth: style.borderWidth, background: style.backgroundColor, shadow: style.boxShadow, display: style.display, justifyItems: style.justifyItems, alignItems: style.alignItems, fontSize: style.fontSize, hit: Boolean(hit && (hit === element || element.contains(hit))), icon: { left: icon.left, right: icon.right, top: icon.top, bottom: icon.bottom }, visual: { width: parseFloat(visual.width) + visualBorderX, height: parseFloat(visual.height) + visualBorderY, radius: visual.borderRadius, borderWidth: visual.borderWidth, borderColor: visual.borderColor, background: visual.backgroundColor, shadow: visual.boxShadow } };
+            return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, borderWidth: style.borderWidth, background: style.backgroundColor, backgroundImage: style.backgroundImage, shadow: style.boxShadow, margin: style.margin, padding: style.padding, display: style.display, justifyItems: style.justifyItems, alignItems: style.alignItems, fontSize: style.fontSize, fontWeight: style.fontWeight, hit: Boolean(hit && (hit === element || element.contains(hit))), icon: { left: icon.left, right: icon.right, top: icon.top, bottom: icon.bottom }, visual: { width: parseFloat(visual.width) + visualBorderX, height: parseFloat(visual.height) + visualBorderY, radius: visual.borderRadius, borderWidth: visual.borderWidth, borderColor: visual.borderColor, background: visual.backgroundColor, shadow: visual.boxShadow } };
           };
           const originalClass = locate.className;
           const locationStates = ["", "is-locating", "is-ready", "is-error", "is-following"].map((state) => {
@@ -448,7 +448,8 @@ test("mobile primary actions are actually visible over a full-height map at requ
           const zoomGroupStyle = getComputedStyle(zoomGroup), zoomGroupVisual = getComputedStyle(zoomGroup, "::before");
           const zoomBorderX = parseFloat(zoomGroupVisual.borderLeftWidth) + parseFloat(zoomGroupVisual.borderRightWidth);
           const zoomBorderY = parseFloat(zoomGroupVisual.borderTopWidth) + parseFloat(zoomGroupVisual.borderBottomWidth);
-          const result = { map: { left: map.left, right: map.right, top: map.top }, headerBottom: header.bottom, locate: describe(locate, "::before"), compass: describe(compass, "::before"), rotateContainer: { borderWidth: getComputedStyle(rotateContainer).borderWidth, background: getComputedStyle(rotateContainer).backgroundColor, shadow: getComputedStyle(rotateContainer).boxShadow }, zoom: zoom.map(describe), zoomGroup: { width: zoomGroup.getBoundingClientRect().width, height: zoomGroup.getBoundingClientRect().height, borderWidth: zoomGroupStyle.borderWidth, background: zoomGroupStyle.backgroundColor, shadow: zoomGroupStyle.boxShadow, visual: { width: parseFloat(zoomGroupVisual.width) + zoomBorderX, height: parseFloat(zoomGroupVisual.height) + zoomBorderY, radius: zoomGroupVisual.borderRadius, borderWidth: zoomGroupVisual.borderWidth, borderColor: zoomGroupVisual.borderColor, background: zoomGroupVisual.backgroundColor, shadow: zoomGroupVisual.boxShadow } }, locationStates };
+          const zoomDivider = getComputedStyle(zoom[1], "::before");
+          const result = { map: { left: map.left, right: map.right, top: map.top }, headerBottom: header.bottom, locate: describe(locate, "::before"), compass: describe(compass, "::before"), rotateContainer: { borderWidth: getComputedStyle(rotateContainer).borderWidth, background: getComputedStyle(rotateContainer).backgroundColor, shadow: getComputedStyle(rotateContainer).boxShadow }, zoom: zoom.map(describe), zoomDivider: { top: zoomDivider.top, height: zoomDivider.height, left: zoomDivider.left, right: zoomDivider.right, background: zoomDivider.backgroundColor }, zoomGroup: { width: zoomGroup.getBoundingClientRect().width, height: zoomGroup.getBoundingClientRect().height, borderWidth: zoomGroupStyle.borderWidth, background: zoomGroupStyle.backgroundColor, backgroundImage: zoomGroupStyle.backgroundImage, shadow: zoomGroupStyle.boxShadow, visual: { width: parseFloat(zoomGroupVisual.width) + zoomBorderX, height: parseFloat(zoomGroupVisual.height) + zoomBorderY, radius: zoomGroupVisual.borderRadius, borderWidth: zoomGroupVisual.borderWidth, borderColor: zoomGroupVisual.borderColor, background: zoomGroupVisual.backgroundColor, shadow: zoomGroupVisual.boxShadow } }, locationStates };
           startupGate.hidden = startupGateWasHidden;
           return result;
         })()`);
@@ -463,7 +464,8 @@ test("mobile primary actions are actually visible over a full-height map at requ
           assert.equal(control.display, "grid", `${width}x${height} ${scenario.name}: ${name} uses centered grid layout`);
           assert.equal(control.justifyItems, "center", `${width}x${height} ${scenario.name}: ${name} is centered horizontally`);
           assert.equal(control.alignItems, "center", `${width}x${height} ${scenario.name}: ${name} is centered vertically`);
-          assert.equal(control.fontSize, "22px", `${width}x${height} ${scenario.name}: ${name} icon is proportioned consistently`);
+          assert.equal(control.fontSize, index < 2 ? "22px" : "18px", `${width}x${height} ${scenario.name}: ${name} icon has its balanced visual size`);
+          if (index >= 2) assert.equal(control.fontWeight, "400", `${width}x${height} ${scenario.name}: ${name} symbol uses a light stroke weight`);
           assert.ok(Math.abs((control.icon.left + control.icon.right) / 2 - (control.left + control.right) / 2) <= 3, `${width}x${height} ${scenario.name}: ${name} icon is centered horizontally`);
           assert.ok(Math.abs((control.icon.top + control.icon.bottom) / 2 - (control.top + control.bottom) / 2) <= 3, `${width}x${height} ${scenario.name}: ${name} icon is centered vertically`);
         }
@@ -471,7 +473,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
         for (const [index, surface] of surfaces.entries()) {
           const name = ["geolocation", "compass", "zoom group"][index];
           assert.equal(surface.width, 40, `${width}x${height}: ${name} visible surface is 40px wide`);
-          assert.equal(surface.height, index === 2 ? 88 : 40, `${width}x${height}: ${name} visible surface has the intended compact height`);
+          assert.equal(surface.height, index === 2 ? 80 : 40, `${width}x${height}: ${name} visible surface has the intended compact height`);
           assert.equal(surface.radius, "10px", `${width}x${height}: ${name} visual surface has a 10px radius`);
           assert.equal(surface.borderWidth, "1px", `${width}x${height}: ${name} has one 1px border`);
           assert.equal(surface.borderColor, "rgb(216, 225, 213)", `${width}x${height}: ${name} uses the shared gray-green border`);
@@ -491,7 +493,18 @@ test("mobile primary actions are actually visible over a full-height map at requ
         assert.equal(mapControlStyles.zoomGroup.height, 88, `${width}x${height}: zoom group is two contiguous 44px touch rows`);
         assert.equal(mapControlStyles.zoomGroup.borderWidth, "0px", `${width}x${height}: zoom Leaflet wrapper adds no second border`);
         assert.equal(mapControlStyles.zoomGroup.background, "rgba(0, 0, 0, 0)", `${width}x${height}: zoom Leaflet wrapper adds no second background`);
+        assert.equal(mapControlStyles.zoomGroup.backgroundImage, "none", `${width}x${height}: zoom Leaflet wrapper adds no image surface`);
         assert.equal(mapControlStyles.zoomGroup.shadow, "none", `${width}x${height}: zoom Leaflet wrapper adds no second shadow`);
+        for (const [index, button] of mapControlStyles.zoom.entries()) {
+          assert.equal(button.fontSize, "18px", `${width}x${height}: zoom ${index ? "out" : "in"} symbol is 18px`);
+          assert.equal(button.fontWeight, "400", `${width}x${height}: zoom ${index ? "out" : "in"} symbol uses a light weight`);
+          assert.equal(button.backgroundImage, "none", `${width}x${height}: zoom ${index ? "out" : "in"} has no Leaflet image`);
+          assert.equal(button.padding, "0px", `${width}x${height}: zoom ${index ? "out" : "in"} has no extra padding`);
+          assert.equal(button.margin, "0px", `${width}x${height}: zoom ${index ? "out" : "in"} has no extra margin`);
+        }
+        assert.equal(mapControlStyles.zoomDivider.top, "0px", `${width}x${height}: zoom divider aligns to the row boundary`);
+        assert.equal(mapControlStyles.zoomDivider.height, "1px", `${width}x${height}: zoom divider is thin`);
+        assert.equal(mapControlStyles.zoomDivider.background, "rgb(216, 225, 213)", `${width}x${height}: zoom divider matches the group frame`);
         assert.equal(mapControlStyles.locate.left - mapControlStyles.map.left, 10, `${width}x${height}: geolocation control is inset 10px from the map's left edge`);
         assert.equal(mapControlStyles.locate.top - mapControlStyles.map.top, 10, `${width}x${height}: geolocation control is inset 10px from the map's top edge`);
         assert.equal(mapControlStyles.compass.right, mapControlStyles.map.right - 10, `${width}x${height}: compass is inset 10px from the map's right edge`);
