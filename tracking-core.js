@@ -386,6 +386,20 @@
     return { continuous, reason: continuous ? "continuous" : "unsafe-gap", distanceMeters: gapMeters, maxGapMeters };
   };
 
+  const evaluateRouteTransition = (previous, result, options = DEFAULTS) => {
+    if (result?.reason === "confirm" && result.candidate) {
+      const continuity = evaluateSegmentContinuity(previous, result.candidate, options);
+      return { candidate: result.candidate, continuity, requiresRecovery: !continuity.continuous };
+    }
+    if (result?.reason === "confirmed-gap" && result.accepted) {
+      const candidate = (result.points || [result.point]).find((point) => point?.segmentStart);
+      if (!candidate) return null;
+      const continuity = evaluateSegmentContinuity(previous, candidate, options);
+      return { candidate, continuity, requiresRecovery: !continuity.continuous };
+    }
+    return null;
+  };
+
   const evaluateTrackClosure = (points = [], options = DEFAULTS) => {
     if (points.length < options.minPolygonPoints) return { eligible: false, reason: "too-few-points" };
     if (points.some((point) => !Number.isFinite(point?.lat) || !Number.isFinite(point?.lng)
@@ -500,5 +514,5 @@
     return { start, startWatch, stopAutosave, stop };
   };
 
-  return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, FINISH_ZONE_RADIUS_METERS, ROUTE_RECOVERY_RADIUS_METERS, ROUTE_RECOVERY_ACCURACY_METERS, ROUTE_RECOVERY_CONFIRMATIONS, distanceMeters, evaluatePosition, evaluateDisplayPosition, shouldUpdateGpsMarker, evaluateLocationPosition, isLocationFresh, evaluateLocationUpdate, createPositionFilter, createRouteRecovery, createFinishPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, evaluateSegmentContinuity, evaluateTrackClosure, canCloseTrack, evaluateTerritoryCapture, shouldDisplayWalkOnMap, createGpsServices };
+  return { DEFAULTS, LOCATION_DEFAULTS, GPS_WARMUP_DEFAULTS, FINISH_ZONE_RADIUS_METERS, ROUTE_RECOVERY_RADIUS_METERS, ROUTE_RECOVERY_ACCURACY_METERS, ROUTE_RECOVERY_CONFIRMATIONS, distanceMeters, evaluatePosition, evaluateDisplayPosition, shouldUpdateGpsMarker, evaluateLocationPosition, isLocationFresh, evaluateLocationUpdate, createPositionFilter, createRouteRecovery, createFinishPositionFilter, validateInitialRoute, createInitialRouteBuffer, createGpsWarmup, splitSegments, distanceForPoints, evaluateSegmentContinuity, evaluateRouteTransition, evaluateTrackClosure, canCloseTrack, evaluateTerritoryCapture, shouldDisplayWalkOnMap, createGpsServices };
 });

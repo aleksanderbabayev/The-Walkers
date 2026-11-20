@@ -32,6 +32,9 @@ class MemoryDatabase {
 test("Finish and Retreat button dispatch call their actions without passing the event", () => {
   const appSource = fs.readFileSync(require.resolve("../app.js"), "utf8");
   const bootstrapSource = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
+  const htmlSource = fs.readFileSync(require.resolve("../index.html"), "utf8");
+  assert.match(htmlSource, /<meta name="app-version" content="0\.2\.45">/);
+  assert.match(htmlSource, /location-bootstrap\.js\?v=0\.2\.45/);
   assert.match(appSource, /Actions\.bindClick\(\$\("finish"\), \(\) => finishWalk\(\)\);/);
   assert.match(appSource, /await finishWalk\(true\);/);
   assert.match(appSource, /walk\.closed = true;/);
@@ -50,8 +53,8 @@ test("Finish and Retreat button dispatch call their actions without passing the 
   assert.doesNotMatch(resumeFailure, /positionFilter\.reset|gpsWarmup\.reset/);
   assert.match(appSource, /const receivePosition = Actions\.createPositionReceiver\(/);
   assert.ok(bootstrapSource.includes('"walk-actions.js?v=0.1.48"'));
-  assert.ok(bootstrapSource.includes('"app.js?v=0.2.41"'));
-  assert.ok(bootstrapSource.includes('"tracking-core.js?v=0.2.14"'));
+  assert.ok(bootstrapSource.includes('"app.js?v=0.2.45"'));
+  assert.ok(bootstrapSource.includes('"tracking-core.js?v=0.2.15"'));
   assert.match(appSource, /const evaluateCaptureReadiness = \(routePoints = initialRouteBuffer\.pending \? \[\] : points, allowFinishing = false\) => \{[\s\S]*?Tracking\.evaluateTerritoryCapture\(routePoints, capturePosition\)[\s\S]*?\(allowFinishing \|\| !finishing\).*?readiness\.eligible/);
   assert.match(appSource, /const updateCaptureAvailability = \(readiness = evaluateCaptureReadiness\(\)\) => \{\s*\$\("finish"\)\.disabled = !readiness\.eligible/);
   assert.match(appSource, /const finishPositionFilter = Tracking\.createFinishPositionFilter\(\)/);
@@ -95,25 +98,29 @@ test("Finish and Retreat button dispatch call their actions without passing the 
   assert.equal(Tracking.shouldDisplayWalkOnMap(retreatedWalk), false);
 });
 
-test("only unsafe territory gaps enter persisted recovery; return never enters the route or enables capture early", () => {
+test("territory and expedition share unsafe-gap recovery; return never enters the route or enables progress early", () => {
   const appSource = require("node:fs").readFileSync(require.resolve("../app.js"), "utf8");
   assert.match(appSource, /const routeRecovery = Tracking\.createRouteRecovery\(\)/);
-  assert.match(appSource, /activeMode === "territory" && result\.reason === "confirm" && result\.candidate/);
-  assert.match(appSource, /Tracking\.evaluateSegmentContinuity\(points\.at\(-1\), result\.candidate\)/);
-  assert.match(appSource, /result\.reason === "confirmed-gap" && result\.accepted[\s\S]*?Tracking\.evaluateSegmentContinuity\(points\.at\(-1\), gapStart\)/);
+  assert.match(appSource, /const routeTransition = Tracking\.evaluateRouteTransition\(points\.at\(-1\), result\)/);
+  assert.doesNotMatch(appSource.slice(appSource.indexOf("const routeTransition ="), appSource.indexOf("if (!result.accepted)", appSource.indexOf("const routeTransition ="))), /activeMode === "territory"/);
   assert.match(appSource, /if \(routeRecovery\.active\) \{\s*await processRecoveryPosition\(position, processedAt\);\s*return;/);
   assert.match(appSource, /eligible: false, reason: "recovery-required"/);
   assert.match(appSource, /routeRecovery\.snapshot\(\)/);
   assert.match(appSource, /routeRecovery\.restore\(draft\.routeRecovery\)/);
-  assert.match(appSource, /routeReconnectPending = activeMode === "territory" && !draft\.routeRecovery && draft\.routeReconnectPending === true/);
+  assert.match(appSource, /routeReconnectPending = !draft\.routeRecovery && draft\.routeReconnectPending === true/);
+  assert.match(appSource, /\.\.\.\(routeRecovery\.active \? \{ routeRecovery: routeRecovery\.snapshot\(\) \} : \{\}\)/);
+  assert.match(appSource, /\.\.\.\(routeReconnectPending \? \{ routeReconnectPending: true, recoveryResumeProof: \{ \.\.\.recoveryResumeProof \} \} : \{\}\)/);
   assert.match(appSource, /recoveryResumeProof = routeReconnectPending \? \{ \.\.\.draft\.recoveryResumeProof \} : null/);
   assert.match(appSource, /updateRouteRecoveryMarker\(routeRecovery\.anchor\)/);
   assert.match(appSource, /type: "recovery-required"[\s\S]*?type: "recovery-progress"[\s\S]*?type: "recovery-completed"/);
-  assert.match(appSource, /say\(RECOVERY_INSTRUCTION\)/);
+  assert.match(appSource, /const recoveryInstruction = \(\) => activeMode === "expedition"[\s\S]*?продолжить экспедицию/);
+  assert.match(appSource, /const updateRouteRecoveryStatus = \(\) => \{\s*if \(activeMode !== "expedition" \|\| !routeRecovery\.active\) return/);
   const recoveryHandler = appSource.slice(appSource.indexOf("const processRecoveryPosition"), appSource.indexOf("const processPosition"));
   assert.doesNotMatch(recoveryHandler, /points\.push|distanceMetersTotal\s*\+=|saveDraftSnapshot\(\[\.\.\.points/);
+  assert.doesNotMatch(recoveryHandler, /updateExpeditionProgress|expeditionCompletionPending|expeditionTarget\s*=/);
   assert.match(recoveryHandler, /recordingFilterPrevious = \{ \.\.\.result\.point \}/);
   assert.match(recoveryHandler, /say\("Маршрут восстановлен"\)/);
+  assert.doesNotMatch(appSource.slice(appSource.indexOf("const beginRouteRecovery"), appSource.indexOf("const processRecoveryPosition")), /expeditionTarget\s*=|updateExpeditionTargetMarker/);
   assert.match(appSource, /\$\("abandonWalk"\)\.hidden = !\(active \|\| warmingUp\)/);
   assert.match(appSource, /const processPosition = async \(position\) => \{[\s\S]*?if \(routeRecovery\.active\)[\s\S]*?await processRecoveryPosition\(position, processedAt\);\s*return;/);
   assert.match(appSource, /if \(updateExpeditionProgress\(result\.point\)\) say\("Цель достигнута\. Завершаем экспедицию…"\)/);

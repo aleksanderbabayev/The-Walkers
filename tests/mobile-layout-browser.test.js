@@ -78,6 +78,7 @@ const scenarios = [
   { name: "random expedition target selection", state: { expedition: true, random: true }, buttons: ["startExpedition", "generateTarget"] },
   { name: "active territory walk", state: { active: true }, buttons: ["finish", "abandonWalk"] },
   { name: "territory recovery required", state: { active: true, recovery: true }, buttons: ["abandonWalk"] },
+  { name: "expedition recovery required", state: { active: true, expedition: true, recovery: true }, buttons: ["abandonWalk"] },
   { name: "active expedition", state: { active: true, expedition: true }, buttons: ["abandonWalk"] },
   { name: "walk completed", state: {}, buttons: ["start"] }
 ];
@@ -140,7 +141,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const routeStartSvg = appSource.match(/const updateRouteStartMarker = \(point\) => \{[\s\S]*?html: '(<svg class="route-start-flag"[\s\S]*?<\/svg>)'/)?.[1];
     assert.ok(routeStartSvg, "browser check uses the production territory start flag SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.44">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.45">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -231,7 +232,9 @@ test("mobile primary actions are actually visible over a full-height map at requ
       if (s.recovery) {
         document.getElementById("finish").disabled = true;
         document.getElementById("message").classList.add("is-route-recovery");
-        document.getElementById("message").textContent = "Маршрут прерван. Вернитесь к отмеченной точке, чтобы продолжить захват территории";
+        document.getElementById("message").textContent = s.expedition
+          ? "Маршрут прерван. Вернитесь к отмеченной точке, чтобы продолжить экспедицию"
+          : "Маршрут прерван. Вернитесь к отмеченной точке, чтобы продолжить захват территории";
       } else {
         document.getElementById("message").classList.remove("is-route-recovery");
         document.getElementById("message").textContent = "";
@@ -520,7 +523,10 @@ test("mobile primary actions are actually visible over a full-height map at requ
         assert.equal(locationStates[4].borderColor, "rgb(40, 119, 223)", `${width}x${height}: GPS follow uses the blue visual border without an outer ring`);
         assert.ok(locationStates.every((state) => state.outerBorder === "0px" && state.outerBackground === "rgba(0, 0, 0, 0)" && state.outerShadow === "none"), `${width}x${height}: GPS states do not add an outer outline or surface`);
         if (scenario.state.recovery) {
-          assert.equal(result.recoveryMessage.text, "Маршрут прерван. Вернитесь к отмеченной точке, чтобы продолжить захват территории", `${width}x${height}: recovery instructions remain complete`);
+          const recoveryMessage = scenario.state.expedition
+            ? "Маршрут прерван. Вернитесь к отмеченной точке, чтобы продолжить экспедицию"
+            : "Маршрут прерван. Вернитесь к отмеченной точке, чтобы продолжить захват территории";
+          assert.equal(result.recoveryMessage.text, recoveryMessage, `${width}x${height}: recovery instructions remain complete`);
           assert.equal(result.recoveryMessage.visible, true, `${width}x${height}: recovery instructions are visible`);
           assert.equal(result.recoveryMessage.fullText, true, `${width}x${height}: recovery instructions wrap without clipping`);
           assert.equal(result.captureDisabled, true, `${width}x${height}: capture remains disabled during recovery`);

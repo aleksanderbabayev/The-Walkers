@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const Tracking = require("../tracking-core.js");
+const Expedition = require("../expedition-core.js");
 
 const now = 1_800_000_000_000;
 const position = (lat, lng, timestamp = now, accuracy = 5) => ({ timestamp, coords: { latitude: lat, longitude: lng, accuracy } });
@@ -225,6 +226,113 @@ test("sequential short GPS pauses keep confirmed segments together and exclude b
   assert.equal(Tracking.splitSegments(route).length, 1);
   assert.ok(Math.abs(Tracking.distanceForPoints(route) - 17) < 0.1,
     "only the two confirmed post-gap movements count toward route distance");
+});
+
+test("expedition recording shares safe pause joins and checkpoint recovery without counting drift or return travel", () => {
+  const meters = (value) => value / 111194.9266;
+  const fix = (offsetMeters, timestamp, accuracy = 5) => position(0, meters(offsetMeters), timestamp, accuracy);
+  const filter = Tracking.createPositionFilter();
+  const recovery = Tracking.createRouteRecovery();
+  const route = [point(0, 0, now - 300000, true, 5)];
+  let previous = route.at(-1), reconnectProof = null;
+  const target = { lat: 0, lng: meters(88) };
+  const processRouteFix = (offsetMeters, timestamp) => {
+    const result = filter.evaluate(fix(offsetMeters, timestamp), previous, timestamp);
+    const transition = Tracking.evaluateRouteTransition(previous, result);
+    if (transition?.requiresRecovery) {
+      recovery.start(previous, "unsafe-gap", {
+        gapDurationMs: transition.candidate.timestamp - previous.timestamp,
+        gapDistanceMeters: Tracking.distanceMeters(previous, transition.candidate)
+      });
+      filter.reset();
+      return { recoveryRequired: true, routePoint: false, targetReached: false, result };
+    }
+    if (!result.accepted) return { routePoint: false, targetReached: false, result };
+    const accepted = (result.points || [result.point]).map((point, index) => index === 0 && reconnectProof ? {
+      ...point, segmentStart: true, segmentDistanceMeters: result.distanceMeters || 0,
+      recoveryResume: { ...reconnectProof, segmentDistanceMeters: result.distanceMeters || 0 }
+    } : point);
+    route.push(...accepted);
+    previous = accepted.at(-1);
+    reconnectProof = null;
+    return { routePoint: true, targetReached: Expedition.hasReachedTarget(result.point, target, Tracking.distanceMeters), result };
+  };
+  const processRecoveryFix = (offsetMeters, timestamp) => {
+    const result = recovery.evaluate(fix(offsetMeters, timestamp), timestamp);
+    if (!result.completed) return { routePoint: false, targetReached: false, result };
+    recovery.clear();
+    previous = result.point;
+    reconnectProof = {
+      confirmed: true, checkpoint: { lat: route.at(-1).lat, lng: route.at(-1).lng },
+      checkpointDistanceMeters: result.distanceToAnchorMeters,
+      returnAccuracyMeters: result.point.accuracy, confirmationCount: result.confirmations
+    };
+    filter.reset();
+    return { routePoint: false, targetReached: false, recovered: true, result };
+  };
+
+  for (const driftMeters of [3.8, 3.5]) {
+    const candidateAt = previous.timestamp + 32000;
+    const pending = processRouteFix(driftMeters, candidateAt);
+    assert.equal(pending.result.reason, "confirm");
+    assert.equal(pending.recoveryRequired, undefined, "short pauses with plausible drift remain pending confirmation");
+    assert.equal(Tracking.evaluateRouteTransition(previous, pending.result).requiresRecovery, false);
+    const confirmed = processRouteFix(driftMeters, candidateAt + 5000);
+    assert.equal(confirmed.result.reason, "confirmed-gap");
+    assert.equal(confirmed.routePoint, true);
+    assert.equal(confirmed.result.distanceMeters, 0, "stationary drift is not added to expedition distance");
+    assert.equal(Tracking.splitSegments(route).length, 1, "confirmed safe pauses stay on one route line");
+  }
+
+  const firstGapAt = previous.timestamp + 64000;
+  const firstGapOffset = Tracking.distanceMeters(route[0], previous) + 88;
+  target.lng = meters(firstGapOffset);
+  const firstGap = processRouteFix(firstGapOffset, firstGapAt);
+  assert.equal(firstGap.result.reason, "confirm");
+  assert.equal(firstGap.recoveryRequired, true, "64 s / 88 m gap enters checkpoint recovery");
+  assert.equal(route.length, 3, "the unconfirmed position is not added to the route");
+  const firstRouteCount = route.length;
+  const targetDuringReturn = processRecoveryFix(firstGapOffset, firstGapAt + 3000);
+  assert.equal(targetDuringReturn.targetReached, false, "a possible goal fix during recovery is not evaluated as expedition progress");
+  assert.equal(route.length, firstRouteCount, "GPS fixes while walking back do not enter the route");
+  let at = firstGapAt + 6000;
+  for (let index = 0; index < 3; index += 1) {
+    const result = processRecoveryFix(10, at + index * 3000);
+    if (index < 2) assert.equal(result.recovered, undefined);
+    else assert.equal(result.recovered, true, "three fresh accurate checkpoint fixes complete recovery");
+  }
+  const resumedOne = processRouteFix(16, at + 15000);
+  assert.equal(resumedOne.routePoint, true);
+  assert.equal(route.at(-1).recoveryResume.confirmationCount, Tracking.ROUTE_RECOVERY_CONFIRMATIONS);
+
+  const secondGapAt = previous.timestamp + 67800;
+  const secondGap = processRouteFix(101, secondGapAt);
+  assert.equal(secondGap.result.reason, "confirm");
+  assert.equal(secondGap.recoveryRequired, true, "67.8 s / 85 m gap enters a second checkpoint recovery");
+  const secondRouteCount = route.length;
+  processRecoveryFix(101, secondGapAt + 3000);
+  assert.equal(route.length, secondRouteCount);
+  at = secondGapAt + 6000;
+  for (let index = 0; index < 3; index += 1) processRecoveryFix(26, at + index * 3000);
+  const resumedTwo = processRouteFix(32, at + 15000);
+  assert.equal(resumedTwo.routePoint, true);
+  assert.equal(route.at(-1).recoveryResume.confirmationCount, Tracking.ROUTE_RECOVERY_CONFIRMATIONS);
+
+  while (firstGapOffset - Tracking.distanceMeters(route[0], previous) > 6) {
+    const nextOffset = Tracking.distanceMeters(route[0], previous) + 6;
+    const accepted = processRouteFix(nextOffset, previous.timestamp + 5000);
+    assert.equal(accepted.routePoint, true, "accepted walking fixes continue toward the unchanged expedition target");
+  }
+  const reachedAfterRecovery = processRouteFix(firstGapOffset, previous.timestamp + 5000);
+  assert.equal(reachedAfterRecovery.routePoint, true);
+  assert.equal(reachedAfterRecovery.targetReached, true, "normal target detection resumes after the route reconnects");
+  assert.equal(Tracking.splitSegments(route).length, 1, "safe joins and both confirmed recoveries display continuously");
+  const expectedDistance = firstGapOffset - 20;
+  assert.ok(Math.abs(Tracking.distanceForPoints(route) - expectedDistance) < 0.2,
+    "only 6 m after each return and subsequent confirmed walking count; both gaps and returns are excluded");
+  const restoredHistory = JSON.parse(JSON.stringify(route));
+  assert.equal(Tracking.splitSegments(restoredHistory).length, 1, "completed expedition history retains both recovery joins");
+  assert.ok(Math.abs(Tracking.distanceForPoints(restoredHistory) - Tracking.distanceForPoints(route)) < 0.01);
 });
 
 test("a spatially unsafe or overlong confirmed pause still requires checkpoint recovery", () => {

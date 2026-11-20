@@ -139,6 +139,47 @@ test("the first accepted segment after returning to a recovery checkpoint surviv
   assert.deepEqual(restored.recoveryResumeProof, recoveryResumeProof);
 });
 
+test("expedition checkpoint, target, and confirmed reconnect proof survive draft reload and completed history", async () => {
+  const db = new MemoryDatabase();
+  const target = { lat: 50.081, lng: 14.432 };
+  const anchor = { lat: 50.08, lng: 14.43, accuracy: 5, timestamp: 1000, segmentStart: true };
+  const routeRecovery = {
+    anchor, reason: "unsafe-gap", startedAt: 65000,
+    gap: { gapDurationMs: 64000, gapDistanceMeters: 88, maxSafeGapMeters: 5 }
+  };
+  const draft = { id: "active", mode: "expedition", targetMethod: "manual", target, startedAt: 900, points: [anchor], routeFilterPrevious: anchor, routeRecovery };
+  await Storage.createDraft(db, draft);
+  const restoredRecoveryDraft = await Storage.readDraft(db);
+  assert.deepEqual(restoredRecoveryDraft.routeRecovery, routeRecovery);
+  assert.deepEqual(restoredRecoveryDraft.target, target, "checkpoint recovery does not change the selected goal");
+
+  const { routeRecovery: _routeRecovery, ...resumableDraft } = restoredRecoveryDraft;
+  const recoveryResumeProof = {
+    confirmed: true, confirmationCount: 3, checkpoint: { lat: anchor.lat, lng: anchor.lng },
+    checkpointDistanceMeters: 10, returnAccuracyMeters: 5, segmentDistanceMeters: 4
+  };
+  await Storage.writeDraft(db, { ...resumableDraft, routeReconnectPending: true, recoveryResumeProof });
+  const restoredReconnectDraft = await Storage.readDraft(db);
+  assert.equal(restoredReconnectDraft.routeReconnectPending, true);
+  assert.deepEqual(restoredReconnectDraft.recoveryResumeProof, recoveryResumeProof);
+  assert.deepEqual(restoredReconnectDraft.target, target);
+
+  const resumedPoint = {
+    ...anchor, lat: anchor.lat + 0.00005, timestamp: 70000, segmentStart: true,
+    segmentDistanceMeters: 4, recoveryResume: { ...recoveryResumeProof }
+  };
+  const completed = {
+    id: "expedition-recovered", mode: "expedition", target, expeditionStatus: "reached",
+    points: [anchor, resumedPoint], startedAt: 900, finishedAt: 71000,
+    durationMs: 70100, distanceMeters: 4, closed: false, showOnMap: true
+  };
+  await Storage.completeWalk(db, completed);
+  const historyWalk = (await Storage.readWalks(db)).find((walk) => walk.id === completed.id);
+  assert.deepEqual(historyWalk.target, target);
+  assert.deepEqual(historyWalk.points[1].recoveryResume, recoveryResumeProof);
+  assert.equal(await Storage.readDraft(db), undefined, "successful expedition completion removes the active checkpoint draft normally");
+});
+
 test("expedition mode and target survive draft recovery and completed history while old walks stay compatible", async () => {
   const db = new MemoryDatabase();
   const target = { lat: 50.08, lng: 14.43 };
