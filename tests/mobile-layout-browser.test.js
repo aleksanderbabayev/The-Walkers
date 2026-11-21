@@ -141,10 +141,16 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const routeStartSvg = appSource.match(/const updateRouteStartMarker = \(point\) => \{[\s\S]*?html: '(<svg class="route-start-flag"[\s\S]*?<\/svg>)'/)?.[1];
     assert.ok(routeStartSvg, "browser check uses the production territory start flag SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.45">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.46">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
+    await evaluate(fs.readFileSync(path.join(projectRoot, "assets", "vendor", "polygon-clipping.umd.min.js"), "utf8"));
+    await evaluate(fs.readFileSync(path.join(projectRoot, "city-coverage.js"), "utf8"));
+    const browserCityCoverage = await evaluate("WalkCityCoverage.calculate([], window.polygonClipping)");
+    assert.ok(browserCityCoverage && browserCityCoverage.cityArea > 70_400_000 && browserCityCoverage.cityArea < 70_600_000, "browser loads the local OSM boundary and calculates its area without a remote API");
+    const initialCityLabel = await evaluate("WalkCityCoverage.calculate([], window.polygonClipping).then((coverage) => { const label = document.getElementById('cityCoverage'); document.getElementById('cityCoverageValue').textContent = WalkCityCoverage.formatPercentage(coverage); return label.textContent.replace(/\\s+/g, ' ').trim(); })");
+    assert.equal(initialCityLabel, "Прешов: 0,00%", "browser renders zero captured city area with the required label, locale and precision");
     await evaluate(fs.readFileSync(path.join(projectRoot, "map-layer-panes.js"), "utf8"));
     await evaluate(fs.readFileSync(path.join(projectRoot, "map-follow.js"), "utf8"));
     await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
@@ -587,6 +593,23 @@ test("mobile primary actions are actually visible over a full-height map at requ
           assert.ok(button.top >= button.hostTop - 1 && button.bottom <= button.hostBottom + 1, `${width}x${height} ${scenario.name}: #${button.id} is clipped by its action container`);
         }
       }
+      for (const [width, height] of viewports) {
+        await setViewport(width, height);
+        const coverage = await evaluate(`(() => {
+          const box = (selector) => { const rect = document.querySelector(selector).getBoundingClientRect(); return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height }; };
+          const coverage = box("#cityCoverage");
+          const map = box(".mapFrame");
+          return { coverage, map, locate: box("#locate"), compass: box(".leaflet-control-rotate a"), zoom: box(".leaflet-control-zoom"), panel: box(".panel"), label: document.getElementById("cityCoverage").getAttribute("aria-label") };
+        })()`);
+        assert.equal(coverage.label, "Процент захваченной территории Прешова", `${width}x${height}: city coverage exposes its accessible label`);
+        assert.ok(coverage.coverage.width > 0 && coverage.coverage.height <= 40, `${width}x${height}: city coverage remains compact`);
+        assert.ok(coverage.coverage.left >= coverage.map.left && coverage.coverage.right <= coverage.map.right, `${width}x${height}: city coverage stays inside the map`);
+        assert.ok(Math.abs((coverage.coverage.left + coverage.coverage.right) / 2 - (coverage.map.left + coverage.map.right) / 2) < 1, `${width}x${height}: city coverage is centered horizontally`);
+        const overlaps = (first, second) => first.left < second.right && first.right > second.left && first.top < second.bottom && first.bottom > second.top;
+        assert.ok(!overlaps(coverage.coverage, coverage.locate) && !overlaps(coverage.coverage, coverage.compass), `${width}x${height}: city coverage does not obscure GPS or compass controls`);
+        assert.ok(!overlaps(coverage.coverage, coverage.zoom) && !overlaps(coverage.coverage, coverage.panel), `${width}x${height}: city coverage does not obscure zoom or walk controls`);
+      }
+
       const fallbackStart = appSource.indexOf("const showDiagnosticsFallback = ") + "const showDiagnosticsFallback = ".length;
       const fallbackEnd = appSource.indexOf("\n  const copyDiagnosticReport", fallbackStart);
       const fallbackFactory = appSource.slice(fallbackStart, fallbackEnd).trim().replace(/;$/, "");
@@ -920,7 +943,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
         assert.ok(check.scale > 0, `${width}x${height} territory receives a useful fit scale`);
         assert.equal(check.maxZoom, 16, `${width}x${height} existing maximum zoom is preserved`);
       }
-      t.diagnostic(`${width}x${height}: map ${baselineMapHeight}px; ${scenarios.length} UI states; GPS marker centered above panel; captured territory fits and centers above two measured panel heights`);
+      t.diagnostic(`${width}x${height}: map ${baselineMapHeight}px; ${scenarios.length} UI states; city coverage avoids controls; GPS marker centered above panel; territory fits above two measured panel heights`);
     }
     await cdp.send("Emulation.setUserAgentOverride", {
       userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",

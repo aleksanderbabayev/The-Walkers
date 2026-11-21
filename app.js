@@ -2,7 +2,7 @@
   "use strict";
   const DB_NAME = "the-walkers", DB_VERSION = 2;
   const AUTOSAVE_MS = 5000;
-  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl, MapFollow = window.WalkMapFollow, Expedition = window.WalkExpedition, ExpeditionLine = window.WalkExpeditionLine, ExpeditionMarkers = window.WalkExpeditionMarkers, MapLayerPanes = window.WalkMapLayerPanes, WALK_COLORS = window.WalkColors, UtilityMenu = window.WalkUtilityMenu;
+  const Tracking = window.WalkTracking, WalkStorage = window.WalkStorage, Diagnostics = window.WalkDiagnostics, Actions = window.WalkActions, LocationUi = window.WalkLocationUi, LocationDiagnostics = window.WalkLocationDiagnostics, MusicControl = window.WalkMusicControl, MapFollow = window.WalkMapFollow, Expedition = window.WalkExpedition, ExpeditionLine = window.WalkExpeditionLine, ExpeditionMarkers = window.WalkExpeditionMarkers, MapLayerPanes = window.WalkMapLayerPanes, WALK_COLORS = window.WalkColors, UtilityMenu = window.WalkUtilityMenu, CityCoverage = window.WalkCityCoverage;
   const $ = (id) => document.getElementById(id);
   const appVersion = document.querySelector('meta[name="app-version"]').content;
   const expeditionCompassState = Expedition.createCompassState(Tracking.distanceMeters);
@@ -1072,6 +1072,8 @@
     savedLayers = [];
     let focusedTerritory = null;
     const walks = await WalkStorage.readWalks(db);
+    const cityCoverage = await CityCoverage.calculate(walks);
+    $("cityCoverageValue").textContent = CityCoverage.formatPercentage(cityCoverage);
     walksById = new Map(walks.map((walk) => [walk.id, walk]));
     diagnosticsByWalkId.clear();
     walks.sort((a, b) => b.finishedAt - a.finishedAt);

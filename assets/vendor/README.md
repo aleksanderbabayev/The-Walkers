@@ -1,0 +1,1 @@
+`polygon-clipping.umd.min.js` is polygon-clipping 0.15.7, bundled locally under its MIT license. The complete license text is in `polygon-clipping.LICENSE.md`; upstream package: https://www.npmjs.com/package/polygon-clipping.
