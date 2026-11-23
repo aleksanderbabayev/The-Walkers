@@ -141,7 +141,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const routeStartSvg = appSource.match(/const updateRouteStartMarker = \(point\) => \{[\s\S]*?html: '(<svg class="route-start-flag"[\s\S]*?<\/svg>)'/)?.[1];
     assert.ok(routeStartSvg, "browser check uses the production territory start flag SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.49">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.50">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -321,10 +321,12 @@ test("mobile primary actions are actually visible over a full-height map at requ
           const [pointX, pointY] = toMapPoint(coordinate);
           return (index ? "L" : "M") + pointX + "," + pointY;
         }).join(" ") + " Z").join(" "));
-        boundaryPath.setAttribute("fill", "#62a873");
-        boundaryPath.setAttribute("fill-opacity", "0.055");
-        boundaryPath.setAttribute("stroke", "#438253");
+        boundaryPath.setAttribute("fill", "none");
+        boundaryPath.setAttribute("fill-opacity", "0");
+        boundaryPath.setAttribute("stroke", "#e64b45");
         boundaryPath.setAttribute("stroke-width", "2");
+        boundaryPath.setAttribute("stroke-dasharray", "6 4");
+        boundaryPath.setAttribute("stroke-opacity", "0.8");
         boundarySvg.append(boundaryPath);
         mapElement.querySelector('[data-test-pane="' + panes.cityBoundary + '"]').append(boundarySvg);
         const x = mapRect.left + 60, y = mapRect.top + 70;
@@ -378,6 +380,8 @@ test("mobile primary actions are actually visible over a full-height map at requ
             pathLength: renderedBoundary.getAttribute("d").length,
             fill: renderedBoundary.getAttribute("fill"),
             fillOpacity: renderedBoundary.getAttribute("fill-opacity"),
+            dashArray: renderedBoundary.getAttribute("stroke-dasharray"),
+            strokeOpacity: renderedBoundary.getAttribute("stroke-opacity"),
             stroke: renderedBoundary.getAttribute("stroke"),
             strokeWidth: renderedBoundary.getAttribute("stroke-width")
           },
@@ -388,9 +392,11 @@ test("mobile primary actions are actually visible over a full-height map at requ
       assert.equal(layerStack.boundary.paneZIndex, 250, `${width}x${height}: city boundary is between basemap and game layers`);
       assert.equal(layerStack.boundary.pointerEvents, "none", `${width}x${height}: boundary cannot intercept map controls or game hit-testing`);
       assert.ok(layerStack.boundary.pathLength > 1000, `${width}x${height}: the local administrative outline is rendered`);
-      assert.equal(layerStack.boundary.fill, "#62a873", `${width}x${height}: boundary has a light green fill`);
-      assert.equal(layerStack.boundary.fillOpacity, "0.055", `${width}x${height}: boundary fill remains subtle`);
-      assert.equal(layerStack.boundary.stroke, "#438253", `${width}x${height}: boundary has a green outline`);
+      assert.equal(layerStack.boundary.fill, "none", `${width}x${height}: boundary has no fill`);
+      assert.equal(layerStack.boundary.fillOpacity, "0", `${width}x${height}: boundary fill opacity is zero`);
+      assert.equal(layerStack.boundary.stroke, "#e64b45", `${width}x${height}: boundary has a red outline`);
+      assert.equal(layerStack.boundary.dashArray, "6 4", `${width}x${height}: boundary uses a 6 px / 4 px dash pattern`);
+      assert.equal(layerStack.boundary.strokeOpacity, "0.8", `${width}x${height}: boundary line opacity is 0.8`);
       assert.equal(layerStack.boundary.strokeWidth, "2", `${width}x${height}: boundary outline is 2 px`);
       assert.equal(layerStack.mapHit, "current-location", `${width}x${height}: current GPS dot wins hit-testing over territory, route, checkpoint, game marker and accuracy circle`);
       assert.equal(layerStack.checkpoint.width, 32, `${width}x${height}: recovery checkpoint uses the intended marker size`);

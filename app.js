@@ -141,7 +141,7 @@
     L.geoJSON(geometry, {
       pane: mapPanes.cityBoundary,
       interactive: false,
-      style: { color: "#438253", weight: 2, opacity: 0.88, fillColor: "#62a873", fillOpacity: 0.055 }
+      style: { color: "#e64b45", weight: 2, dashArray: "6 4", opacity: 0.8, fill: false, fillOpacity: 0 }
     }).addTo(map);
   });
 

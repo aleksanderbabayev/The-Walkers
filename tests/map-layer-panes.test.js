@@ -55,7 +55,7 @@ test("map layers use their assigned panes and GPS marker updates reuse the same 
   assert.match(app, /pane: mapPanes\.gameMarker/);
   assert.match(app, /CityCoverage\.loadBoundary\(\)\.then\(\(geometry\) => \{/);
   assert.match(app, /L\.geoJSON\(geometry, \{\s*pane: mapPanes\.cityBoundary,\s*interactive: false,/);
-  assert.match(app, /style: \{ color: "#438253", weight: 2, opacity: 0\.88, fillColor: "#62a873", fillOpacity: 0\.055 \}/);
+  assert.match(app, /style: \{ color: "#e64b45", weight: 2, dashArray: "6 4", opacity: 0\.8, fill: false, fillOpacity: 0 \}/);
   assert.match(app, /L\.geoJSON\(geometry,[\s\S]*?\}\)\.addTo\(map\)/);
   assert.match(markers, /pane: "gameMarkerPane"/);
   assert.match(line, /pane: "routePane"/);
