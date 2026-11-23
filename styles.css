@@ -405,6 +405,7 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
 #map .leaflet-control-rotate a:active::before { background: #f3f6f0; }
 #map .leaflet-control-rotate a:focus-visible, #map .leaflet-control-zoom a:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
 #map .leaflet-control-rotate a svg, #map .leaflet-control-zoom a svg { display: block; width: 22px; height: 22px; }
+#map .leaflet-control-zoom a svg.mapZoomIcon { width: 18px; height: 18px; }
 #map .leaflet-control-zoom.leaflet-bar {
   box-sizing: border-box;
   position: relative;
@@ -437,12 +438,12 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
   border-radius: 0;
   background: transparent;
   background-image: none;
-  color: #25362a;
+  color: #315b3b;
   box-shadow: none;
   font-family: inherit;
-  font-size: 18px;
+  font-size: 0;
   font-weight: 400;
-  line-height: 1;
+  line-height: 0;
   text-align: center;
   text-decoration: none;
   text-indent: 0;

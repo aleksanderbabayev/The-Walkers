@@ -141,7 +141,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const routeStartSvg = appSource.match(/const updateRouteStartMarker = \(point\) => \{[\s\S]*?html: '(<svg class="route-start-flag"[\s\S]*?<\/svg>)'/)?.[1];
     assert.ok(routeStartSvg, "browser check uses the production territory start flag SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.46">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.47">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -151,6 +151,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     assert.ok(browserCityCoverage && browserCityCoverage.cityArea > 70_400_000 && browserCityCoverage.cityArea < 70_600_000, "browser loads the local OSM boundary and calculates its area without a remote API");
     const initialCityLabel = await evaluate("WalkCityCoverage.calculate([], window.polygonClipping).then((coverage) => { const label = document.getElementById('cityCoverage'); document.getElementById('cityCoverageValue').textContent = WalkCityCoverage.formatPercentage(coverage); return label.textContent.replace(/\\s+/g, ' ').trim(); })");
     assert.equal(initialCityLabel, "Прешов: 0,00%", "browser renders zero captured city area with the required label, locale and precision");
+    await evaluate(fs.readFileSync(path.join(projectRoot, "map-zoom-control.js"), "utf8"));
     await evaluate(fs.readFileSync(path.join(projectRoot, "map-layer-panes.js"), "utf8"));
     await evaluate(fs.readFileSync(path.join(projectRoot, "map-follow.js"), "utf8"));
     await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
@@ -180,9 +181,9 @@ test("mobile primary actions are actually visible over a full-height map at requ
         button.className = "leaflet-control-zoom-" + direction;
         button.setAttribute("role", "button");
         button.setAttribute("aria-label", label);
-        button.textContent = direction === "in" ? "+" : "−";
         zoom.append(button);
       }
+      window.WalkMapZoomControl.configure(zoom);
       bottomRight.append(zoom);
       container.append(topRight, bottomRight);
       document.getElementById("map").append(container);
@@ -438,12 +439,15 @@ test("mobile primary actions are actually visible over a full-height map at requ
             const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
             const visual = pseudo ? getComputedStyle(element, pseudo) : style;
             const svg = element.querySelector("svg");
+            const iconPath = svg?.querySelector("path");
+            const pathBox = iconPath?.getBBox();
+            const iconPathStyle = iconPath && getComputedStyle(iconPath);
             const range = document.createRange(); range.selectNodeContents(element);
             const icon = svg ? svg.getBoundingClientRect() : range.getBoundingClientRect();
             const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
             const visualBorderX = parseFloat(visual.borderLeftWidth) + parseFloat(visual.borderRightWidth);
             const visualBorderY = parseFloat(visual.borderTopWidth) + parseFloat(visual.borderBottomWidth);
-            return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, borderWidth: style.borderWidth, background: style.backgroundColor, backgroundImage: style.backgroundImage, shadow: style.boxShadow, margin: style.margin, padding: style.padding, display: style.display, justifyItems: style.justifyItems, alignItems: style.alignItems, fontSize: style.fontSize, fontWeight: style.fontWeight, hit: Boolean(hit && (hit === element || element.contains(hit))), icon: { left: icon.left, right: icon.right, top: icon.top, bottom: icon.bottom }, visual: { width: parseFloat(visual.width) + visualBorderX, height: parseFloat(visual.height) + visualBorderY, radius: visual.borderRadius, borderWidth: visual.borderWidth, borderColor: visual.borderColor, background: visual.backgroundColor, shadow: visual.boxShadow } };
+            return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, borderWidth: style.borderWidth, background: style.backgroundColor, backgroundImage: style.backgroundImage, shadow: style.boxShadow, margin: style.margin, padding: style.padding, display: style.display, justifyItems: style.justifyItems, alignItems: style.alignItems, fontSize: style.fontSize, fontWeight: style.fontWeight, hit: Boolean(hit && (hit === element || element.contains(hit))), icon: { left: icon.left, right: icon.right, top: icon.top, bottom: icon.bottom }, svgIcon: svg && { viewBox: svg.getAttribute("viewBox"), width: svg.getBoundingClientRect().width, height: svg.getBoundingClientRect().height, ariaHidden: svg.getAttribute("aria-hidden"), focusable: svg.getAttribute("focusable") }, path: pathBox && { d: iconPath.getAttribute("d"), stroke: iconPathStyle.stroke, strokeWidth: iconPathStyle.strokeWidth, linecap: iconPathStyle.strokeLinecap, linejoin: iconPathStyle.strokeLinejoin, centerX: pathBox.x + pathBox.width / 2, centerY: pathBox.y + pathBox.height / 2, width: pathBox.width, height: pathBox.height }, visual: { width: parseFloat(visual.width) + visualBorderX, height: parseFloat(visual.height) + visualBorderY, radius: visual.borderRadius, borderWidth: visual.borderWidth, borderColor: visual.borderColor, background: visual.backgroundColor, shadow: visual.boxShadow } };
           };
           const originalClass = locate.className;
           const locationStates = ["", "is-locating", "is-ready", "is-error", "is-following"].map((state) => {
@@ -473,7 +477,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
           assert.equal(control.display, "grid", `${width}x${height} ${scenario.name}: ${name} uses centered grid layout`);
           assert.equal(control.justifyItems, "center", `${width}x${height} ${scenario.name}: ${name} is centered horizontally`);
           assert.equal(control.alignItems, "center", `${width}x${height} ${scenario.name}: ${name} is centered vertically`);
-          assert.equal(control.fontSize, index < 2 ? "22px" : "18px", `${width}x${height} ${scenario.name}: ${name} icon has its balanced visual size`);
+          assert.equal(control.fontSize, index < 2 ? "22px" : "0px", `${width}x${height} ${scenario.name}: ${name} uses the expected native-icon or SVG-only styling`);
           if (index >= 2) assert.equal(control.fontWeight, "400", `${width}x${height} ${scenario.name}: ${name} symbol uses a light stroke weight`);
           assert.ok(Math.abs((control.icon.left + control.icon.right) / 2 - (control.left + control.right) / 2) <= 3, `${width}x${height} ${scenario.name}: ${name} icon is centered horizontally`);
           assert.ok(Math.abs((control.icon.top + control.icon.bottom) / 2 - (control.top + control.bottom) / 2) <= 3, `${width}x${height} ${scenario.name}: ${name} icon is centered vertically`);
@@ -505,11 +509,20 @@ test("mobile primary actions are actually visible over a full-height map at requ
         assert.equal(mapControlStyles.zoomGroup.backgroundImage, "none", `${width}x${height}: zoom Leaflet wrapper adds no image surface`);
         assert.equal(mapControlStyles.zoomGroup.shadow, "none", `${width}x${height}: zoom Leaflet wrapper adds no second shadow`);
         for (const [index, button] of mapControlStyles.zoom.entries()) {
-          assert.equal(button.fontSize, "18px", `${width}x${height}: zoom ${index ? "out" : "in"} symbol is 18px`);
+          assert.equal(button.fontSize, "0px", `${width}x${height}: zoom uses only the SVG glyph, not a text symbol`);
           assert.equal(button.fontWeight, "400", `${width}x${height}: zoom ${index ? "out" : "in"} symbol uses a light weight`);
           assert.equal(button.backgroundImage, "none", `${width}x${height}: zoom ${index ? "out" : "in"} has no Leaflet image`);
           assert.equal(button.padding, "0px", `${width}x${height}: zoom ${index ? "out" : "in"} has no extra padding`);
           assert.equal(button.margin, "0px", `${width}x${height}: zoom ${index ? "out" : "in"} has no extra margin`);
+          assert.deepEqual(button.svgIcon, { viewBox: "0 0 18 18", width: 18, height: 18, ariaHidden: "true", focusable: "false" }, `${width}x${height}: zoom ${index ? "out" : "in"} uses the centered 18px decorative SVG`);
+          assert.equal(button.path.stroke, "rgb(49, 91, 59)", `${width}x${height}: zoom SVG uses the app's dark green`);
+          assert.equal(button.path.strokeWidth, "2.5px", `${width}x${height}: zoom strokes have the agreed weight`);
+          assert.equal(button.path.linecap, "round", `${width}x${height}: zoom stroke endings are rounded`);
+          assert.equal(button.path.linejoin, "round", `${width}x${height}: zoom joins are rounded`);
+          assert.equal(button.path.centerX, 9, `${width}x${height}: zoom path is horizontally centered in the SVG viewBox`);
+          assert.equal(button.path.centerY, 9, `${width}x${height}: zoom path is vertically centered in the SVG viewBox`);
+          assert.ok(Math.abs((button.icon.left + button.icon.right) / 2 - (button.left + button.right) / 2) < 0.5, `${width}x${height}: zoom SVG is optically centered horizontally in its hit area`);
+          assert.ok(Math.abs((button.icon.top + button.icon.bottom) / 2 - (button.top + button.bottom) / 2) < 0.5, `${width}x${height}: zoom SVG is optically centered vertically in its hit area`);
         }
         assert.equal(mapControlStyles.zoomDivider.top, "0px", `${width}x${height}: zoom divider aligns to the row boundary`);
         assert.equal(mapControlStyles.zoomDivider.height, "1px", `${width}x${height}: zoom divider is thin`);
@@ -825,7 +838,8 @@ test("mobile primary actions are actually visible over a full-height map at requ
           }
         };
         const zoomControl = document.createElement("div");
-        zoomControl.innerHTML = '<button type="button" class="leaflet-control-zoom-in"></button><button type="button" class="leaflet-control-zoom-out"></button>';
+        zoomControl.innerHTML = '<a href="#zoom-in" class="leaflet-control-zoom-in"></a><a href="#zoom-out" class="leaflet-control-zoom-out"></a>';
+        window.WalkMapZoomControl.configure(zoomControl);
         document.body.append(zoomControl);
         const follow = window.WalkMapFollow.createMapFollow({
           map,

@@ -33,8 +33,8 @@ test("Finish and Retreat button dispatch call their actions without passing the 
   const appSource = fs.readFileSync(require.resolve("../app.js"), "utf8");
   const bootstrapSource = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
   const htmlSource = fs.readFileSync(require.resolve("../index.html"), "utf8");
-  assert.match(htmlSource, /<meta name="app-version" content="0\.2\.46">/);
-  assert.match(htmlSource, /location-bootstrap\.js\?v=0\.2\.46/);
+  assert.match(htmlSource, /<meta name="app-version" content="0\.2\.47">/);
+  assert.match(htmlSource, /location-bootstrap\.js\?v=0\.2\.47/);
   assert.match(appSource, /Actions\.bindClick\(\$\("finish"\), \(\) => finishWalk\(\)\);/);
   assert.match(appSource, /await finishWalk\(true\);/);
   assert.match(appSource, /walk\.closed = true;/);
@@ -53,7 +53,7 @@ test("Finish and Retreat button dispatch call their actions without passing the 
   assert.doesNotMatch(resumeFailure, /positionFilter\.reset|gpsWarmup\.reset/);
   assert.match(appSource, /const receivePosition = Actions\.createPositionReceiver\(/);
   assert.ok(bootstrapSource.includes('"walk-actions.js?v=0.1.48"'));
-  assert.ok(bootstrapSource.includes('"app.js?v=0.2.46"'));
+  assert.ok(bootstrapSource.includes('"app.js?v=0.2.47"'));
   assert.ok(bootstrapSource.includes('"tracking-core.js?v=0.2.15"'));
   assert.match(appSource, /const evaluateCaptureReadiness = \(routePoints = initialRouteBuffer\.pending \? \[\] : points, allowFinishing = false\) => \{[\s\S]*?Tracking\.evaluateTerritoryCapture\(routePoints, capturePosition\)[\s\S]*?\(allowFinishing \|\| !finishing\).*?readiness\.eligible/);
   assert.match(appSource, /const updateCaptureAvailability = \(readiness = evaluateCaptureReadiness\(\)\) => \{\s*\$\("finish"\)\.disabled = !readiness\.eligible/);
