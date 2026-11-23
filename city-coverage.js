@@ -99,7 +99,7 @@
     return calculateCoverage({ boundaryGeometry, walks, polygonClipping });
   };
 
-  const api = { calculate, calculateCoverage, formatPercentage, geometryAreaSquareMeters };
+  const api = { loadBoundary, calculate, calculateCoverage, formatPercentage, geometryAreaSquareMeters };
   if (typeof window !== "undefined") window.WalkCityCoverage = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })();

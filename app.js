@@ -136,6 +136,14 @@
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
+  CityCoverage.loadBoundary().then((geometry) => {
+    if (!geometry) return;
+    L.geoJSON(geometry, {
+      pane: mapPanes.cityBoundary,
+      interactive: false,
+      style: { color: "#438253", weight: 2, opacity: 0.88, fillColor: "#62a873", fillOpacity: 0.055 }
+    }).addTo(map);
+  });
 
   let db, storageReady = false, draftResolved = false, starting = false, finishing = false, cancelling = false;
   let selectedMode = "territory", activeMode = "territory", expeditionTarget = null;

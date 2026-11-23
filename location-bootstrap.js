@@ -10,11 +10,11 @@
     "assets/vendor/polygon-clipping.umd.min.js",
     "walk-colors.js?v=0.2.25",
     "utility-menu.js?v=0.1.0",
-    "map-layer-panes.js?v=0.1.0",
+    "map-layer-panes.js?v=0.2.49",
     "walk-diagnostics.js?v=0.1.46", "walk-actions.js?v=0.1.48", "tracking-core.js?v=0.2.15",
     "walk-storage.js?v=0.1.44", "location-ui.js?v=0.2.8", "music-control.js?v=0.1.62", "map-follow.js?v=0.1.75",
     "expedition-core.js?v=0.2.3", "expedition-line.js?v=0.2.4", "expedition-markers.js?v=0.2.7",
-    "city-coverage.js?v=0.2.46", "map-zoom-control.js?v=0.2.47", "app.js?v=0.2.47"
+    "city-coverage.js?v=0.2.49", "map-zoom-control.js?v=0.2.47", "app.js?v=0.2.49"
   ];
 
   const loadScript = (source) => new Promise((resolve, reject) => {

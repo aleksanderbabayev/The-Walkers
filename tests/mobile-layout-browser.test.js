@@ -131,7 +131,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     };
     const evaluate = async (expression) => {
       const result = await cdp.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
-      if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || "Browser evaluation failed");
+      if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || "Browser evaluation failed");
       return result.result.value;
     };
     const appSource = fs.readFileSync(path.join(projectRoot, "app.js"), "utf8");
@@ -141,12 +141,14 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const routeStartSvg = appSource.match(/const updateRouteStartMarker = \(point\) => \{[\s\S]*?html: '(<svg class="route-start-flag"[\s\S]*?<\/svg>)'/)?.[1];
     assert.ok(routeStartSvg, "browser check uses the production territory start flag SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.48">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.49">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
     await evaluate(fs.readFileSync(path.join(projectRoot, "assets", "vendor", "polygon-clipping.umd.min.js"), "utf8"));
     await evaluate(fs.readFileSync(path.join(projectRoot, "city-coverage.js"), "utf8"));
+    const browserBoundaryGeometry = await evaluate("WalkCityCoverage.loadBoundary()");
+    assert.ok(browserBoundaryGeometry && ["Polygon", "MultiPolygon"].includes(browserBoundaryGeometry.type), "browser loads the local city boundary geometry for display");
     const browserCityCoverage = await evaluate("WalkCityCoverage.calculate([], window.polygonClipping)");
     assert.ok(browserCityCoverage && browserCityCoverage.cityArea > 70_400_000 && browserCityCoverage.cityArea < 70_600_000, "browser loads the local OSM boundary and calculates its area without a remote API");
     const initialCityLabel = await evaluate("WalkCityCoverage.calculate([], window.polygonClipping).then((coverage) => { const label = document.getElementById('cityCoverage'); document.getElementById('cityCoverageValue').textContent = WalkCityCoverage.formatPercentage(coverage); return label.textContent.replace(/\\s+/g, ' ').trim(); })");
@@ -286,6 +288,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
       const layerStack = await evaluate(`(() => {
         const mapElement = document.getElementById("map");
         const mapRect = mapElement.getBoundingClientRect();
+        const boundaryGeometry = ${JSON.stringify(browserBoundaryGeometry)};
         const startup = document.getElementById("locationStartupScreen");
         const startupWasHidden = startup.hidden;
         startup.hidden = true;
@@ -293,11 +296,37 @@ test("mobile primary actions are actually visible over a full-height map at requ
           createPane(name) {
             const pane = document.createElement("div");
             pane.dataset.testPane = name;
-            Object.assign(pane.style, { position: "absolute", inset: "0", pointerEvents: "none" });
+            Object.assign(pane.style, { position: "absolute", inset: "0" });
             mapElement.append(pane);
             return pane;
           }
         });
+        const outerRings = boundaryGeometry.type === "Polygon"
+          ? [boundaryGeometry.coordinates[0]]
+          : boundaryGeometry.coordinates.map((polygon) => polygon[0]);
+        const allCoordinates = outerRings.flat();
+        const longitudes = allCoordinates.map(([lng]) => lng);
+        const latitudes = allCoordinates.map(([, lat]) => lat);
+        const west = Math.min(...longitudes), east = Math.max(...longitudes);
+        const south = Math.min(...latitudes), north = Math.max(...latitudes);
+        const boundarySvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        boundarySvg.setAttribute("viewBox", "0 0 " + mapRect.width + " " + mapRect.height);
+        Object.assign(boundarySvg.style, { position: "absolute", inset: "0", width: "100%", height: "100%", pointerEvents: "none" });
+        const boundaryPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        const toMapPoint = ([lng, lat]) => [
+          8 + (lng - west) / (east - west) * Math.max(0, mapRect.width - 16),
+          8 + (north - lat) / (north - south) * Math.max(0, mapRect.height - 16)
+        ];
+        boundaryPath.setAttribute("d", outerRings.map((ring) => ring.map((coordinate, index) => {
+          const [pointX, pointY] = toMapPoint(coordinate);
+          return (index ? "L" : "M") + pointX + "," + pointY;
+        }).join(" ") + " Z").join(" "));
+        boundaryPath.setAttribute("fill", "#62a873");
+        boundaryPath.setAttribute("fill-opacity", "0.055");
+        boundaryPath.setAttribute("stroke", "#438253");
+        boundaryPath.setAttribute("stroke-width", "2");
+        boundarySvg.append(boundaryPath);
+        mapElement.querySelector('[data-test-pane="' + panes.cityBoundary + '"]').append(boundarySvg);
         const x = mapRect.left + 60, y = mapRect.top + 70;
         const markers = [
           [panes.territory, "territory", 70, 70, "#2f874d"],
@@ -324,6 +353,8 @@ test("mobile primary actions are actually visible over a full-height map at requ
           pane.append(element); elements.push(element);
         }
         const mapHit = document.elementFromPoint(x, y)?.dataset.layerKind;
+        const boundaryPane = mapElement.querySelector('[data-test-pane="' + panes.cityBoundary + '"]');
+        const renderedBoundary = boundaryPane.querySelector("path");
         const checkpoint = mapElement.querySelector(".recovery-checkpoint-icon");
         const checkpointRect = checkpoint.getBoundingClientRect();
         const checkpointCircle = checkpoint.querySelector("circle");
@@ -341,10 +372,26 @@ test("mobile primary actions are actually visible over a full-height map at requ
         startup.hidden = startupWasHidden;
         return {
           mapHit,
+          boundary: {
+            paneZIndex: Number(boundaryPane.style.zIndex),
+            pointerEvents: getComputedStyle(boundaryPane).pointerEvents,
+            pathLength: renderedBoundary.getAttribute("d").length,
+            fill: renderedBoundary.getAttribute("fill"),
+            fillOpacity: renderedBoundary.getAttribute("fill-opacity"),
+            stroke: renderedBoundary.getAttribute("stroke"),
+            strokeWidth: renderedBoundary.getAttribute("stroke-width")
+          },
           checkpoint: { width: checkpointRect.width, height: checkpointRect.height, fill: checkpointCircle.getAttribute("fill"), stroke: checkpointCircle.getAttribute("stroke"), hasFlag: Boolean(checkpointFlag) },
           headerOwnsHit: header === headerHit || header.contains(headerHit), panelOwnsHit: panel === panelHit || panel.contains(panelHit), drawerOwnsHit
         };
       })()`);
+      assert.equal(layerStack.boundary.paneZIndex, 250, `${width}x${height}: city boundary is between basemap and game layers`);
+      assert.equal(layerStack.boundary.pointerEvents, "none", `${width}x${height}: boundary cannot intercept map controls or game hit-testing`);
+      assert.ok(layerStack.boundary.pathLength > 1000, `${width}x${height}: the local administrative outline is rendered`);
+      assert.equal(layerStack.boundary.fill, "#62a873", `${width}x${height}: boundary has a light green fill`);
+      assert.equal(layerStack.boundary.fillOpacity, "0.055", `${width}x${height}: boundary fill remains subtle`);
+      assert.equal(layerStack.boundary.stroke, "#438253", `${width}x${height}: boundary has a green outline`);
+      assert.equal(layerStack.boundary.strokeWidth, "2", `${width}x${height}: boundary outline is 2 px`);
       assert.equal(layerStack.mapHit, "current-location", `${width}x${height}: current GPS dot wins hit-testing over territory, route, checkpoint, game marker and accuracy circle`);
       assert.equal(layerStack.checkpoint.width, 32, `${width}x${height}: recovery checkpoint uses the intended marker size`);
       assert.equal(layerStack.checkpoint.height, 32, `${width}x${height}: recovery checkpoint remains circular and centered`);
