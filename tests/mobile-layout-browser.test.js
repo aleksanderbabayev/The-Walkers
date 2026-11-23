@@ -141,7 +141,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const routeStartSvg = appSource.match(/const updateRouteStartMarker = \(point\) => \{[\s\S]*?html: '(<svg class="route-start-flag"[\s\S]*?<\/svg>)'/)?.[1];
     assert.ok(routeStartSvg, "browser check uses the production territory start flag SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.47">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.48">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -157,7 +157,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
     await evaluate(`(() => {
       const styles = document.createElement("style");
-      styles.textContent = "*,*::before,*::after{transition:none!important;animation:none!important}.leaflet-control-container{position:absolute;inset:0;z-index:800;pointer-events:none}.leaflet-top,.leaflet-bottom{position:absolute;z-index:800;pointer-events:none}.leaflet-top{top:0}.leaflet-right{right:0}.leaflet-bottom{bottom:0}.leaflet-control{float:left;clear:both;margin:10px;pointer-events:auto}.leaflet-bar{border:2px solid #bbb;border-radius:4px;background:#fff;box-shadow:0 1px 5px #0006}.leaflet-control-zoom a{display:block;box-sizing:border-box;text-align:center;background:#fff;border:1px solid #bbb;color:#333;text-decoration:none}.leaflet-control-rotate{background:var(--lrc-control-bg)}.leaflet-control-rotate a{display:flex;align-items:center;justify-content:center;width:var(--lrc-control-size);height:var(--lrc-control-size);box-sizing:border-box;background:#fff;border:1px solid #bbb;color:#333;text-decoration:none}";
+      styles.textContent = "*,*::before,*::after{transition:none!important;animation:none!important}.leaflet-control-container{position:absolute;inset:0;z-index:800;pointer-events:none}.leaflet-top,.leaflet-bottom{position:absolute;z-index:800;pointer-events:none}.leaflet-top{top:0}.leaflet-right{right:0}.leaflet-bottom{bottom:0}.leaflet-control{float:left;clear:both;margin:10px;pointer-events:auto}.leaflet-bar{border:2px solid #bbb;border-radius:4px;background:#fff;box-shadow:0 1px 5px #0006}.leaflet-bar a{width:26px;height:26px;line-height:26px;border-bottom:1px solid #bbb;text-align:center;color:#000;text-decoration:none}.leaflet-control-zoom a{display:block;box-sizing:border-box;text-align:center;background:#fff;border:1px solid #bbb;color:#333;text-decoration:none}.leaflet-control-rotate{background:var(--lrc-control-bg)}.leaflet-control-rotate a{display:flex;align-items:center;justify-content:center;width:var(--lrc-control-size);height:var(--lrc-control-size);box-sizing:border-box;background:#fff;border:1px solid #bbb;color:#333;text-decoration:none}";
       document.head.append(styles);
       const container = document.createElement("div");
       container.className = "leaflet-control-container";
@@ -435,6 +435,10 @@ test("mobile primary actions are actually visible over a full-height map at requ
           const compass = document.querySelector(".leaflet-control-rotate a");
           const zoom = [...document.querySelectorAll(".leaflet-control-zoom a")];
           const zoomGroup = document.querySelector(".leaflet-control-zoom");
+          const pseudoRect = (element, pseudo) => {
+            const rect = element.getBoundingClientRect(), style = getComputedStyle(element, pseudo);
+            return { left: rect.left + parseFloat(style.left), right: rect.right - parseFloat(style.right), top: rect.top + parseFloat(style.top), bottom: rect.bottom - parseFloat(style.bottom) };
+          };
           const describe = (element, pseudo = "") => {
             const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
             const visual = pseudo ? getComputedStyle(element, pseudo) : style;
@@ -447,7 +451,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
             const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
             const visualBorderX = parseFloat(visual.borderLeftWidth) + parseFloat(visual.borderRightWidth);
             const visualBorderY = parseFloat(visual.borderTopWidth) + parseFloat(visual.borderBottomWidth);
-            return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, borderWidth: style.borderWidth, background: style.backgroundColor, backgroundImage: style.backgroundImage, shadow: style.boxShadow, margin: style.margin, padding: style.padding, display: style.display, justifyItems: style.justifyItems, alignItems: style.alignItems, fontSize: style.fontSize, fontWeight: style.fontWeight, hit: Boolean(hit && (hit === element || element.contains(hit))), icon: { left: icon.left, right: icon.right, top: icon.top, bottom: icon.bottom }, svgIcon: svg && { viewBox: svg.getAttribute("viewBox"), width: svg.getBoundingClientRect().width, height: svg.getBoundingClientRect().height, ariaHidden: svg.getAttribute("aria-hidden"), focusable: svg.getAttribute("focusable") }, path: pathBox && { d: iconPath.getAttribute("d"), stroke: iconPathStyle.stroke, strokeWidth: iconPathStyle.strokeWidth, linecap: iconPathStyle.strokeLinecap, linejoin: iconPathStyle.strokeLinejoin, centerX: pathBox.x + pathBox.width / 2, centerY: pathBox.y + pathBox.height / 2, width: pathBox.width, height: pathBox.height }, visual: { width: parseFloat(visual.width) + visualBorderX, height: parseFloat(visual.height) + visualBorderY, radius: visual.borderRadius, borderWidth: visual.borderWidth, borderColor: visual.borderColor, background: visual.backgroundColor, shadow: visual.boxShadow } };
+            return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, borderWidth: style.borderWidth, background: style.backgroundColor, backgroundImage: style.backgroundImage, shadow: style.boxShadow, margin: style.margin, padding: style.padding, display: style.display, justifyItems: style.justifyItems, alignItems: style.alignItems, fontSize: style.fontSize, fontWeight: style.fontWeight, lineHeight: style.lineHeight, textIndent: style.textIndent, hit: Boolean(hit && (hit === element || element.contains(hit))), icon: { left: icon.left, right: icon.right, top: icon.top, bottom: icon.bottom }, surface: pseudo ? pseudoRect(element, pseudo) : null, svgIcon: svg && { viewBox: svg.getAttribute("viewBox"), width: svg.getBoundingClientRect().width, height: svg.getBoundingClientRect().height, ariaHidden: svg.getAttribute("aria-hidden"), focusable: svg.getAttribute("focusable") }, path: pathBox && { d: iconPath.getAttribute("d"), stroke: iconPathStyle.stroke, strokeWidth: iconPathStyle.strokeWidth, linecap: iconPathStyle.strokeLinecap, linejoin: iconPathStyle.strokeLinejoin, centerX: pathBox.x + pathBox.width / 2, centerY: pathBox.y + pathBox.height / 2, width: pathBox.width, height: pathBox.height }, visual: { width: parseFloat(visual.width) + visualBorderX, height: parseFloat(visual.height) + visualBorderY, radius: visual.borderRadius, borderWidth: visual.borderWidth, borderColor: visual.borderColor, background: visual.backgroundColor, shadow: visual.boxShadow } };
           };
           const originalClass = locate.className;
           const locationStates = ["", "is-locating", "is-ready", "is-error", "is-following"].map((state) => {
@@ -463,6 +467,8 @@ test("mobile primary actions are actually visible over a full-height map at requ
           const zoomBorderY = parseFloat(zoomGroupVisual.borderTopWidth) + parseFloat(zoomGroupVisual.borderBottomWidth);
           const zoomDivider = getComputedStyle(zoom[1], "::before");
           const result = { map: { left: map.left, right: map.right, top: map.top }, headerBottom: header.bottom, locate: describe(locate, "::before"), compass: describe(compass, "::before"), rotateContainer: { borderWidth: getComputedStyle(rotateContainer).borderWidth, background: getComputedStyle(rotateContainer).backgroundColor, shadow: getComputedStyle(rotateContainer).boxShadow }, zoom: zoom.map(describe), zoomDivider: { top: zoomDivider.top, height: zoomDivider.height, left: zoomDivider.left, right: zoomDivider.right, background: zoomDivider.backgroundColor }, zoomGroup: { width: zoomGroup.getBoundingClientRect().width, height: zoomGroup.getBoundingClientRect().height, borderWidth: zoomGroupStyle.borderWidth, background: zoomGroupStyle.backgroundColor, backgroundImage: zoomGroupStyle.backgroundImage, shadow: zoomGroupStyle.boxShadow, visual: { width: parseFloat(zoomGroupVisual.width) + zoomBorderX, height: parseFloat(zoomGroupVisual.height) + zoomBorderY, radius: zoomGroupVisual.borderRadius, borderWidth: zoomGroupVisual.borderWidth, borderColor: zoomGroupVisual.borderColor, background: zoomGroupVisual.backgroundColor, shadow: zoomGroupVisual.boxShadow } }, locationStates };
+          result.zoomGroup.surface = pseudoRect(zoomGroup, "::before");
+          result.zoomDivider.screenTop = zoom[1].getBoundingClientRect().top + parseFloat(zoomDivider.top);
           startupGate.hidden = startupGateWasHidden;
           return result;
         })()`);
@@ -481,6 +487,12 @@ test("mobile primary actions are actually visible over a full-height map at requ
           if (index >= 2) assert.equal(control.fontWeight, "400", `${width}x${height} ${scenario.name}: ${name} symbol uses a light stroke weight`);
           assert.ok(Math.abs((control.icon.left + control.icon.right) / 2 - (control.left + control.right) / 2) <= 3, `${width}x${height} ${scenario.name}: ${name} icon is centered horizontally`);
           assert.ok(Math.abs((control.icon.top + control.icon.bottom) / 2 - (control.top + control.bottom) / 2) <= 3, `${width}x${height} ${scenario.name}: ${name} icon is centered vertically`);
+        }
+        for (const [name, control] of [["geolocation", mapControlStyles.locate], ["compass", mapControlStyles.compass]]) {
+          const centerX = (control.icon.left + control.icon.right) / 2;
+          const centerY = (control.icon.top + control.icon.bottom) / 2;
+          assert.ok(Math.abs(centerX - (control.surface.left + control.surface.right) / 2) < 0.75, `${width}x${height}: ${name} icon is centered within its visible surface`);
+          assert.ok(Math.abs(centerY - (control.surface.top + control.surface.bottom) / 2) < 0.75, `${width}x${height}: ${name} icon is centered within its visible surface`);
         }
         const surfaces = [mapControlStyles.locate.visual, mapControlStyles.compass.visual, mapControlStyles.zoomGroup.visual];
         for (const [index, surface] of surfaces.entries()) {
@@ -508,12 +520,23 @@ test("mobile primary actions are actually visible over a full-height map at requ
         assert.equal(mapControlStyles.zoomGroup.background, "rgba(0, 0, 0, 0)", `${width}x${height}: zoom Leaflet wrapper adds no second background`);
         assert.equal(mapControlStyles.zoomGroup.backgroundImage, "none", `${width}x${height}: zoom Leaflet wrapper adds no image surface`);
         assert.equal(mapControlStyles.zoomGroup.shadow, "none", `${width}x${height}: zoom Leaflet wrapper adds no second shadow`);
+        const zoomSurface = mapControlStyles.zoomGroup.surface;
+        assert.equal(zoomSurface.left - mapControlStyles.zoom[0].left, 2, `${width}x${height}: zoom surface has a symmetric 2px horizontal inset`);
+        assert.equal(mapControlStyles.zoom[0].right - zoomSurface.right, 2, `${width}x${height}: zoom surface has a symmetric 2px horizontal inset`);
+        assert.equal(zoomSurface.top - mapControlStyles.zoom[0].top, 4, `${width}x${height}: zoom surface has a 4px top inset`);
+        assert.equal(mapControlStyles.zoom[1].bottom - zoomSurface.bottom, 4, `${width}x${height}: zoom surface has a matching 4px bottom inset`);
+        assert.equal(zoomSurface.right - zoomSurface.left, 40, `${width}x${height}: measured zoom surface is 40px wide`);
+        assert.equal(zoomSurface.bottom - zoomSurface.top, 80, `${width}x${height}: measured zoom surface is 80px tall`);
+        assert.equal(mapControlStyles.zoomDivider.screenTop - zoomSurface.top, 40, `${width}x${height}: divider bisects the visible surface`);
+        assert.equal(zoomSurface.bottom - mapControlStyles.zoomDivider.screenTop, 40, `${width}x${height}: both visible zoom halves are equally tall`);
         for (const [index, button] of mapControlStyles.zoom.entries()) {
           assert.equal(button.fontSize, "0px", `${width}x${height}: zoom uses only the SVG glyph, not a text symbol`);
           assert.equal(button.fontWeight, "400", `${width}x${height}: zoom ${index ? "out" : "in"} symbol uses a light weight`);
           assert.equal(button.backgroundImage, "none", `${width}x${height}: zoom ${index ? "out" : "in"} has no Leaflet image`);
           assert.equal(button.padding, "0px", `${width}x${height}: zoom ${index ? "out" : "in"} has no extra padding`);
           assert.equal(button.margin, "0px", `${width}x${height}: zoom ${index ? "out" : "in"} has no extra margin`);
+          assert.equal(button.lineHeight, "0px", `${width}x${height}: Leaflet's text line-height cannot offset the SVG`);
+          assert.equal(button.textIndent, "0px", `${width}x${height}: Leaflet's text indent cannot offset the SVG`);
           assert.deepEqual(button.svgIcon, { viewBox: "0 0 18 18", width: 18, height: 18, ariaHidden: "true", focusable: "false" }, `${width}x${height}: zoom ${index ? "out" : "in"} uses the centered 18px decorative SVG`);
           assert.equal(button.path.stroke, "rgb(49, 91, 59)", `${width}x${height}: zoom SVG uses the app's dark green`);
           assert.equal(button.path.strokeWidth, "2.5px", `${width}x${height}: zoom strokes have the agreed weight`);
@@ -522,7 +545,12 @@ test("mobile primary actions are actually visible over a full-height map at requ
           assert.equal(button.path.centerX, 9, `${width}x${height}: zoom path is horizontally centered in the SVG viewBox`);
           assert.equal(button.path.centerY, 9, `${width}x${height}: zoom path is vertically centered in the SVG viewBox`);
           assert.ok(Math.abs((button.icon.left + button.icon.right) / 2 - (button.left + button.right) / 2) < 0.5, `${width}x${height}: zoom SVG is optically centered horizontally in its hit area`);
-          assert.ok(Math.abs((button.icon.top + button.icon.bottom) / 2 - (button.top + button.bottom) / 2) < 0.5, `${width}x${height}: zoom SVG is optically centered vertically in its hit area`);
+          const visibleHalfTop = index === 0 ? zoomSurface.top : mapControlStyles.zoomDivider.screenTop;
+          const visibleHalfBottom = index === 0 ? mapControlStyles.zoomDivider.screenTop : zoomSurface.bottom;
+          const visibleCenterX = (zoomSurface.left + zoomSurface.right) / 2;
+          const visibleCenterY = (visibleHalfTop + visibleHalfBottom) / 2;
+          assert.ok(Math.abs((button.icon.left + button.icon.right) / 2 - visibleCenterX) < 0.5, `${width}x${height}: zoom ${index ? "minus" : "plus"} is centered horizontally in its visible half`);
+          assert.ok(Math.abs((button.icon.top + button.icon.bottom) / 2 - visibleCenterY) < 0.5, `${width}x${height}: zoom ${index ? "minus" : "plus"} is centered vertically in its visible half, not the taller hit row`);
         }
         assert.equal(mapControlStyles.zoomDivider.top, "0px", `${width}x${height}: zoom divider aligns to the row boundary`);
         assert.equal(mapControlStyles.zoomDivider.height, "1px", `${width}x${height}: zoom divider is thin`);
@@ -957,7 +985,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
         assert.ok(check.scale > 0, `${width}x${height} territory receives a useful fit scale`);
         assert.equal(check.maxZoom, 16, `${width}x${height} existing maximum zoom is preserved`);
       }
-      t.diagnostic(`${width}x${height}: map ${baselineMapHeight}px; ${scenarios.length} UI states; city coverage avoids controls; GPS marker centered above panel; territory fits above two measured panel heights`);
+      t.diagnostic(`${width}x${height}: map ${baselineMapHeight}px; ${scenarios.length} UI states; zoom SVGs centered in measured 40x40 surface halves; GPS/compass centered; city coverage and controls avoid overlaps; territory fits above two panel heights`);
     }
     await cdp.send("Emulation.setUserAgentOverride", {
       userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",

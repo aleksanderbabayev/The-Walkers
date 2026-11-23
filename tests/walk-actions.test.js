@@ -33,7 +33,7 @@ test("Finish and Retreat button dispatch call their actions without passing the 
   const appSource = fs.readFileSync(require.resolve("../app.js"), "utf8");
   const bootstrapSource = fs.readFileSync(require.resolve("../location-bootstrap.js"), "utf8");
   const htmlSource = fs.readFileSync(require.resolve("../index.html"), "utf8");
-  assert.match(htmlSource, /<meta name="app-version" content="0\.2\.47">/);
+  assert.match(htmlSource, /<meta name="app-version" content="0\.2\.48">/);
   assert.match(htmlSource, /location-bootstrap\.js\?v=0\.2\.47/);
   assert.match(appSource, /Actions\.bindClick\(\$\("finish"\), \(\) => finishWalk\(\)\);/);
   assert.match(appSource, /await finishWalk\(true\);/);
