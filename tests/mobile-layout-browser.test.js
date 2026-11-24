@@ -141,7 +141,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const routeStartSvg = appSource.match(/const updateRouteStartMarker = \(point\) => \{[\s\S]*?html: '(<svg class="route-start-flag"[\s\S]*?<\/svg>)'/)?.[1];
     assert.ok(routeStartSvg, "browser check uses the production territory start flag SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.50">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.51">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -336,7 +336,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
           [panes.gameOverlay, "checkpoint", 64, 64, "#2877df33"],
           [panes.gameMarker, "game-marker", 32, 32, "transparent"],
           [panes.accuracy, "accuracy", 56, 56, "#2877df22"],
-          [panes.currentLocation, "current-location", 18, 18, "#2877df"]
+          [panes.currentLocation, "current-location", 9.5, 9.5, "#2877df"]
         ];
         const elements = [];
         for (const [paneName, kind, width, height, color] of markers) {
@@ -346,15 +346,22 @@ test("mobile primary actions are actually visible over a full-height map at requ
           if (kind === "game-marker") {
             element.className = "recovery-checkpoint-icon";
             element.innerHTML = ${JSON.stringify(recoveryCheckpointSvg)};
+          } else if (kind === "current-location") {
+            element.innerHTML = '<svg width="9.5" height="9.5" viewBox="0 0 9.5 9.5" aria-hidden="true"><circle cx="4.75" cy="4.75" r="4" fill="#2877df" stroke="#fff" stroke-width="1.5" /></svg>';
+            element.querySelector("svg").style.display = "block";
           }
           Object.assign(element.style, {
             position: "absolute", left: (x - mapRect.left - width / 2) + "px", top: (y - mapRect.top - height / 2) + "px",
             width: width + "px", height: height + "px", boxSizing: "border-box", borderRadius: "50%",
-            background: color, border: kind === "current-location" ? "3px solid white" : kind === "game-marker" ? "0" : "1px solid #172019", pointerEvents: "auto"
+            background: kind === "current-location" ? "transparent" : color, border: kind === "current-location" || kind === "game-marker" ? "0" : "1px solid #172019", pointerEvents: "auto"
           });
           pane.append(element); elements.push(element);
         }
-        const mapHit = document.elementFromPoint(x, y)?.dataset.layerKind;
+        const mapHit = document.elementFromPoint(x, y)?.closest("[data-layer-kind]")?.dataset.layerKind;
+        const currentLocation = mapElement.querySelector('[data-layer-kind="current-location"]');
+        const currentLocationRect = currentLocation.getBoundingClientRect();
+        const currentLocationSvgRect = currentLocation.querySelector("svg").getBoundingClientRect();
+        const currentLocationCircle = currentLocation.querySelector("circle");
         const boundaryPane = mapElement.querySelector('[data-test-pane="' + panes.cityBoundary + '"]');
         const renderedBoundary = boundaryPane.querySelector("path");
         const checkpoint = mapElement.querySelector(".recovery-checkpoint-icon");
@@ -374,6 +381,18 @@ test("mobile primary actions are actually visible over a full-height map at requ
         startup.hidden = startupWasHidden;
         return {
           mapHit,
+          currentLocation: {
+            width: currentLocationRect.width,
+            height: currentLocationRect.height,
+            centerX: currentLocationRect.left + currentLocationRect.width / 2,
+            centerY: currentLocationRect.top + currentLocationRect.height / 2,
+            svgCenterX: currentLocationSvgRect.left + currentLocationSvgRect.width / 2,
+            svgCenterY: currentLocationSvgRect.top + currentLocationSvgRect.height / 2,
+            expectedX: x,
+            expectedY: y,
+            circleRadius: Number(currentLocationCircle.getAttribute("r")),
+            outlineWidth: Number(currentLocationCircle.getAttribute("stroke-width"))
+          },
           boundary: {
             paneZIndex: Number(boundaryPane.style.zIndex),
             pointerEvents: getComputedStyle(boundaryPane).pointerEvents,
@@ -399,6 +418,14 @@ test("mobile primary actions are actually visible over a full-height map at requ
       assert.equal(layerStack.boundary.strokeOpacity, "0.8", `${width}x${height}: boundary line opacity is 0.8`);
       assert.equal(layerStack.boundary.strokeWidth, "2", `${width}x${height}: boundary outline is 2 px`);
       assert.equal(layerStack.mapHit, "current-location", `${width}x${height}: current GPS dot wins hit-testing over territory, route, checkpoint, game marker and accuracy circle`);
+      assert.equal(layerStack.currentLocation.width, 9.5, `${width}x${height}: current GPS marker outer diameter is half its previous 19 px`);
+      assert.equal(layerStack.currentLocation.height, 9.5, `${width}x${height}: current GPS marker stays circular`);
+      assert.equal(layerStack.currentLocation.circleRadius, 4, `${width}x${height}: blue dot radius is halved`);
+      assert.equal(layerStack.currentLocation.outlineWidth, 1.5, `${width}x${height}: white outline is halved`);
+      assert.ok(Math.abs(layerStack.currentLocation.centerX - layerStack.currentLocation.expectedX) <= 0.1, `${width}x${height}: marker visual center matches its GPS coordinate horizontally`);
+      assert.ok(Math.abs(layerStack.currentLocation.centerY - layerStack.currentLocation.expectedY) <= 0.1, `${width}x${height}: marker visual center matches its GPS coordinate vertically`);
+      assert.ok(Math.abs(layerStack.currentLocation.svgCenterX - layerStack.currentLocation.expectedX) <= 0.1, `${width}x${height}: SVG dot center matches GPS longitude position`);
+      assert.ok(Math.abs(layerStack.currentLocation.svgCenterY - layerStack.currentLocation.expectedY) <= 0.1, `${width}x${height}: SVG dot center matches GPS latitude position`);
       assert.equal(layerStack.checkpoint.width, 32, `${width}x${height}: recovery checkpoint uses the intended marker size`);
       assert.equal(layerStack.checkpoint.height, 32, `${width}x${height}: recovery checkpoint remains circular and centered`);
       assert.equal(layerStack.checkpoint.fill, "#f7fbff", `${width}x${height}: recovery checkpoint has a light center`);
@@ -885,7 +912,9 @@ test("mobile primary actions are actually visible over a full-height map at requ
         const panel = document.querySelector(".panel");
         const marker = document.createElement("div");
         marker.setAttribute("aria-label", "Browser GPS marker position probe");
-        marker.style.cssText = "position:absolute;width:16px;height:16px;border:3px solid white;border-radius:50%;background:#2877df;transform:translate(-50%,-50%);z-index:900;pointer-events:none";
+        marker.style.cssText = "position:absolute;width:9.5px;height:9.5px;transform:translate(-50%,-50%);z-index:900;pointer-events:none";
+        marker.innerHTML = '<svg width="9.5" height="9.5" viewBox="0 0 9.5 9.5" aria-hidden="true"><circle cx="4.75" cy="4.75" r="4" fill="#2877df" stroke="#fff" stroke-width="1.5" /></svg>';
+        marker.querySelector("svg").style.display = "block";
         mapElement.append(marker);
         let markerX = mapElement.clientWidth / 2, markerY = mapElement.clientHeight / 2;
         const setMarkerPoint = () => { marker.style.left = markerX + "px"; marker.style.top = markerY + "px"; };
