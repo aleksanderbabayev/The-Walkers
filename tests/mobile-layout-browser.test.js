@@ -141,7 +141,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const routeStartSvg = appSource.match(/const updateRouteStartMarker = \(point\) => \{[\s\S]*?html: '(<svg class="route-start-flag"[\s\S]*?<\/svg>)'/)?.[1];
     assert.ok(routeStartSvg, "browser check uses the production territory start flag SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.52">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.53">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -492,9 +492,13 @@ test("mobile primary actions are actually visible over a full-height map at requ
             const zIndex = getComputedStyle(element).zIndex;
             return zIndex === "auto" ? 0 : Number(zIndex);
           };
-          const brand = document.querySelector(".brand").getBoundingClientRect();
           const brandTitle = document.querySelector(".brandTitle").getBoundingClientRect();
+          const brandText = document.querySelector(".brandTitle strong").getBoundingClientRect();
           const headerActions = document.querySelector(".headerActions").getBoundingClientRect();
+          const headerUser = document.querySelector(".headerUser").getBoundingClientRect();
+          const userAvatar = document.querySelector(".userAvatar");
+          const userAvatarRect = userAvatar.getBoundingClientRect();
+          const userIconRect = userAvatar.querySelector("svg").getBoundingClientRect();
           const menuButton = document.querySelector("#utilityMenu > summary");
           const menuButtonRect = menuButton.getBoundingClientRect();
           const menuVisual = menuButton.querySelector(".utility-menu-visual");
@@ -503,7 +507,12 @@ test("mobile primary actions are actually visible over a full-height map at requ
           const menuIconRect = menuIcon.getBoundingClientRect();
           const version = document.getElementById("appVersion");
           const versionRect = version.getBoundingClientRect();
-          return { mapHeight: map.height, viewportHeight: innerHeight, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, recoveryMessage: { text: recoveryMessage.textContent, visible: getComputedStyle(recoveryMessage).display !== "none" && recoveryMessage.getBoundingClientRect().height > 0, height: recoveryMessage.getBoundingClientRect().height, fullText: getComputedStyle(recoveryMessage).whiteSpace === "normal" }, captureDisabled: document.getElementById("finish").disabled, header: { brand: { left: brand.left, right: brand.right }, title: { left: brandTitle.left, right: brandTitle.right }, actions: { left: headerActions.left, right: headerActions.right }, menuButton: { left: menuButtonRect.left, right: menuButtonRect.right, width: menuButtonRect.width, height: menuButtonRect.height, background: getComputedStyle(menuButton).backgroundColor, borderWidth: getComputedStyle(menuButton).borderWidth, label: menuButton.getAttribute("aria-label"), visualWidth: menuVisualRect.width, visualHeight: menuVisualRect.height, iconWidth: menuIconRect.width, iconHeight: menuIconRect.height, iconColor: getComputedStyle(menuIcon).color, iconStrokeWidth: getComputedStyle(menuIcon).strokeWidth, lineCount: menuIcon.querySelectorAll("path").length, iconCenterX: menuIconRect.left + menuIconRect.width / 2, iconCenterY: menuIconRect.top + menuIconRect.height / 2, buttonCenterX: menuButtonRect.left + menuButtonRect.width / 2, buttonCenterY: menuButtonRect.top + menuButtonRect.height / 2 }, version: { text: version.textContent, label: version.getAttribute("aria-label"), left: versionRect.left, right: versionRect.right, width: versionRect.width, height: versionRect.height, visible: getComputedStyle(version).display !== "none" && getComputedStyle(version).visibility !== "hidden" }, menuVersionCount: document.querySelectorAll(".utility-menu-panel .appVersion").length }, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height, left: mapLocate.left, right: mapLocate.right }, zoomButtons, compass: { top: compassRect.top, bottom: compassRect.bottom, left: compassRect.left, right: compassRect.right }, panel: { top: panel.top, bottom: panel.bottom, left: panel.left, right: panel.right }, startup: { hidden: startupScreen.hidden, top: startupRect.top, left: startupRect.left, right: startupRect.right, bottom: startupRect.bottom, background: getComputedStyle(startupScreen).backgroundColor, stackingLevel: getStackingLevel(startupScreen), mapStackingLevel: getStackingLevel(mapElement), probeIsBlocked: Boolean(mapProbe && startupScreen.contains(mapProbe)), probeReachesMap: Boolean(mapProbe && mapElement.contains(mapProbe)), underlyingProbeReachesMap: Boolean(underlyingProbe && mapElement.contains(underlyingProbe)) } };
+          const utilityMenu = document.getElementById("utilityMenu"), utilityPanel = document.querySelector(".utility-menu-panel");
+          utilityMenu.open = true;
+          const utilityPanelRect = utilityPanel.getBoundingClientRect();
+          const utilityPanelStyle = getComputedStyle(utilityPanel);
+          utilityMenu.open = false;
+          return { mapHeight: map.height, viewportHeight: innerHeight, scrollWidth: document.scrollingElement.scrollWidth, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, recoveryMessage: { text: recoveryMessage.textContent, visible: getComputedStyle(recoveryMessage).display !== "none" && recoveryMessage.getBoundingClientRect().height > 0, height: recoveryMessage.getBoundingClientRect().height, fullText: getComputedStyle(recoveryMessage).whiteSpace === "normal" }, captureDisabled: document.getElementById("finish").disabled, header: { height: document.querySelector("header").getBoundingClientRect().height, title: { left: brandTitle.left, right: brandTitle.right, top: brandTitle.top, bottom: brandTitle.bottom, centerX: brandTitle.left + brandTitle.width / 2 }, titleText: { left: brandText.left, right: brandText.right, top: brandText.top, bottom: brandText.bottom, centerX: brandText.left + brandText.width / 2 }, actions: { left: headerActions.left, right: headerActions.right }, userSlot: { left: headerUser.left, right: headerUser.right }, avatar: { left: userAvatarRect.left, right: userAvatarRect.right, width: userAvatarRect.width, height: userAvatarRect.height, radius: getComputedStyle(userAvatar).borderRadius, background: getComputedStyle(userAvatar).backgroundColor, iconCenterX: userIconRect.left + userIconRect.width / 2, centerX: userAvatarRect.left + userAvatarRect.width / 2, ariaHidden: userAvatar.parentElement.getAttribute("aria-hidden") }, menuPanel: { left: utilityPanelRect.left, right: utilityPanelRect.right, top: utilityPanelRect.top, width: utilityPanelRect.width, position: utilityPanelStyle.position }, menuButton: { left: menuButtonRect.left, right: menuButtonRect.right, width: menuButtonRect.width, height: menuButtonRect.height, background: getComputedStyle(menuButton).backgroundColor, borderWidth: getComputedStyle(menuButton).borderWidth, label: menuButton.getAttribute("aria-label"), visualWidth: menuVisualRect.width, visualHeight: menuVisualRect.height, iconWidth: menuIconRect.width, iconHeight: menuIconRect.height, iconColor: getComputedStyle(menuIcon).color, iconStrokeWidth: getComputedStyle(menuIcon).strokeWidth, lineCount: menuIcon.querySelectorAll("path").length, iconCenterX: menuIconRect.left + menuIconRect.width / 2, iconCenterY: menuIconRect.top + menuIconRect.height / 2, buttonCenterX: menuButtonRect.left + menuButtonRect.width / 2, buttonCenterY: menuButtonRect.top + menuButtonRect.height / 2 }, version: { text: version.textContent, label: version.getAttribute("aria-label"), left: versionRect.left, right: versionRect.right, top: versionRect.top, bottom: versionRect.bottom, width: versionRect.width, height: versionRect.height, centerX: versionRect.left + versionRect.width / 2, visible: getComputedStyle(version).display !== "none" && getComputedStyle(version).visibility !== "hidden" }, menuVersionCount: document.querySelectorAll(".utility-menu-panel .appVersion").length }, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height, left: mapLocate.left, right: mapLocate.right }, zoomButtons, compass: { top: compassRect.top, bottom: compassRect.bottom, left: compassRect.left, right: compassRect.right }, panel: { top: panel.top, bottom: panel.bottom, left: panel.left, right: panel.right }, startup: { hidden: startupScreen.hidden, top: startupRect.top, left: startupRect.left, right: startupRect.right, bottom: startupRect.bottom, background: getComputedStyle(startupScreen).backgroundColor, stackingLevel: getStackingLevel(startupScreen), mapStackingLevel: getStackingLevel(mapElement), probeIsBlocked: Boolean(mapProbe && startupScreen.contains(mapProbe)), probeReachesMap: Boolean(mapProbe && mapElement.contains(mapProbe)), underlyingProbeReachesMap: Boolean(underlyingProbe && mapElement.contains(underlyingProbe)) } };
         })()`);
         const mapControlStyles = await evaluate(`(() => {
           const startupGate = document.getElementById("locationStartupScreen");
@@ -662,6 +671,23 @@ test("mobile primary actions are actually visible over a full-height map at requ
         assert.equal(result.header.version.visible, true, `${width}x${height}: version remains visible`);
         assert.equal(result.header.menuVersionCount, 0, `${width}x${height}: menu has no duplicate version`);
         assert.ok(result.header.version.width > 0 && result.header.version.height > 0, `${width}x${height}: version has a visible box`);
+        assert.ok(Math.abs(result.header.title.centerX - width / 2) < 0.5, `${width}x${height}: brand title is mathematically centered in the viewport`);
+        assert.ok(Math.abs(result.header.titleText.centerX - width / 2) < 0.5, `${width}x${height}: title text is centered in the viewport`);
+        assert.ok(Math.abs(result.header.version.centerX - width / 2) < 0.5, `${width}x${height}: version is centered below the title`);
+        assert.ok(result.header.version.top >= result.header.titleText.bottom, `${width}x${height}: version is vertically below the title`);
+        assert.ok(result.header.actions.right < result.header.title.left, `${width}x${height}: menu area does not overlap the centered title`);
+        assert.ok(result.header.title.right < result.header.userSlot.left, `${width}x${height}: centered title does not overlap the right user area`);
+        assert.equal(result.header.height, 48, `${width}x${height}: mobile header height is preserved`);
+        assert.equal(result.header.avatar.width, 36, `${width}x${height}: user avatar is 36px wide`);
+        assert.equal(result.header.avatar.height, 36, `${width}x${height}: user avatar is 36px high`);
+        assert.equal(result.header.avatar.radius, "50%", `${width}x${height}: user avatar is circular`);
+        assert.equal(result.header.avatar.background, "rgb(233, 238, 230)", `${width}x${height}: user avatar has the soft gray-green surface`);
+        assert.equal(result.header.avatar.ariaHidden, "true", `${width}x${height}: decorative user icon is hidden from assistive technology`);
+        assert.ok(Math.abs(result.header.avatar.iconCenterX - result.header.avatar.centerX) < 0.5, `${width}x${height}: user icon is centered in its avatar`);
+        assert.equal(result.header.menuPanel.position, "fixed", `${width}x${height}: menu panel uses viewport-safe positioning`);
+        assert.ok(result.header.menuPanel.width > 0 && result.header.menuPanel.width <= width - 16, `${width}x${height}: menu panel fits between the viewport's safe side margins`);
+        assert.ok(result.header.menuPanel.left >= 0 && result.header.menuPanel.right <= width, `${width}x${height}: open menu fits within the viewport`);
+        assert.ok(result.scrollWidth <= width, `${width}x${height}: header and menu do not create horizontal scrolling`);
         assert.equal(result.header.menuButton.width, 44, `${width}x${height}: menu hit area is 44px wide`);
         assert.equal(result.header.menuButton.height, 44, `${width}x${height}: menu hit area is 44px tall`);
         assert.equal(result.header.menuButton.visualWidth, 36, `${width}x${height}: visible button is 36px wide`);
@@ -672,11 +698,10 @@ test("mobile primary actions are actually visible over a full-height map at requ
         assert.equal(result.header.menuButton.iconColor, "rgb(49, 91, 59)", `${width}x${height}: hamburger icon uses the specified green`);
         assert.equal(result.header.menuButton.iconStrokeWidth, "2px", `${width}x${height}: hamburger lines are 2px thick`);
         assert.equal(result.header.menuButton.lineCount, 3, `${width}x${height}: hamburger icon has three lines`);
-        assert.equal(result.header.menuButton.iconWidth, 22, `${width}x${height}: sliders icon is 22px wide`);
-        assert.equal(result.header.menuButton.iconHeight, 22, `${width}x${height}: sliders icon is 22px tall`);
+        assert.equal(result.header.menuButton.iconWidth, 22, `${width}x${height}: hamburger icon is 22px wide`);
+        assert.equal(result.header.menuButton.iconHeight, 22, `${width}x${height}: hamburger icon is 22px tall`);
         assert.ok(Math.abs(result.header.menuButton.iconCenterX - result.header.menuButton.buttonCenterX) < 0.5 && Math.abs(result.header.menuButton.iconCenterY - result.header.menuButton.buttonCenterY) < 0.5, `${width}x${height}: icon is centered in the button`);
-        assert.ok(result.header.brand.right < result.header.actions.left, `${width}x${height}: brand and menu do not overlap`);
-        assert.ok(result.header.version.left >= result.header.title.left && result.header.version.right <= result.header.title.right, `${width}x${height}: version stays inside the brand title`);
+        assert.ok(result.header.title.right - result.header.title.left <= width - 112, `${width}x${height}: centered brand block leaves space for both side controls`);
         if (scenario.state.startup) {
           assert.equal(result.startup.hidden, false, `${width}x${height} ${scenario.name}: startup gate is open`);
           assert.ok(result.startup.top <= 0 && result.startup.left <= 0 && result.startup.right >= width && result.startup.bottom >= height, `${width}x${height} ${scenario.name}: GPS gate covers the full screen`);

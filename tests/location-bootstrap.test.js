@@ -109,7 +109,11 @@ test("mobile controls overlay the full-height map and live in compact action and
     assert.match(actions, new RegExp(`id="${id}"`));
   }
   assert.match(html.match(/<section class="location-access-card">([\s\S]*?)<\/section>/)?.[1] || "", /id="locationStartupRetry"/);
-  assert.match(html.match(/<header>([\s\S]*?)<div class="headerActions">/)?.[1] || "", /class="appVersion" id="appVersion"/);
+  const header = html.match(/<header>([\s\S]*?)<\/header>/)?.[1] || "";
+  assert.match(header, /<div class="headerActions">[\s\S]*?<details id="utilityMenu" class="utility-menu">/);
+  assert.match(header, /<div class="brandTitle"><strong>The Walkers<\/strong><span class="appVersion" id="appVersion"><\/span><\/div>/);
+  assert.match(header, /<div class="headerUser" aria-hidden="true">[\s\S]*?class="userAvatar"[\s\S]*?<svg/);
+  assert.doesNotMatch(header, /class="mark"|↗/);
   assert.equal((html.match(/id="appVersion"/g) || []).length, 1);
   assert.doesNotMatch(utilityMenu, /appVersion|Версия/);
   for (const id of ["musicToggle", "walksToggle", "openLocationDiagnostics", "copyActiveDiagnostics"]) {

@@ -34,6 +34,7 @@ body { margin: 0; min-height: 100vh; }
 .locationDiagnosticsCard #locationDiagnosticsFallback { width: 100%; margin-top: 8px; padding: 9px; border: 1px solid #d8dfd5; border-radius: 10px; color: #26372a; font: 12px/1.4 monospace; -webkit-user-select: text; user-select: text; }
 .locationDiagnosticsCard #locationDiagnosticsFallback[hidden] { display: none; }
 header {
+  position: relative;
   height: 72px;
   padding: 0 24px;
   display: flex;
@@ -42,19 +43,7 @@ header {
   background: #f7f7f2;
   border-bottom: 1px solid #e5e8e1;
 }
-.brand { display: flex; gap: 12px; align-items: center; }
-.mark {
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border-radius: 14px;
-  background: #d7edb9;
-  color: #31552d;
-  font-size: 24px;
-}
-.brand strong { display: block; font-size: 17px; letter-spacing: -.3px; }
-.brand small, .status small { display: block; margin-top: 3px; color: #778078; font-size: 12px; }
+.status small { display: block; margin-top: 3px; color: #778078; font-size: 12px; }
 .icon { border: 0; background: transparent; color: #375b38; font-size: 28px; cursor: pointer; }
 main {
   max-width: 1200px;
@@ -286,14 +275,17 @@ main {
 .expeditionResultCard strong { display: block; margin-top: 3px; color: #26372a; font-size: 16px; }
 .expeditionResultCard button { width: 100%; min-height: 48px; margin-top: 12px; border: 0; border-radius: 14px; background: #365f3a; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: center; }
-.brandTitle { display: flex; align-items: center; gap: 8px; }
-.brandTitle strong { display: inline; }
-.appVersion { padding: 3px 7px; border-radius: 10px; background: #edf2e8; color: #50634e; font-size: 10px; font-weight: 650; white-space: nowrap; }
+.brandTitle { position: absolute; top: 50%; left: 50%; z-index: 1; max-width: calc(100vw - 160px); display: flex; flex-direction: column; align-items: center; gap: 1px; transform: translate(-50%, -50%); text-align: center; }
+.brandTitle strong { display: block; color: #18211c; font-size: 17px; letter-spacing: -.3px; line-height: 1.1; white-space: nowrap; }
+.appVersion { display: block; padding: 0; border-radius: 0; background: transparent; color: #50634e; font-size: 10px; font-weight: 650; line-height: 1.2; white-space: nowrap; }
 .walkSummary { margin: 0 0 10px; padding: 10px 12px; display: flex; justify-content: space-between; gap: 12px; border-radius: 14px; background: #f3f6f0; color: #738073; font-size: 11px; }
 .walkSummary span { display: flex; flex-direction: column; gap: 3px; }
 .walkSummary span:last-child { text-align: right; }
 .walkSummary b { color: #26372a; font-size: 13px; font-variant-numeric: tabular-nums; }
-.headerActions { display: flex; align-items: center; gap: 12px; }
+.headerActions { width: 44px; height: 44px; flex: 0 0 44px; display: flex; align-items: center; justify-content: flex-start; }
+.headerUser { width: 44px; height: 44px; flex: 0 0 44px; display: grid; place-items: center; }
+.userAvatar { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: #e9eee6; color: #315b3b; }
+.userAvatar svg { display: block; width: 20px; height: 20px; fill: currentColor; }
 .soundToggle { width: 40px; height: 40px; font-size: 22px; }
 .walksToggle, .drawerHandle, .walksClose, .drawerBackdrop { display: none; }
 .walkCount { min-width: 28px; padding: 4px 9px; border-radius: 14px; background: #fff; color: #50634e; font-size: 12px; text-align: center; }
@@ -305,7 +297,7 @@ footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: cent
 .utility-menu > summary:focus-visible { outline: 2px solid #315b3b; outline-offset: 1px; }
 .utility-menu-icon { display: block; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .utility-menu > summary::-webkit-details-marker { display: none; }
-.utility-menu-panel { position: absolute; z-index: 1500; top: calc(100% + 6px); right: 0; width: min(300px, calc(100vw - 24px)); max-height: min(70vh, 680px); padding: 12px; display: none; gap: 8px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid #e3e8df; border-radius: 16px; background: #fff; box-shadow: 0 12px 32px #25362424; }
+.utility-menu-panel { position: absolute; z-index: 1500; top: calc(100% + 6px); left: 0; width: min(300px, calc(100vw - 24px)); max-height: min(70vh, 680px); padding: 12px; display: none; gap: 8px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid #e3e8df; border-radius: 16px; background: #fff; box-shadow: 0 12px 32px #25362424; }
 .utility-menu[open] > .utility-menu-panel { display: grid; }
 .utility-menu-panel > button { width: 100%; min-width: 0; min-height: 44px; padding: 8px 10px; border: 1px solid #d8dfd5; border-radius: 12px; background: #f7f9f5; color: #344638; font: inherit; font-size: 13px; font-weight: 650; text-align: left; cursor: pointer; }
 .utility-menu-panel > .soundToggle { display: flex; align-items: center; gap: 10px; font-size: 14px; }
@@ -483,18 +475,14 @@ button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
     padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left));
     gap: 8px;
   }
-  .brand { min-width: 0; gap: 7px; }
-  .brand .mark { width: 28px; height: 28px; border-radius: 9px; font-size: 18px; }
-  .brand strong { font-size: 15px; }
-  .headerActions { flex: none; gap: 4px; }
+  .headerActions { flex: 0 0 44px; }
+  .headerUser { flex: 0 0 44px; }
+  .brandTitle { max-width: calc(100vw - 112px); }
+  .brandTitle strong { font-size: 15px; }
   .utility-menu > summary { width: 44px; height: 44px; }
-  .utility-menu-panel { position: fixed; top: calc(env(safe-area-inset-top) + 48px); right: max(8px, env(safe-area-inset-right)); width: min(300px, calc(100vw - 16px)); max-height: min(70dvh, 620px); }
+  .utility-menu-panel { position: fixed; top: calc(env(safe-area-inset-top) + 48px); right: max(8px, env(safe-area-inset-right)); left: max(8px, env(safe-area-inset-left)); width: auto; max-height: min(70dvh, 620px); }
   .utility-menu-panel > .walksToggle { height: 44px; min-height: 44px; margin: 0; }
   .locationDiagnosticsCard { padding: 16px; }
-  .brand small { display: none; }
-  .brandTitle { min-width: 0; gap: 5px; }
-  .brandTitle strong { font-size: 15px; white-space: nowrap; }
-  .brand .appVersion { padding: 2px 5px; font-size: 9px; }
   .mapLocate { left: max(10px, env(safe-area-inset-left)); }
   .leaflet-top.leaflet-right { right: max(0px, env(safe-area-inset-right)); }
   main {

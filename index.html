@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#f7f7f2">
-  <meta name="app-version" content="0.2.52">
+  <meta name="app-version" content="0.2.53">
   <title>The Walkers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=0.2.48">
+  <link rel="stylesheet" href="styles.css?v=0.2.53">
   <link rel="stylesheet" href="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.css">
 </head>
 <body>
@@ -19,7 +19,6 @@
     </section>
   </main>
   <header>
-    <div class="brand"><span class="mark" aria-hidden="true">↗</span><div class="brandTitle"><strong>The Walkers</strong><span class="appVersion" id="appVersion"></span></div></div>
     <div class="headerActions">
       <details id="utilityMenu" class="utility-menu">
         <summary aria-label="Меню" title="Меню">
@@ -38,6 +37,15 @@
           <button id="openLocationDiagnostics" type="button" data-menu-action="diagnostics">Диагностика геолокации</button>
         </div>
       </details>
+    </div>
+    <div class="brandTitle"><strong>The Walkers</strong><span class="appVersion" id="appVersion"></span></div>
+    <div class="headerUser" aria-hidden="true">
+      <span class="userAvatar">
+        <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+          <circle cx="12" cy="8" r="3.5" />
+          <path d="M5.5 20c.5-4 2.8-6 6.5-6s6 2 6.5 6z" />
+        </svg>
+      </span>
     </div>
   </header>
   <dialog id="locationDiagnosticsView" class="location-diagnostics-view" aria-labelledby="locationDiagnosticsTitle">
