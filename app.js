@@ -179,7 +179,7 @@
   const updateLocationMarker = (point) => {
     const latlng = [point.lat, point.lng];
     if (currentLocationMarker) currentLocationMarker.setLatLng(latlng);
-    else currentLocationMarker = L.circleMarker(latlng, { radius: 4, color: "#fff", weight: 1.5, fillColor: WALK_COLORS.currentLocation, fillOpacity: 1, pane: mapPanes.currentLocation }).addTo(map);
+    else currentLocationMarker = L.circleMarker(latlng, { radius: 6, color: "#fff", weight: 2.25, fillColor: WALK_COLORS.currentLocation, fillOpacity: 1, pane: mapPanes.currentLocation }).addTo(map);
   };
   const clearLocationMarker = () => {
     if (currentLocationMarker) map.removeLayer(currentLocationMarker);
@@ -205,7 +205,7 @@
   const updateAccuracyDisplay = (point) => {
     const latlng = [point.lat, point.lng];
     if (currentLocationMarker) currentLocationMarker.setLatLng(latlng);
-    else currentLocationMarker = L.circleMarker(latlng, { radius: 4, color: "#fff", weight: 1.5, fillColor: WALK_COLORS.currentLocation, fillOpacity: 1, pane: mapPanes.currentLocation }).addTo(map);
+    else currentLocationMarker = L.circleMarker(latlng, { radius: 6, color: "#fff", weight: 2.25, fillColor: WALK_COLORS.currentLocation, fillOpacity: 1, pane: mapPanes.currentLocation }).addTo(map);
     updateAccuracyCircle(point);
   };
   const completeLocationStartup = (point) => {

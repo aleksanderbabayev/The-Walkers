@@ -49,9 +49,10 @@ test("GPS display uses one reusable Leaflet accuracy circle with radius in meter
   assert.match(app, /if \(Tracking\.shouldUpdateGpsMarker\("preliminary", recordingActive\)\) updateAccuracyDisplay\(displayResult\.point\);\s*else updateAccuracyCircle\(displayResult\.point\)/);
 });
 
-test("current GPS marker halves its visible diameter and white outline without changing its center or pane", () => {
-  assert.equal((app.match(/L\.circleMarker\(latlng, \{ radius: 4, color: "#fff", weight: 1\.5, fillColor: WALK_COLORS\.currentLocation, fillOpacity: 1, pane: mapPanes\.currentLocation \}\)/g) || []).length, 2);
-  assert.equal(2 * 4 + 1.5, (2 * 8 + 3) / 2, "visible diameter, including centered stroke, is exactly halved");
+test("current GPS marker uses the requested 1.5x diameter and outline without changing its center or pane", () => {
+  assert.equal((app.match(/L\.circleMarker\(latlng, \{ radius: 6, color: "#fff", weight: 2\.25, fillColor: WALK_COLORS\.currentLocation, fillOpacity: 1, pane: mapPanes\.currentLocation \}\)/g) || []).length, 2);
+  assert.equal(2 * 6 + 2.25, 14.25, "visible diameter includes its centered stroke");
+  assert.equal((2 * 6 + 2.25) / (2 * 4 + 1.5), 1.5, "visible diameter is exactly 1.5 times its 0.2.51 size");
   assert.doesNotMatch(app, /L\.marker\([^\n]*currentLocation/);
 });
 
@@ -114,10 +115,10 @@ test("mobile controls overlay the full-height map and live in compact action and
   for (const id of ["musicToggle", "walksToggle", "openLocationDiagnostics", "copyActiveDiagnostics"]) {
     assert.match(utilityMenu, new RegExp(`id="${id}"`));
   }
-  assert.match(bootstrap, /"utility-menu\.js\?v=0\.1\.0",[\s\S]*?"app\.js\?v=0\.2\.51"/);
-  assert.match(bootstrap, /"map-layer-panes\.js\?v=0\.2\.49",[\s\S]*?"app\.js\?v=0\.2\.51"/);
+  assert.match(bootstrap, /"utility-menu\.js\?v=0\.1\.0",[\s\S]*?"app\.js\?v=0\.2\.52"/);
+  assert.match(bootstrap, /"map-layer-panes\.js\?v=0\.2\.49",[\s\S]*?"app\.js\?v=0\.2\.52"/);
   assert.match(bootstrap, /"city-coverage\.js\?v=0\.2\.49"/);
-  assert.match(bootstrap, /"map-zoom-control\.js\?v=0\.2\.47", "app\.js\?v=0\.2\.51"/);
+  assert.match(bootstrap, /"map-zoom-control\.js\?v=0\.2\.47", "app\.js\?v=0\.2\.52"/);
   assert.match(app, /const appVersion = document\.querySelector\('meta\[name="app-version"\]'\)\.content/);
   assert.match(app, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
   assert.doesNotMatch(css, /@media \(max-width: 760px\) and \(max-height:/);

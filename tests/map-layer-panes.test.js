@@ -47,7 +47,7 @@ test("map layers use their assigned panes and GPS marker updates reuse the same 
   const line = require("node:fs").readFileSync(require.resolve("../expedition-line.js"), "utf8");
 
   assert.match(app, /currentLocationMarker\.setLatLng\(latlng\)[\s\S]*?pane: mapPanes\.currentLocation/);
-  assert.equal((app.match(/radius: 4, color: "#fff", weight: 1\.5, fillColor: WALK_COLORS\.currentLocation/g) || []).length, 2);
+  assert.equal((app.match(/radius: 6, color: "#fff", weight: 2\.25, fillColor: WALK_COLORS\.currentLocation/g) || []).length, 2);
   assert.match(app, /pane: mapPanes\.accuracy/);
   assert.doesNotMatch(app, /currentLocationMarker\.bringToFront\(\)/);
   assert.match(app, /pane: mapPanes\.territory/);
