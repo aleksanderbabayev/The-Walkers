@@ -276,22 +276,22 @@ main {
 .expeditionResultCard button { width: 100%; min-height: 48px; margin-top: 12px; border: 0; border-radius: 14px; background: #365f3a; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 footer { padding: 0 10px 14px; color: #899188; font-size: 11px; text-align: center; }
 .brandTitle { position: absolute; top: 50%; left: 50%; z-index: 1; max-width: calc(100vw - 160px); display: flex; flex-direction: column; align-items: center; gap: 1px; transform: translate(-50%, -50%); text-align: center; }
-.brandTitle strong { display: block; color: #18211c; font-size: 17px; letter-spacing: -.3px; line-height: 1.1; white-space: nowrap; }
-.appVersion { display: block; padding: 0; border-radius: 0; background: transparent; color: #50634e; font-size: 10px; font-weight: 650; line-height: 1.2; white-space: nowrap; }
+.brandTitle strong { display: block; color: #315b39; font-size: 17px; letter-spacing: -.3px; line-height: 1.1; white-space: nowrap; }
+.appVersion { display: block; padding: 0; border-radius: 0; background: transparent; color: #718a71; font-size: 9px; font-weight: 650; line-height: 1.2; white-space: nowrap; }
 .walkSummary { margin: 0 0 10px; padding: 10px 12px; display: flex; justify-content: space-between; gap: 12px; border-radius: 14px; background: #f3f6f0; color: #738073; font-size: 11px; }
 .walkSummary span { display: flex; flex-direction: column; gap: 3px; }
 .walkSummary span:last-child { text-align: right; }
 .walkSummary b { color: #26372a; font-size: 13px; font-variant-numeric: tabular-nums; }
 .headerActions { width: 44px; height: 44px; flex: 0 0 44px; display: flex; align-items: center; justify-content: flex-start; }
 .headerUser { width: 44px; height: 44px; flex: 0 0 44px; display: grid; place-items: center; }
-.userAvatar { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: #e9eee6; color: #315b3b; }
+.userAvatar { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: #deecd5; color: #315b39; }
 .userAvatar svg { display: block; width: 20px; height: 20px; fill: currentColor; }
 .soundToggle { width: 40px; height: 40px; font-size: 22px; }
 .walksToggle, .drawerHandle, .walksClose, .drawerBackdrop { display: none; }
 .walkCount { min-width: 28px; padding: 4px 9px; border-radius: 14px; background: #fff; color: #50634e; font-size: 12px; text-align: center; }
 .walksChevron { font-size: 18px; line-height: 1; }
 .utility-menu { position: relative; }
-.utility-menu > summary { box-sizing: border-box; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 12px; background: transparent; color: #315b3b; line-height: 1; list-style: none; cursor: pointer; }
+.utility-menu > summary { box-sizing: border-box; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 12px; background: transparent; color: #315b39; line-height: 1; list-style: none; cursor: pointer; }
 .utility-menu-visual { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; transition: background-color 120ms ease; }
 .utility-menu > summary:active .utility-menu-visual { background: #e9f1e7; }
 .utility-menu > summary:focus-visible { outline: 2px solid #315b3b; outline-offset: 1px; }
@@ -478,7 +478,7 @@ button:focus-visible { outline: 3px solid #2877df; outline-offset: 2px; }
   .headerActions { flex: 0 0 44px; }
   .headerUser { flex: 0 0 44px; }
   .brandTitle { max-width: calc(100vw - 112px); }
-  .brandTitle strong { font-size: 15px; }
+  .brandTitle strong { font-size: 17px; }
   .utility-menu > summary { width: 44px; height: 44px; }
   .utility-menu-panel { position: fixed; top: calc(env(safe-area-inset-top) + 48px); right: max(8px, env(safe-area-inset-right)); left: max(8px, env(safe-area-inset-left)); width: auto; max-height: min(70dvh, 620px); }
   .utility-menu-panel > .walksToggle { height: 44px; min-height: 44px; margin: 0; }
