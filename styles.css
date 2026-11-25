@@ -116,6 +116,7 @@ main {
 .expedition-compass.is-stale .compassReading small { color: #8a6d30; }
 @media (prefers-reduced-motion: reduce) { .expeditionCompassFace .compassNeedle.is-ready { transition: none; } }
 .mode-selector, .expeditionMethods { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; border-radius: 13px; background: #f0f3ed; }
+.mode-selector[hidden] { display: none; }
 .mode-selector { margin-top: 7px; }
 .mode-selector button, .expeditionMethods button { min-width: 0; min-height: 38px; padding: 6px 8px; border: 0; border-radius: 10px; background: transparent; color: #59665b; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
 .mode-selector button:focus-visible, .expeditionMethods button:focus-visible, .random-target-controls button:focus-visible, #startExpedition:focus-visible { outline: 3px solid #2877df75; outline-offset: 2px; }
