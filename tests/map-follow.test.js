@@ -191,7 +191,7 @@ test("capture completion disables follow and GPS following reuses the shared wat
   assert.match(app, /button\.setAttribute\("aria-pressed", String\(mapFollow\?\.enabled === true\)\)/);
   assert.match(app, /Отключить следование за вашим местоположением/);
   assert.ok(bootstrap.includes('"map-follow.js?v=0.1.75"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.52"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.57"'));
   assert.doesNotMatch(fs.readFileSync(require.resolve("../map-follow.js"), "utf8"), /watchPosition/);
 });
 

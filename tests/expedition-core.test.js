@@ -185,10 +185,10 @@ test("expedition UI, accepted GPS completion, persistence and territory isolatio
   assert.ok(processing.indexOf("return;", rejectedPosition) < acceptedUpdate);
   assert.ok(app.includes("const closed = walkMode === \"territory\" && !retreated"));
   assert.ok(app.includes('expeditionStatus: retreated ? "incomplete" : "reached"'));
-  assert.ok(app.includes('active ? activeMode === "expedition" ? "Идёт экспедиция"'));
+  assert.ok(app.includes('active ? activeMode === "expedition" ? "Экспедиция"'));
   assert.ok(app.includes('if (walk.expeditionStatus === "reached") showExpeditionResult(walk)'));
   assert.match(html, /Экспедиция завершена/);
   assert.ok(bootstrap.includes('"expedition-core.js?v=0.2.3"'));
-  assert.ok(bootstrap.includes('"app.js?v=0.2.52"'));
+  assert.ok(bootstrap.includes('"app.js?v=0.2.57"'));
   assert.doesNotMatch(app, /\brouter\b|routing service|OSRM|GraphHopper/i);
 });

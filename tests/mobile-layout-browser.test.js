@@ -70,18 +70,20 @@ const createCdpClient = async (url) => {
 const scenarios = [
   { name: "waiting for GPS", state: { startup: true }, buttons: [] },
   { name: "startup GPS error", state: { startup: true, startupError: true }, buttons: ["locationStartupRetry"] },
-  { name: "stabilizing GPS", state: { warmup: true }, buttons: ["abandonWalk"] },
-  { name: "manual warm-up start", state: { warmup: true, manual: true }, buttons: ["manualWarmupStart", "abandonWalk"] },
+  { name: "stabilizing GPS", state: { warmup: true, gps: "GPS ±8 м" }, buttons: ["abandonWalk"] },
+  { name: "weak GPS during stabilization", state: { warmup: true, weakGps: true, gps: "GPS ±80 м" }, buttons: ["abandonWalk"] },
+  { name: "manual warm-up start", state: { warmup: true, manual: true, gps: "GPS ±36 м" }, buttons: ["manualWarmupStart", "abandonWalk"] },
   { name: "GPS retry after startup", state: { retry: true }, buttons: ["locationRetry"] },
   { name: "ready for territory capture", state: {}, buttons: ["start"] },
   { name: "expedition target selection", state: { expedition: true }, buttons: ["startExpedition"] },
   { name: "random expedition target selection", state: { expedition: true, random: true }, buttons: ["startExpedition", "generateTarget"] },
   { name: "starting territory walk", state: { starting: true }, buttons: [] },
   { name: "starting expedition", state: { starting: true, expedition: true }, buttons: [] },
-  { name: "active territory walk", state: { active: true }, buttons: ["finish", "abandonWalk"] },
+  { name: "active territory walk with capture available", state: { active: true, captureAvailable: true, gps: "GPS ±8 м", remaining: "8 м" }, buttons: ["finish", "abandonWalk"] },
+  { name: "active territory walk waiting for route", state: { active: true, captureAvailable: false, notice: "Запишите больше точек маршрута", remaining: "24 м" }, buttons: ["finish", "abandonWalk"] },
   { name: "territory recovery required", state: { active: true, recovery: true }, buttons: ["abandonWalk"] },
   { name: "expedition recovery required", state: { active: true, expedition: true, recovery: true }, buttons: ["abandonWalk"] },
-  { name: "active expedition", state: { active: true, expedition: true }, buttons: ["abandonWalk"] },
+  { name: "active expedition", state: { active: true, expedition: true, remaining: "850 м" }, buttons: ["abandonWalk"] },
   { name: "restored territory draft", state: { active: true, restored: true }, buttons: ["finish", "abandonWalk"] },
   { name: "restored expedition draft", state: { active: true, expedition: true, restored: true }, buttons: ["abandonWalk"] },
   { name: "walk completed", state: {}, buttons: ["start"] },
@@ -146,7 +148,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
     const routeStartSvg = appSource.match(/const updateRouteStartMarker = \(point\) => \{[\s\S]*?html: '(<svg class="route-start-flag"[\s\S]*?<\/svg>)'/)?.[1];
     assert.ok(routeStartSvg, "browser check uses the production territory start flag SVG");
     assert.match(await evaluate("navigator.userAgent"), /Android 14.*Chrome\/130/, "mobile browser test runs with an Android Chrome user agent");
-    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.56">/);
+    assert.match(htmlSource, /<meta name="app-version" content="0\.2\.57">/);
     assert.match(appSource, /\$\("appVersion"\)\.textContent = `v\$\{appVersion\}`/);
     assert.equal((htmlSource.match(/id="appVersion"/g) || []).length, 1, "only the header has a version element");
     await evaluate(`(() => { const version = document.getElementById("appVersion"); const value = document.querySelector('meta[name="app-version"]').content; version.textContent = "v" + value; version.setAttribute("aria-label", "Версия " + value); return true; })()`);
@@ -218,24 +220,34 @@ test("mobile primary actions are actually visible over a full-height map at requ
       const s = ${JSON.stringify(state)};
       const hide = (id, value) => { document.getElementById(id).hidden = value; };
       document.body.classList.toggle("expedition-mode", Boolean(s.expedition));
+      const inProgress = Boolean(s.active || s.warmup || s.starting || s.cancelling || s.restored);
+      document.body.classList.toggle("walk-compact", inProgress);
+      document.body.classList.toggle("walk-recovering", Boolean(inProgress && s.recovery));
       document.querySelector(".status").classList.toggle("recording", Boolean(s.active));
-      const statusTitle = s.warmup ? "Стабилизация GPS" : s.active ? (s.expedition ? "Идёт экспедиция" : "Идёт захват территории") : "";
+      const statusTitle = s.warmup ? "Стабилизация GPS" : s.active ? (s.expedition ? "Экспедиция" : "Захват территории") : s.starting ? "Подготовка прогулки" : "";
       document.getElementById("statusTitle").textContent = statusTitle;
-      const statusText = s.warmup ? "Стабилизация GPS. Подождите перед началом движения…" : s.active ? (s.expedition ? "Записываем путь к цели" : s.recovery ? "До точки восстановления: 24 м" : "Точки сохраняются на устройстве") : "";
+      const statusText = s.warmup ? (s.weakGps ? "GPS пока недостаточно точный. Оставайтесь на месте…" : "Стабилизация GPS. Подождите перед началом движения…") : s.notice || "";
       document.getElementById("statusText").textContent = statusText;
+      document.getElementById("statusText").hidden = !s.warmup && !s.notice;
       document.getElementById("statusCopy").hidden = !statusTitle && !statusText;
+      document.getElementById("gps").textContent = s.gps || (s.active || s.warmup ? "GPS ±8 м" : "GPS —");
+      document.getElementById("gps").classList.toggle("is-weak", Boolean(s.weakGps));
+      document.getElementById("elapsed").textContent = s.active ? "01:02:03" : "00:00:00";
+      document.getElementById("distance").textContent = s.active ? "1,24 км" : "0,00 км";
+      document.getElementById("walkRemainingLabel").textContent = s.expedition ? "До цели" : "До финиша";
+      document.getElementById("walkRemainingValue").textContent = inProgress && !s.warmup ? s.remaining || "24 м" : "—";
       document.getElementById("locationStartupTitle").textContent = s.startupError ? "Геолокация недоступна" : "Определяем местоположение…";
       document.getElementById("locationStartupMessage").textContent = s.startupError ? "Проверьте GPS и повторите попытку." : "Получаем координаты GPS.";
       hide("locationStartupScreen", !s.startup);
       hide("locationStartupRetry", !s.startupError);
       hide("locationRetry", !s.retry || Boolean(s.startup));
-      const inProgress = Boolean(s.active || s.warmup || s.starting || s.cancelling || s.restored);
       hide("modeSelector", inProgress);
       hide("expeditionSetup", !s.expedition || inProgress);
       hide("start", Boolean(s.expedition || inProgress));
       hide("startExpedition", !s.expedition || inProgress);
       hide("finish", !s.active || Boolean(s.expedition));
       hide("abandonWalk", !s.active && !s.warmup);
+      hide("expeditionCompass", !s.active || !s.expedition);
       hide("manualWarmupStart", !s.manual);
       hide("randomTargetControls", !s.random);
       hide("generateTarget", !s.random);
@@ -244,6 +256,7 @@ test("mobile primary actions are actually visible over a full-height map at requ
       document.getElementById("locationNoticeTitle").textContent = s.retry || s.startupError ? "Геолокация недоступна" : s.startup || s.warmup ? "Определяем местоположение" : "Местоположение определено";
       document.getElementById("locationNoticeText").textContent = s.retry || s.startupError ? "GPS недоступен. Попробуйте снова." : "Ожидаем свежие координаты GPS.";
       for (const id of ["start", "startExpedition", "finish", "abandonWalk", "manualWarmupStart", "locationRetry", "locationStartupRetry"]) document.getElementById(id).disabled = false;
+      document.getElementById("finish").disabled = s.captureAvailable === false;
       if (s.recovery) {
         document.getElementById("finish").disabled = true;
         document.getElementById("message").classList.add("is-route-recovery");
@@ -447,10 +460,12 @@ test("mobile primary actions are actually visible over a full-height map at requ
         document.head.append(style);
         const copy = document.getElementById("statusCopy"), stopwatch = document.querySelector(".stopwatch"), panel = document.querySelector(".panel"), action = document.getElementById("manualWarmupStart");
         const copyRect = copy.getBoundingClientRect(), stopwatchRect = stopwatch.getBoundingClientRect(), panelRect = panel.getBoundingClientRect(), actionRect = action.getBoundingClientRect();
-        return { visible: !copy.hidden, title: document.getElementById("statusTitle").textContent, text: document.getElementById("statusText").textContent, separated: copyRect.right <= stopwatchRect.left, noHorizontalOverflow: document.documentElement.scrollWidth <= innerWidth, actionVisible: !action.hidden && actionRect.width > 0 && actionRect.top >= panelRect.top && actionRect.bottom <= panelRect.bottom };
+        const result = { visible: !copy.hidden, title: document.getElementById("statusTitle").textContent, text: document.getElementById("statusText").textContent, separated: copyRect.bottom <= stopwatchRect.top, noHorizontalOverflow: document.documentElement.scrollWidth <= innerWidth, actionVisible: !action.hidden && actionRect.width > 0 && actionRect.top >= panelRect.top && actionRect.bottom <= panelRect.bottom };
+        style.remove();
+        return result;
       })()`);
       assert.equal(enlargedStatus.visible, true, `${width}x${height}: warm-up status remains visible at enlarged text size`);
-      assert.equal(enlargedStatus.separated, true, `${width}x${height}: enlarged status does not overlap timer and distance`);
+      assert.equal(enlargedStatus.separated, true, `${width}x${height}: enlarged status does not overlap the metrics row`);
       assert.equal(enlargedStatus.noHorizontalOverflow, true, `${width}x${height}: enlarged text does not create horizontal page scrolling`);
       assert.equal(enlargedStatus.actionVisible, true, `${width}x${height}: enlarged text leaves the manual start action visible in the panel`);
       const baselineMapHeight = initial.mapHeight;
@@ -469,6 +484,12 @@ test("mobile primary actions are actually visible over a full-height map at requ
           const expandedPanelHeight = panelElement.getBoundingClientRect().height;
           const expandedPanelContentHeight = panelElement.scrollHeight;
           modeSelector.hidden = modeSelectorHidden;
+          const compactClassWasPresent = document.body.classList.contains("walk-compact");
+          document.body.classList.remove("walk-compact");
+          modeSelector.hidden = false;
+          const regularLayoutContentHeight = panelElement.scrollHeight;
+          modeSelector.hidden = modeSelectorHidden;
+          if (compactClassWasPresent) document.body.classList.add("walk-compact");
           const startupScreen = document.getElementById("locationStartupScreen");
           const recoveryMessage = document.getElementById("message");
           const startupRect = startupScreen.getBoundingClientRect();
@@ -492,6 +513,11 @@ test("mobile primary actions are actually visible over a full-height map at requ
             return { label: element.getAttribute("aria-label"), text: element.textContent, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, displayed: getComputedStyle(element).display !== "none" && getComputedStyle(element).visibility !== "hidden", hit: Boolean(hit && (hit === element || element.contains(hit))), hitTarget: hit?.className || hit?.tagName };
           });
           const compassRect = document.querySelector(".leaflet-control-rotate a").getBoundingClientRect();
+          const walkPanelStatus = document.querySelector(".status");
+          const expeditionCompass = document.getElementById("expeditionCompass").getBoundingClientRect();
+          const stopwatchRect = document.querySelector(".stopwatch").getBoundingClientRect();
+          const walkMetrics = [...document.querySelectorAll(".walkMetric")].map((element) => { const rect = element.getBoundingClientRect(); return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, label: element.querySelector(".walkMetricLabel")?.textContent, value: element.querySelector("b, #distance")?.textContent }; });
+          const walkActions = [...document.querySelectorAll("#finish, #abandonWalk, #manualWarmupStart")].filter((element) => !element.hidden && getComputedStyle(element).display !== "none").map((element) => { const rect = element.getBoundingClientRect(); return { id: element.id, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height, disabled: element.disabled }; });
           const modeButtons = [...document.querySelectorAll(".mode-selector button, .expeditionMethods button")].map((element) => {
             const rect = element.getBoundingClientRect();
             const group = element.closest(".mode-selector, .expeditionMethods");
@@ -528,7 +554,8 @@ test("mobile primary actions are actually visible over a full-height map at requ
           const utilityPanelRect = utilityPanel.getBoundingClientRect();
           const utilityPanelStyle = getComputedStyle(utilityPanel);
           utilityMenu.open = false;
-          return { mapHeight: map.height, viewportHeight: innerHeight, scrollWidth: document.scrollingElement.scrollWidth, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, modeSelector: { hidden: modeSelectorHidden, height: modeSelectorRect.height, panelHeight: compactPanelHeight, expandedPanelHeight, panelContentHeight: compactPanelContentHeight, expandedPanelContentHeight }, recoveryMessage: { text: recoveryMessage.textContent, visible: getComputedStyle(recoveryMessage).display !== "none" && recoveryMessage.getBoundingClientRect().height > 0, height: recoveryMessage.getBoundingClientRect().height, fullText: getComputedStyle(recoveryMessage).whiteSpace === "normal" }, captureDisabled: document.getElementById("finish").disabled, header: { height: document.querySelector("header").getBoundingClientRect().height, title: { left: brandTitle.left, right: brandTitle.right, top: brandTitle.top, bottom: brandTitle.bottom, centerX: brandTitle.left + brandTitle.width / 2 }, titleText: { left: brandText.left, right: brandText.right, top: brandText.top, bottom: brandText.bottom, centerX: brandText.left + brandText.width / 2, fontSize: getComputedStyle(document.querySelector(".brandTitle strong")).fontSize, color: getComputedStyle(document.querySelector(".brandTitle strong")).color }, actions: { left: headerActions.left, right: headerActions.right, width: headerActions.width, centerX: headerActions.left + headerActions.width / 2 }, userSlot: { left: headerUser.left, right: headerUser.right, width: headerUser.width, centerX: headerUser.left + headerUser.width / 2 }, avatar: { left: userAvatarRect.left, right: userAvatarRect.right, width: userAvatarRect.width, height: userAvatarRect.height, radius: getComputedStyle(userAvatar).borderRadius, background: getComputedStyle(userAvatar).backgroundColor, color: getComputedStyle(userAvatar).color, iconCenterX: userIconRect.left + userIconRect.width / 2, centerX: userAvatarRect.left + userAvatarRect.width / 2, ariaHidden: userAvatar.parentElement.getAttribute("aria-hidden") }, menuPanel: { left: utilityPanelRect.left, right: utilityPanelRect.right, top: utilityPanelRect.top, width: utilityPanelRect.width, position: utilityPanelStyle.position }, menuButton: { left: menuButtonRect.left, right: menuButtonRect.right, width: menuButtonRect.width, height: menuButtonRect.height, background: getComputedStyle(menuButton).backgroundColor, borderWidth: getComputedStyle(menuButton).borderWidth, label: menuButton.getAttribute("aria-label"), visualWidth: menuVisualRect.width, visualHeight: menuVisualRect.height, iconWidth: menuIconRect.width, iconHeight: menuIconRect.height, iconColor: getComputedStyle(menuIcon).color, iconStrokeWidth: getComputedStyle(menuIcon).strokeWidth, lineCount: menuIcon.querySelectorAll("path").length, iconCenterX: menuIconRect.left + menuIconRect.width / 2, iconCenterY: menuIconRect.top + menuIconRect.height / 2, buttonCenterX: menuButtonRect.left + menuButtonRect.width / 2, buttonCenterY: menuButtonRect.top + menuButtonRect.height / 2 }, version: { text: version.textContent, label: version.getAttribute("aria-label"), left: versionRect.left, right: versionRect.right, top: versionRect.top, bottom: versionRect.bottom, width: versionRect.width, height: versionRect.height, centerX: versionRect.left + versionRect.width / 2, fontSize: getComputedStyle(version).fontSize, color: getComputedStyle(version).color, visible: getComputedStyle(version).display !== "none" && getComputedStyle(version).visibility !== "hidden" }, menuVersionCount: document.querySelectorAll(".utility-menu-panel .appVersion").length }, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height, left: mapLocate.left, right: mapLocate.right }, zoomButtons, compass: { top: compassRect.top, bottom: compassRect.bottom, left: compassRect.left, right: compassRect.right }, panel: { top: panel.top, bottom: panel.bottom, left: panel.left, right: panel.right }, startup: { hidden: startupScreen.hidden, top: startupRect.top, left: startupRect.left, right: startupRect.right, bottom: startupRect.bottom, background: getComputedStyle(startupScreen).backgroundColor, stackingLevel: getStackingLevel(startupScreen), mapStackingLevel: getStackingLevel(mapElement), probeIsBlocked: Boolean(mapProbe && startupScreen.contains(mapProbe)), probeReachesMap: Boolean(mapProbe && mapElement.contains(mapProbe)), underlyingProbeReachesMap: Boolean(underlyingProbe && mapElement.contains(underlyingProbe)) } };
+          const statusRect = walkPanelStatus.getBoundingClientRect();
+          return { mapHeight: map.height, viewportHeight: innerHeight, scrollWidth: document.scrollingElement.scrollWidth, scrollHeight: document.scrollingElement.scrollHeight, buttons, modeButtons, walkPanel: { compact: document.body.classList.contains("walk-compact"), recovering: document.body.classList.contains("walk-recovering"), height: panel.height, contentHeight: panelElement.scrollHeight, regularLayoutContentHeight, statusTop: statusRect.top, statusBottom: statusRect.bottom, statusTitle: document.getElementById("statusTitle").textContent, statusText: document.getElementById("statusText").textContent, statusTextVisible: !document.getElementById("statusText").hidden && getComputedStyle(document.getElementById("statusText")).display !== "none", gps: document.getElementById("gps").textContent, expeditionCompass: { top: expeditionCompass.top, bottom: expeditionCompass.bottom, width: expeditionCompass.width, height: expeditionCompass.height, visible: getComputedStyle(document.getElementById("expeditionCompass")).display !== "none" }, stopwatch: { top: stopwatchRect.top, bottom: stopwatchRect.bottom, height: stopwatchRect.height }, metrics: walkMetrics, actions: walkActions, messageText: recoveryMessage.textContent }, modeSelector: { hidden: modeSelectorHidden, height: modeSelectorRect.height, panelHeight: compactPanelHeight, expandedPanelHeight, panelContentHeight: compactPanelContentHeight, expandedPanelContentHeight }, recoveryMessage: { text: recoveryMessage.textContent, visible: getComputedStyle(recoveryMessage).display !== "none" && recoveryMessage.getBoundingClientRect().height > 0, height: recoveryMessage.getBoundingClientRect().height, fullText: getComputedStyle(recoveryMessage).whiteSpace === "normal" }, captureDisabled: document.getElementById("finish").disabled, header: { height: document.querySelector("header").getBoundingClientRect().height, title: { left: brandTitle.left, right: brandTitle.right, top: brandTitle.top, bottom: brandTitle.bottom, centerX: brandTitle.left + brandTitle.width / 2 }, titleText: { left: brandText.left, right: brandText.right, top: brandText.top, bottom: brandText.bottom, centerX: brandText.left + brandText.width / 2, fontSize: getComputedStyle(document.querySelector(".brandTitle strong")).fontSize, color: getComputedStyle(document.querySelector(".brandTitle strong")).color }, actions: { left: headerActions.left, right: headerActions.right, width: headerActions.width, centerX: headerActions.left + headerActions.width / 2 }, userSlot: { left: headerUser.left, right: headerUser.right, width: headerUser.width, centerX: headerUser.left + headerUser.width / 2 }, avatar: { left: userAvatarRect.left, right: userAvatarRect.right, width: userAvatarRect.width, height: userAvatarRect.height, radius: getComputedStyle(userAvatar).borderRadius, background: getComputedStyle(userAvatar).backgroundColor, color: getComputedStyle(userAvatar).color, iconCenterX: userIconRect.left + userIconRect.width / 2, centerX: userAvatarRect.left + userAvatarRect.width / 2, ariaHidden: userAvatar.parentElement.getAttribute("aria-hidden") }, menuPanel: { left: utilityPanelRect.left, right: utilityPanelRect.right, top: utilityPanelRect.top, width: utilityPanelRect.width, position: utilityPanelStyle.position }, menuButton: { left: menuButtonRect.left, right: menuButtonRect.right, width: menuButtonRect.width, height: menuButtonRect.height, background: getComputedStyle(menuButton).backgroundColor, borderWidth: getComputedStyle(menuButton).borderWidth, label: menuButton.getAttribute("aria-label"), visualWidth: menuVisualRect.width, visualHeight: menuVisualRect.height, iconWidth: menuIconRect.width, iconHeight: menuIconRect.height, iconColor: getComputedStyle(menuIcon).color, iconStrokeWidth: getComputedStyle(menuIcon).strokeWidth, lineCount: menuIcon.querySelectorAll("path").length, iconCenterX: menuIconRect.left + menuIconRect.width / 2, iconCenterY: menuIconRect.top + menuIconRect.height / 2, buttonCenterX: menuButtonRect.left + menuButtonRect.width / 2, buttonCenterY: menuButtonRect.top + menuButtonRect.height / 2 }, version: { text: version.textContent, label: version.getAttribute("aria-label"), left: versionRect.left, right: versionRect.right, top: versionRect.top, bottom: versionRect.bottom, width: versionRect.width, height: versionRect.height, centerX: versionRect.left + versionRect.width / 2, fontSize: getComputedStyle(version).fontSize, color: getComputedStyle(version).color, visible: getComputedStyle(version).display !== "none" && getComputedStyle(version).visibility !== "hidden" }, menuVersionCount: document.querySelectorAll(".utility-menu-panel .appVersion").length }, locate: { top: mapLocate.top, bottom: mapLocate.bottom, height: mapLocate.height, left: mapLocate.left, right: mapLocate.right }, zoomButtons, compass: { top: compassRect.top, bottom: compassRect.bottom, left: compassRect.left, right: compassRect.right }, panel: { top: panel.top, bottom: panel.bottom, left: panel.left, right: panel.right }, startup: { hidden: startupScreen.hidden, top: startupRect.top, left: startupRect.left, right: startupRect.right, bottom: startupRect.bottom, background: getComputedStyle(startupScreen).backgroundColor, stackingLevel: getStackingLevel(startupScreen), mapStackingLevel: getStackingLevel(mapElement), probeIsBlocked: Boolean(mapProbe && startupScreen.contains(mapProbe)), probeReachesMap: Boolean(mapProbe && mapElement.contains(mapProbe)), underlyingProbeReachesMap: Boolean(underlyingProbe && mapElement.contains(underlyingProbe)) } };
         })()`);
         const mapControlStyles = await evaluate(`(() => {
           const startupGate = document.getElementById("locationStartupScreen");
@@ -580,6 +607,28 @@ test("mobile primary actions are actually visible over a full-height map at requ
         assert.ok(Math.abs(result.mapHeight - baselineMapHeight) < 1, `${width}x${height} ${scenario.name}: controls changed map height`);
         assert.ok(result.scrollHeight <= result.viewportHeight + 1, `${width}x${height} ${scenario.name}: page gained vertical scroll`);
         const walkInProgress = Boolean(scenario.state.active || scenario.state.warmup || scenario.state.starting || scenario.state.cancelling || scenario.state.restored);
+        assert.equal(result.walkPanel.compact, walkInProgress, `${width}x${height} ${scenario.name}: compact panel follows active lifecycle`);
+        if (walkInProgress) {
+          if (!scenario.state.starting) assert.ok(result.walkPanel.contentHeight < result.walkPanel.regularLayoutContentHeight, `${width}x${height} ${scenario.name}: active panel content is shorter than the regular panel layout`);
+          assert.equal(result.walkPanel.metrics.length, 3, `${width}x${height} ${scenario.name}: all three metrics are present`);
+          assert.deepEqual(result.walkPanel.metrics.map((metric) => metric.label), ["Время", "Расстояние", scenario.state.expedition ? "До цели" : "До финиша"], `${width}x${height} ${scenario.name}: metric labels reflect the selected game mode`);
+          assert.ok(result.walkPanel.stopwatch.height > 0 && result.walkPanel.stopwatch.top >= result.walkPanel.statusBottom, `${width}x${height} ${scenario.name}: metrics have a separate row beneath status (${result.walkPanel.stopwatch.top} >= ${result.walkPanel.statusBottom})`);
+          if (scenario.state.active && scenario.state.expedition) {
+            assert.equal(result.walkPanel.expeditionCompass.visible, true, `${width}x${height} ${scenario.name}: direction compass remains visible`);
+            assert.ok(result.walkPanel.expeditionCompass.height <= result.walkPanel.statusBottom - result.walkPanel.statusTop + 1, `${width}x${height} ${scenario.name}: compass fits inside the status row`);
+          }
+          if (!scenario.state.starting) assert.ok(result.walkPanel.actions.length > 0, `${width}x${height} ${scenario.name}: available actions remain visible`);
+          for (const action of result.walkPanel.actions) {
+            assert.ok(action.height >= 52, `${width}x${height} ${scenario.name}: ${action.id} retains a 52px action target`);
+            assert.ok(action.top >= result.panel.top && action.bottom <= result.panel.bottom, `${width}x${height} ${scenario.name}: ${action.id} stays inside the panel`);
+          }
+          if (scenario.state.active && !scenario.state.expedition && !scenario.state.recovery) {
+            assert.equal(result.walkPanel.actions.length, 2, `${width}x${height}: capture mode keeps capture and retreat actions`);
+            assert.ok(Math.abs(result.walkPanel.actions[0].width - result.walkPanel.actions[1].width) <= 1, `${width}x${height}: capture and retreat have equal widths`);
+          }
+          if (scenario.state.recovery) assert.match(result.walkPanel.messageText, /Маршрут прерван\. Вернитесь к отмеченной точке/);
+          if (scenario.state.weakGps) assert.equal(result.walkPanel.gps, "GPS ±80 м", `${width}x${height}: weak GPS accuracy remains visible`);
+        }
         assert.equal(result.modeSelector.hidden, walkInProgress, `${width}x${height} ${scenario.name}: mode selector visibility follows walk lifecycle`);
         if (walkInProgress) {
           assert.equal(result.modeSelector.height, 0, `${width}x${height} ${scenario.name}: hidden mode selector leaves document flow`);

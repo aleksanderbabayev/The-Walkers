@@ -8,7 +8,7 @@ const css = fs.readFileSync(require.resolve("../styles.css"), "utf8");
 
 test("idle status copy is omitted while active and GPS attention messages remain", () => {
   assert.match(html, /<html lang="ru">/);
-  assert.match(html, /<div id="statusCopy" class="statusCopy" hidden><b id="statusTitle"><\/b><small id="statusText"><\/small><\/div>/);
+  assert.match(html, /<div id="statusCopy" class="statusCopy" hidden><b id="statusTitle"><\/b><small id="statusText" hidden><\/small><\/div>/);
   assert.doesNotMatch(html, /Готовы к прогулке\?|Нажмите "Начать прогулку"/);
 
   const setRecording = app.slice(app.indexOf("const setRecording = (active) =>"), app.indexOf("const refreshManualWarmupStart"));

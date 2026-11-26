@@ -310,7 +310,10 @@
   };
   const updateModeSelection = () => {
     const inProgress = recordingActive || warmingUp || starting || cancelling;
+    document.body.classList.toggle("walk-compact", inProgress);
+    document.body.classList.toggle("walk-recovering", inProgress && routeRecovery.active);
     document.body.classList.toggle("expedition-mode", selectedMode === "expedition");
+    $("walkRemainingLabel").textContent = activeMode === "expedition" ? "До цели" : "До финиша";
     $("modeSelector").hidden = inProgress;
     $("expeditionSetup").hidden = inProgress || selectedMode !== "expedition";
     $("start").hidden = inProgress || selectedMode !== "territory";
@@ -401,16 +404,16 @@
   const updateExpeditionProgress = (point) => {
     if (activeMode !== "expedition" || !expeditionTarget) return false;
     expeditionDistanceMeters = Tracking.distanceMeters(point, expeditionTarget);
+    updateWalkRemaining(expeditionDistanceMeters);
     updateExpeditionCompass(point, expeditionDistanceMeters);
-    const remaining = expeditionDistanceMeters < 1000
-      ? `${Math.round(expeditionDistanceMeters)} м`
-      : formatKilometers(expeditionDistanceMeters);
-    $("statusText").textContent = `До цели: ${remaining}`;
+    $("statusText").textContent = "";
+    $("statusText").hidden = true;
     if (Expedition.hasReachedTarget(point, expeditionTarget, Tracking.distanceMeters)) {
       expeditionCompletionPending = true;
       hideExpeditionCompass();
       expeditionLine.hide();
       $("statusText").textContent = "Цель достигнута. Завершаем экспедицию…";
+      $("statusText").hidden = false;
       return true;
     }
     expeditionLine.update(point, expeditionTarget, recordingActive && activeMode === "expedition" && !finishing && !cancelling);
@@ -702,6 +705,13 @@
     button.title = label;
     if (state === "loading" && previousState !== "loading") locationWaitStartedAt = Date.now();
   };
+  const updateGpsReadout = (accuracyMeters) => {
+    const gps = $("gps");
+    const valid = Number.isFinite(accuracyMeters) && accuracyMeters > 0;
+    gps.textContent = valid ? `GPS ±${Math.round(accuracyMeters)} м` : "GPS —";
+    gps.classList.toggle("is-weak", valid && accuracyMeters > Tracking.DEFAULTS.maxAccuracyMeters);
+    gps.classList.toggle("is-unavailable", !valid);
+  };
   let locationPermissionDenied = false;
   const updateLocationNotice = (details) => {
     const notice = $("locationNotice");
@@ -850,9 +860,31 @@
           : readiness.reason === "too-few-points" ? "Запишите больше точек маршрута"
             : readiness.reason === "not-closed" || readiness.reason === "invalid-geometry" ? "Маршрут не образует контур"
               : "Ожидаем начальную точку";
+  const formatWalkDistance = (meters) => !Number.isFinite(meters) ? "—"
+    : meters < 1000 ? `${Math.round(meters)} м` : formatKilometers(meters);
+  const updateWalkRemaining = (meters) => {
+    $("walkRemainingValue").textContent = formatWalkDistance(meters);
+  };
+  const updateWalkRemainingForMode = () => {
+    if (activeMode === "expedition") {
+      const meters = expeditionTarget && Tracking.isLocationFresh(latestLocation)
+        ? Tracking.distanceMeters(latestLocation, expeditionTarget) : null;
+      updateWalkRemaining(meters);
+      return;
+    }
+    const readiness = Tracking.evaluateTerritoryCapture(points, capturePosition);
+    updateWalkRemaining(readiness.distanceToStartMeters);
+  };
   const updateCaptureAvailability = (readiness = evaluateCaptureReadiness()) => {
     $("finish").disabled = !readiness.eligible;
-    if (recordingActive && activeMode === "territory") $("statusText").textContent = captureReadinessMessage(readiness);
+    if (activeMode === "territory") {
+      updateWalkRemaining(readiness.distanceToStartMeters);
+      if (recordingActive) {
+        const important = ["unsafe-gap", "waiting-for-gps", "finish-reached", "too-few-points", "not-closed", "invalid-geometry", "missing-start"];
+        $("statusText").textContent = captureReadinessMessage(readiness);
+        $("statusText").hidden = routeRecovery.active || !important.includes(readiness.reason);
+      }
+    } else updateWalkRemainingForMode();
     return readiness;
   };
   const setCapturePosition = (point) => {
@@ -918,6 +950,7 @@
       const details = LocationUi.getLocationState({ error: { code: 3 } });
       showLocationStartupError(details);
     }
+    if (recordingActive || warmingUp) updateWalkRemainingForMode();
   };
   const handleLocationResume = () => {
     if (document.visibilityState === "hidden") return;
@@ -1015,14 +1048,14 @@
     if (!active || activeMode !== "expedition" || finishing || expeditionCompletionPending) hideExpeditionCompass();
     const inProgress = active || warmingUp || starting || cancelling;
     document.querySelector(".status").classList.toggle("recording", active);
-    const statusTitle = active ? activeMode === "expedition" ? "Идёт экспедиция" : "Идёт захват территории" : warmingUp ? "Стабилизация GPS" : cancelling ? "Отступление" : "";
+    const statusTitle = active ? activeMode === "expedition" ? "Экспедиция" : "Захват территории" : warmingUp ? "Стабилизация GPS" : starting ? "Подготовка прогулки" : cancelling ? "Отступление" : "";
     $("statusTitle").textContent = statusTitle;
     const manualStartAvailable = warmingUp && warmupStartedAt !== null && Date.now() - warmupStartedAt >= Tracking.GPS_WARMUP_DEFAULTS.manualStartAfterMs;
-    const statusText = active ? activeMode === "expedition" && Number.isFinite(expeditionDistanceMeters)
-      ? `До цели: ${expeditionDistanceMeters < 1000 ? `${Math.round(expeditionDistanceMeters)} м` : formatKilometers(expeditionDistanceMeters)}` : activeMode === "expedition" ? "Записываем путь к цели" : "Точки сохраняются на устройстве" : warmingUp ? manualStartAvailable
+    const statusText = active ? "" : warmingUp ? manualStartAvailable
       ? "GPS всё ещё стабилизируется. Можно начать с предупреждением, если доступна надёжная позиция."
       : "Стабилизация GPS. Подождите перед началом движения…" : cancelling ? "Останавливаем GPS и удаляем черновик…" : "";
     $("statusText").textContent = statusText;
+    $("statusText").hidden = !warmingUp && !cancelling;
     $("statusCopy").hidden = !statusTitle && !statusText;
     updateStartAvailability();
     $("start").hidden = inProgress || selectedMode !== "territory";
@@ -1204,10 +1237,10 @@
     rememberLocation(initialPoint); updateLocationMarker(initialPoint); mapFollow.centerOn(initialPoint);
     if (activeMode === "expedition") updateExpeditionStartMarker(recordedStartPoint);
     else updateRouteStartMarker(recordedStartPoint);
-    $("gps").textContent = `±${Math.round(initialPoint.accuracy)} м`;
+    updateGpsReadout(initialPoint.accuracy);
     setRecording(true); startStopwatch();
     updateTerritoryFinishZone(recordedStartPoint);
-    say(manual ? "Прогулка начата с предупреждением: точность GPS ниже обычной. Продолжаем проверять каждую точку." : "GPS готов. Можно идти!");
+    say(manual ? "Прогулка начата с предупреждением: точность GPS ниже обычной. Продолжаем проверять каждую точку." : "");
     if (updateExpeditionProgress(initialPoint)) say("Цель достигнута. Завершаем экспедицию…");
     warmupDiagnosticPrevious = null;
     if (manual) recordDiagnosticEvent({ type: "manual-warmup-start", at: Date.now(), timestamp: initialPoint.timestamp, accuracyMeters: initialPoint.accuracy, maxAllowedAccuracyMeters: Tracking.DEFAULTS.maxAccuracyMeters });
@@ -1241,6 +1274,7 @@
       gapDistanceMeters: Tracking.distanceMeters(anchor, candidate),
       maxSafeGapMeters: Tracking.evaluateSegmentContinuity(anchor, candidate).maxGapMeters
     })) return false;
+    updateModeSelection();
     positionFilter.reset();
     recordingFilterPrevious = { ...anchor };
     routeReconnectPending = false; recoveryResumeProof = null;
@@ -1303,6 +1337,7 @@
     const previousFilterPoint = recordingFilterPrevious;
     const previousReconnectPending = routeReconnectPending, previousResumeProof = recoveryResumeProof;
     routeRecovery.clear();
+    updateModeSelection();
     recordingFilterPrevious = { ...result.point };
     routeReconnectPending = true;
     recoveryResumeProof = {
@@ -1337,6 +1372,7 @@
   const processPosition = async (position) => {
     if (cancelling) return;
     const processedAt = Date.now();
+    if (recordingActive || warmingUp) updateGpsReadout(position.coords?.accuracy);
     if (recordingActive && activeMode === "territory") {
       const finishPosition = finishPositionFilter.evaluate(position, processedAt);
       if (finishPosition.accepted) setCapturePosition(finishPosition.point);
@@ -1441,7 +1477,7 @@
     if (!result.accepted) {
       if (decision === "rejected" && gpsEvent) gpsEvent.includedInRoute = false;
       persistDiagnosticEvent(gpsEvent);
-      if (Number.isFinite(position.coords?.accuracy)) $("gps").textContent = `±${Math.round(position.coords.accuracy)} м`;
+      if (Number.isFinite(position.coords?.accuracy)) updateGpsReadout(position.coords.accuracy);
       if (result.reason === "accuracy") say(`GPS неточный (±${Math.round(position.coords.accuracy)} м). Ждём более точную позицию.`);
       else if (result.reason === "speed") say("GPS скачок отброшен. Ждём стабильную позицию.");
       else if (result.reason === "confirm") say("После перерыва проверяем новую GPS-позицию…");
@@ -1534,7 +1570,7 @@
     rememberLocation(result.point);
     drawCurrent(); updateDistance(); updateLocationMarker(result.point); mapFollow.centerOn(result.point);
     if (updateExpeditionProgress(result.point)) say("Цель достигнута. Завершаем экспедицию…");
-    $("gps").textContent = `±${Math.round(result.point.accuracy)} м`;
+    updateGpsReadout(result.point.accuracy);
     if (result.newSegment && points.length > 1) say("После перерыва начат новый участок маршрута.");
   };
   $("manualWarmupStart").addEventListener("click", () => {
@@ -1556,6 +1592,7 @@
     isFinishing: () => finishing
   });
   const onLocationError = (error) => {
+    if (recordingActive || warmingUp) updateGpsReadout(null);
     recordDiagnosticEvent({ type: "gps-error", at: Date.now(), phase: warmingUp ? "warm-up" : recordingActive ? (initialRouteBuffer.pending ? "initial-buffer" : "recording") : "location", code: Number.isFinite(error?.code) ? error.code : null });
     noteLocationRequest(error?.code === 1 ? "PERMISSION_DENIED" : error?.code === 3 ? "TIMEOUT" : "POSITION_UNAVAILABLE");
     if (warmingUp || recordingActive) cancelPendingLocationRequest();
@@ -1748,7 +1785,7 @@
     $("anotherTarget").hidden = true; $("generateTarget").hidden = false;
     clearInterval(stopwatchTimer); stopwatchTimer = null;
     $("elapsed").textContent = "00:00:00";
-    $("gps").textContent = "GPS";
+    updateGpsReadout(null);
     updateDistance();
     currentLines.forEach((line) => map.removeLayer(line)); currentLines = [];
     clearRouteStartMarker();
